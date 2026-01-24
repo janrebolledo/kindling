@@ -83,4 +83,13 @@ app.post('/', async (c) => {
   return c.json({ data, places });
 });
 
+app.get('/', async (c) => {
+  // const locationData = await getLocationDetails('eucalyptus trail chino hills');
+  // return c.json(locationData);
+  return c.json([
+    { response: 'helloooooo', id: 200 },
+    { response: 'helloooooo', id: 202 },
+  ]);
+});
+
 export default app;
