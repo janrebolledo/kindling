@@ -56,11 +56,9 @@ struct SignUpCaptureView: View {
             }
             .task {
                 do {
-                    print("try to get cards pls")
                     cards = try await supabase.from("ideas").select()
                         .execute()
                         .value
-                    print(cards)
                 } catch {
                     //                dump(error)
                 }

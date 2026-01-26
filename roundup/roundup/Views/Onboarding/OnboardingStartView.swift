@@ -5,11 +5,13 @@
 //  Created by Jan Rebolledo on 1/25/26.
 //
 
+import Photos
 import SwiftUI
 
 struct OnboardingStartView: View {
     @Binding var step: Int
     @State private var screenshotManager = ScreenshotManager()
+    var screenshots: [PHAsset] = []
 
     var body: some View {
         VStack {
@@ -43,18 +45,48 @@ struct OnboardingStartView: View {
                         title: "allow access to photos to start",
                         systemName: "heart.fill"
                     ) {
-                        print("fireeee")
                         screenshotManager.requestPhotoLibraryAccess {
                             granted in
                             guard granted else {
-//                                accessGranted = false
+                                print("Photo library access denied")
                                 return
-
                             }
-//                            accessGranted = true
-                            print(granted)
+
                             step = 2
-                            print(step)
+                            // Fetch screenshots
+                            screenshotManager.fetchScreenshots {
+                                screenshots in
+                                //                                screenshots = screenshots
+                                print("Found \(screenshots.count) screenshots")
+
+                                // Load first screenshot as example
+                                if let firstScreenshot = screenshots.first {
+                                    screenshotManager.loadImage(
+                                        from: firstScreenshot
+                                    ) { image in
+                                        if let image = image {
+                                            print(
+                                                "Loaded screenshot: \(image.size)"
+                                            )
+                                            // Use the image here
+                                            Task {
+                                                await uploadImage(
+                                                    fileName: "screenshot.png",
+                                                    image: image
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    // Get metadata
+                                    let info =
+                                        screenshotManager
+                                        .getScreenshotInfo(
+                                            from: firstScreenshot
+                                        )
+                                    print("Screenshot info: \(info)")
+                                }
+                            }
                         }
                     }
 

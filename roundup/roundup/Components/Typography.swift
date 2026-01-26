@@ -26,15 +26,11 @@ extension Font {
         var value: String {
             switch self {
             case .regular:
-                return "PPNeueMontreal-Regular"
+                return "PPNeueMontreal-Medium"
             }
         }
     }
     
-    
-    static var title: Font {
-        Font.custom("PPNeueMontreal-Medium", size: 16)
-    }
     
     static func editorialNew(_ type: EditorialNew, size: CGFloat = 26) -> Font {
         Font.custom(type.value, size: size)
