@@ -33,14 +33,14 @@ struct Card: View {
                 HStack(alignment: .top) {
 
                     Spacer()
-                    
+
                     Text("tap to view")
-                        .font(Font.custom("PPNeueMontreal-Medium", size: 16))
+                        .font(.neueMontreal(.regular, size: 16))
                         .foregroundStyle(.white.opacity(0.5))
                 }
                 Spacer()
                 Text(card.title)
-                    .font(Font.custom("PPEditorialNew-Regular", size: 24))
+                    .font(.editorialNew(.regular, size: 24))
                     .foregroundStyle(.white)
 
                 HStack {
@@ -64,7 +64,7 @@ struct Card: View {
                 }
                 .foregroundStyle(.white)
                 .font(
-                    Font.custom("PPNeueMontreal-Medium", size: 16)
+                    .neueMontreal(.regular, size: 16)
                 )
             }
             .padding(20)

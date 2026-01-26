@@ -1,18 +1,17 @@
-//
-//  ContentView.swift
-//  roundup
-//
-//  Created by Jan Rebolledo on 1/14/26.
-//
-
-import Foundation
 internal import PostgREST
 import Supabase
+//
+//  SignUpCaptureView.swift
+//  roundup
+//
+//  Created by Jan Rebolledo on 1/25/26.
+//
 import SwiftUI
 
-struct ContentView: View {
+struct SignUpCaptureView: View {
     @State private var cards: [Item] = []
-
+    @State private var screenshotManager = ScreenshotManager()
+    
     var body: some View {
 
         ScrollView {
@@ -58,7 +57,8 @@ struct ContentView: View {
             .task {
                 do {
                     print("try to get cards pls")
-                    cards = try await supabase.from("ideas").select().execute()
+                    cards = try await supabase.from("ideas").select()
+                        .execute()
                         .value
                     print(cards)
                 } catch {
@@ -67,9 +67,36 @@ struct ContentView: View {
             }
         }
         .edgesIgnoringSafeArea(.top)
+        .overlay(
+            VStack {
+                Spacer()
+                ZStack(alignment: .bottom) {
+                    VariableBlurView(maxBlurRadius: 20, direction: .blurredBottomClearTop)
+                            .frame(height: 200)
+                    LinearGradient(
+                        gradient: Gradient(colors: [
+                            .white.opacity(0),
+                            .white.opacity(1),
+                        ]),
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: 200)
+                    
+                    StyledButton(
+                        title: "sign up to view all activities",
+                        systemName: "heart.fill"
+                    ) {
+                        print("fireeee")
+                    }
+                    .padding(.bottom, 64)
+                }
+            }.ignoresSafeArea()
+        )
+
     }
 }
 
 #Preview {
-    ContentView()
+    SignUpCaptureView()
 }

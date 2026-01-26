@@ -8,10 +8,17 @@
 import SwiftUI
 
 @main
-struct app: App {
+struct AppEntry: App {
+    @State private var onboardingCompleted = false
+    @State private var authenticated = false
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            if !onboardingCompleted {
+                OnboardingView()
+            } else {
+                ContentView()
+            }
         }
     }
 }
