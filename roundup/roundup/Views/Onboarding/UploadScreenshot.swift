@@ -10,8 +10,8 @@ import Photos
 import UIKit
 
 func uploadImage(fileName: String, image: UIImage) async {
-    print("")
-    let url = URL(string: "http://127.0.0.1:3000/")
+    // TODO: make this a more permanent url, ie get this hosted!!
+    let url = URL(string: "http://192.168.50.40:3000/")
     let boundary = UUID().uuidString
 
     let session = URLSession.shared
