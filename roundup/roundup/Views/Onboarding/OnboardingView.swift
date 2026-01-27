@@ -9,14 +9,15 @@ import SwiftUI
 struct OnboardingView: View {
     @State private var step: Int = 1
     @State private var accessGranted = false
+    @State private var cards: [Item] = []
     
 
     var body: some View {
         if step == 1 {
-            OnboardingStartView(step: $step)
+            OnboardingStartView(step: $step, cards: $cards)
         }
         if step == 2 {
-            SignUpCaptureView()
+            SignUpCaptureView(cards: $cards)
         }
     }
 }

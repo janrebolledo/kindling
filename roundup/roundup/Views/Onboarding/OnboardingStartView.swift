@@ -10,6 +10,7 @@ import SwiftUI
 
 struct OnboardingStartView: View {
     @Binding var step: Int
+    @Binding var cards: [Item]
     @State private var screenshotManager = ScreenshotManager()
     var screenshots: [PHAsset] = []
 
@@ -73,7 +74,10 @@ struct OnboardingStartView: View {
                                                 await uploadImage(
                                                     fileName: "screenshot.png",
                                                     image: image
-                                                )
+                                                ) { response in
+                                                    print(response!)
+                                                    cards = response! as! [Item]
+                                                }
                                             }
                                         }
                                     }

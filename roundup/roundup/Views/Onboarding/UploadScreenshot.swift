@@ -9,12 +9,16 @@ import Foundation
 import Photos
 import UIKit
 
-func uploadImage(fileName: String, image: UIImage) async {
+func uploadImage(
+    fileName: String,
+    image: UIImage,
+    completion: @escaping ([Item]?) -> Void
+) async {
     // TODO: make this a more permanent url, ie get this hosted!!
-    let url = URL(string: "http://192.168.50.40:3000/")
+    let url = URL(string: "http://10.110.198.101:3000/")
     let boundary = UUID().uuidString
 
-    let session = URLSession.shared
+    _ = URLSession.shared
 
     var urlRequest = URLRequest(url: url!)
     urlRequest.httpMethod = "POST"
@@ -38,19 +42,31 @@ func uploadImage(fileName: String, image: UIImage) async {
 
     data.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
 
-    session.uploadTask(
-        with: urlRequest,
-        from: data,
-        completionHandler: { responseData, response, error in
-            if error == nil {
-                let jsonData = try? JSONSerialization.jsonObject(
-                    with: responseData!,
-                    options: .allowFragments
-                )
-                if let json = jsonData as? [String: Any] {
-                    print(json)
-                }
-            }
+    do {
+        let (responseData, response) = try await URLSession.shared.upload(
+            for: urlRequest,
+            from: data
+        )
+
+        if let httpResponse = response as? HTTPURLResponse {
+            print("Status code:", httpResponse.statusCode)
         }
-    ).resume()
+
+        guard !responseData.isEmpty else {
+            print("Empty response body")
+            return
+        }
+
+        //        if let raw = String(data: responseData, encoding: .utf8) {
+        //            print("Raw response:", raw)
+        //        }
+
+        let decoder = JSONDecoder()
+        // If your JSON is a top-level array of items:
+        let items = try decoder.decode([Item].self, from: responseData)
+        completion(items)
+    } catch {
+        print("Upload failed with error:", error)
+        completion(nil)
+    }
 }

@@ -1,5 +1,3 @@
-internal import PostgREST
-import Supabase
 //
 //  SignUpCaptureView.swift
 //  roundup
@@ -7,9 +5,11 @@ import Supabase
 //  Created by Jan Rebolledo on 1/25/26.
 //
 import SwiftUI
+internal import PostgREST
+import Supabase
 
 struct SignUpCaptureView: View {
-    @State private var cards: [Item] = []
+    @Binding var cards: [Item]
     @State private var screenshotManager = ScreenshotManager()
     
     var body: some View {
@@ -54,15 +54,6 @@ struct SignUpCaptureView: View {
                         .padding(.horizontal)
                 }
             }
-            .task {
-                do {
-                    cards = try await supabase.from("ideas").select()
-                        .execute()
-                        .value
-                } catch {
-                    //                dump(error)
-                }
-            }
         }
         .edgesIgnoringSafeArea(.top)
         .overlay(
@@ -95,6 +86,6 @@ struct SignUpCaptureView: View {
     }
 }
 
-#Preview {
-    SignUpCaptureView()
-}
+//#Preview {
+//    SignUpCaptureView()
+//}

@@ -3,8 +3,14 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { GoogleGenAI } from '@google/genai';
 import { parseScreenshotPrompt } from './prompts';
+import { encodeBase64 } from './utils/encodeBase64';
+import { createClient } from '@supabase/supabase-js';
 
-// TODO: import user location data and try and query to what's closest to them
+const supabase = createClient(
+  'https://bfbaqyhyxergcpsyhzcc.supabase.co',
+  'sb_publishable_Q3wc-o2JVqIYPQVw47306w_zpKAE0VI',
+);
+
 async function getLocationDetails(textQuery: String) {
   const response = await fetch(
     'https://places.googleapis.com/v1/places:searchText?pageSize=1',
@@ -67,24 +73,31 @@ app.post('/', async (c) => {
     return c.json({ error: 'No file uploaded' }, 400);
   }
 
-  // Convert file to ArrayBuffer then to base64
-  const arrayBuffer = await file.arrayBuffer();
-  const bytes = new Uint8Array(arrayBuffer);
+  console.log(file);
 
-  // Convert bytes to base64
-  let binary = '';
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
+  const base64Img = await encodeBase64(file);
+
+  const aiLocationData = await parseScreenshot(base64Img);
+
+  const { data, error } = await supabase
+    .from('ideas')
+    .select()
+    .textSearch('title', `${aiLocationData.item.location}`, {
+      type: 'websearch',
+    });
+
+  if (data && data?.length > 0) {
+    console.log(data);
+    return c.json(data);
   }
-  const base64 = btoa(binary);
-
-  // Create data URL with mime type
-  const dataUrl = `data:${file.type};base64,${base64}`;
-  const data = await parseScreenshot(dataUrl);
+  if (error) {
+    console.log(error);
+  }
 
   const places = await getLocationDetails(
-    `${data.item.name} ${data.item.location} ${data.item.address}`,
+    `${aiLocationData.item.name} ${aiLocationData.item.location} ${aiLocationData.item.address}`,
   );
+  // save query to supabase
 
   console.log({ data, places });
 
