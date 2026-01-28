@@ -11,8 +11,16 @@ import UIKit
 import Vision
 
 func uploadImage(
-    imageText: String,
-) async throws -> [Item]? {
+    fileName: String,
+    image: UIImage,
+) async throws -> [Item] {
+    let text = await recognizeText(
+        in: image,
+        recognitionLevel: .accurate,
+        languages: ["en"],
+        usesLanguageCorrection: true
+    )
+
     // TODO: make this a more permanent url, ie get this hosted!!
     let url = URL(string: "http://10.110.198.101:3000/v2/places")
     print("req start")
@@ -26,7 +34,7 @@ func uploadImage(
     )
     urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
     let body: [String: String] = [
-        "entries": imageText
+        "entries": text.joined(separator: "\n")
     ]
     urlRequest.httpBody = try JSONSerialization.data(withJSONObject: body)
 
@@ -35,42 +43,11 @@ func uploadImage(
     if let httpResponse = response as? HTTPURLResponse {
         print("Status code:", httpResponse.statusCode)
     }
+    print(data)
 
     let decoder = JSONDecoder()
     let items = try decoder.decode([Item].self, from: data)
-    
+    print(items)
+
     return items
-}
-
-func parseAndUploadImage(
-    fileName: String,
-    image: UIImage,
-    completion: @escaping ([Item]?) -> Void
-) async {
-    var screenshotText: String = ""
-
-    OCRTextRecognizer.recognizeText(
-        in: image,
-        recognitionLevel: .accurate,
-        languages: ["en"],
-        usesLanguageCorrection: true
-    ) { result in
-        switch result {
-        case .success(let strings):
-            screenshotText = strings.joined(separator: "\n")
-            Task {
-                do {
-                    let items = try await uploadImage(imageText: screenshotText)
-                } catch {
-                    print(error)
-                }
-            }
-
-        case .failure(let error):
-            print("OCR failed: \(error.localizedDescription)")
-        }
-    }
-
-    return
-
 }

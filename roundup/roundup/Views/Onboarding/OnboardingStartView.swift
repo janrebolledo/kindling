@@ -71,13 +71,11 @@ struct OnboardingStartView: View {
                                             )
                                             // Use the image here
                                             Task {
-                                                await parseAndUploadImage(
+                                                cards = try await uploadImage(
                                                     fileName: "screenshot.png",
                                                     image: image
-                                                ) { response in
-                                                    print(response!)
-                                                    cards = response! 
-                                                }
+                                                )
+                                                print(cards)
                                             }
                                         }
                                     }

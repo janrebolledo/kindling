@@ -56,7 +56,7 @@ Duplicates: Treat each screenshot independently
 
 OUTPUT FORMAT
 Respond ONLY with valid JSON in this exact structure:
-json{
+{
   "status": "success" | "skipped" | "sensitive",
   "reason": "explanation if skipped or sensitive",
   "item": {
@@ -105,4 +105,8 @@ Skip ambiguous or incomplete information
 Extract only the most prominent item from multi-item screenshots
 Ignore expired events
 Use web search when helpful but don't guess
-Output valid JSON only, no additional commentary`;
+Output valid JSON only, no additional commentary. Do not include \`\`\`json in response
+
+Screenshot Data:
+
+`;

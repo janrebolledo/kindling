@@ -3,13 +3,16 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { GoogleGenAI } from '@google/genai';
 import { parseScreenshotPrompt } from './prompts';
-import { encodeBase64 } from './utils/encodeBase64';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
   'https://bfbaqyhyxergcpsyhzcc.supabase.co',
   'sb_publishable_Q3wc-o2JVqIYPQVw47306w_zpKAE0VI',
 );
+
+const ai = new GoogleGenAI({
+  apiKey: Bun.env['GEMINI_API_KEY'],
+});
 
 async function getLocationDetails(textQuery: String) {
   const response = await fetch(
@@ -31,33 +34,15 @@ async function getLocationDetails(textQuery: String) {
   return data;
 }
 
-async function parseScreenshot(base64img: string) {
+async function parseScreenshot(text: string) {
   console.log('req started');
-  const ai = new GoogleGenAI({
-    apiKey: Bun.env['GEMINI_API_KEY'],
-  });
-  const base64Data = base64img.replace(/^data:image\/\w+;base64,/, '');
 
-  const result = await ai.models.generateContent({
+  const response = await ai.models.generateContent({
     model: 'gemini-2.5-flash-lite-preview-09-2025',
-    contents: [
-      {
-        role: 'user',
-        parts: [
-          {
-            inlineData: {
-              mimeType: 'image/png',
-              data: base64Data,
-            },
-          },
-          {
-            text: parseScreenshotPrompt,
-          },
-        ],
-      },
-    ],
+    contents: parseScreenshotPrompt + text,
   });
-  const data = JSON.parse(result.text || '[]');
+
+  const data = JSON.parse(response.text || '[]');
   return data;
 }
 
@@ -65,20 +50,16 @@ const app = new Hono();
 
 app.use('*', cors());
 
-app.post('/', async (c) => {
-  const body = await c.req.parseBody();
-  const file = body['file'];
+// TODO: rename this endpoint to something better lol
+app.post('/v2/places', async (c) => {
+  const body = (await c.req.json()).entries;
+  // TODO: make prompt better
+  const aiLocationData = await parseScreenshot(body);
 
-  if (!file || !(file instanceof File)) {
-    return c.json({ error: 'No file uploaded' }, 400);
-  }
+  console.log(aiLocationData);
 
-  console.log(file);
-
-  const base64Img = await encodeBase64(file);
-
-  const aiLocationData = await parseScreenshot(base64Img);
-
+  // TODO: make database searching more thorough
+  // reform prompt data to match database
   const { data, error } = await supabase
     .from('ideas')
     .select()
@@ -102,14 +83,6 @@ app.post('/', async (c) => {
   console.log({ data, places });
 
   return c.json({ data, places });
-});
-
-// TODO: rename this endpoint to something better lol
-app.post('/v2/places', async (c) => {
-  console.log('hi');
-  const body = await c.req.json();
-  console.log(body);
-  return c.json([]);
 });
 
 app.get('/', async (c) => {
