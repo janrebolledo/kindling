@@ -104,9 +104,15 @@ app.post('/', async (c) => {
   return c.json({ data, places });
 });
 
+// TODO: rename this endpoint to something better lol
+app.post('/v2/places', async (c) => {
+  console.log('hi');
+  const body = await c.req.json();
+  console.log(body);
+  return c.json([]);
+});
+
 app.get('/', async (c) => {
-  // const locationData = await getLocationDetails('eucalyptus trail chino hills');
-  // return c.json(locationData);
   return c.json([
     { response: 'helloooooo', id: 200 },
     { response: 'helloooooo', id: 202 },
