@@ -10,29 +10,39 @@ import Photos
 import UIKit
 import Vision
 
+struct Upload: Codable {
+    let id: String
+    let text: String
+}
+
 func uploadImages(
     images: [(String, UIImage?)]
 ) async throws -> [Item] {
-    let entries: [String: String] = await withTaskGroup(of: (String, String).self) { group in
+    let entries: [Upload] = await withTaskGroup(
+        of: (String, String).self
+    ) { group in
 
         for image in images {
             group.addTask {
-                return (image.0,
-                await recognizeText(
-                    in: image.1!,
-                    recognitionLevel: .accurate,
-                    languages: ["en"],
-                    usesLanguageCorrection: true
-                ))
+                return (
+                    id: image.0,
+                    text: await recognizeText(
+                        in: image.1!,
+                        recognitionLevel: .accurate,
+                        languages: ["en"],
+                        usesLanguageCorrection: true
+                    )
+                )
             }
         }
 
-        var results: [String: String] = [:]
+        var results: [Upload] = []
         for await result in group {
-            results[result.0] = result.1
+            results.append(Upload(id: result.0, text: result.1))
         }
         return results
     }
+    print(entries)
 
     // TODO: make this a more permanent url, ie get this hosted!!
     let url = URL(string: "http://localhost:3000/ideas")
@@ -46,8 +56,9 @@ func uploadImages(
     )
     urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
 
-    urlRequest.httpBody = try JSONSerialization.data(withJSONObject: entries)
-
+    let encoder = JSONEncoder()
+    urlRequest.httpBody = try encoder.encode(entries)
+    
     let (data, response) = try await URLSession.shared.data(for: urlRequest)
 
     if let httpResponse = response as? HTTPURLResponse {

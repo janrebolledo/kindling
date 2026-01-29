@@ -41,21 +41,27 @@ app.use('*', cors());
 // TODO: rename this endpoint to something better lol
 app.post('/ideas', async (c) => {
   console.log('POST /ideas');
-  const screenshots: { string: string } = await c.req.json();
-  const aiLocationData: { [key: string]: ExtractionResult } = {};
-
-  await Promise.all(
-    Object.entries(screenshots).map(async ([key, value]) => {
-      aiLocationData[key] = await parseScreenshot(value);
+  const screenshots: [{ id: string; text: string }] = await c.req.json();
+  // console.log(screenshots);
+  const aiLocationData = await Promise.all(
+    screenshots.map(async (screenshot: { id: string; text: string }) => {
+      return {
+        id: screenshot.id,
+        data: await parseScreenshot(screenshot.text),
+      };
     }),
   );
+  const searchTerms = aiLocationData
+    .map((location) => location.data.item.venue)
+    .join(' OR ');
+  console.log(aiLocationData);
 
   // TODO: make database searching more thorough
   // reform prompt data to match database
   const { data, error } = await supabase
     .from('ideas')
     .select()
-    .textSearch('venue', `${Object.entries(aiLocationData)[0][1].item.venue}`, {
+    .textSearch('venue', searchTerms, {
       type: 'websearch',
     });
 
