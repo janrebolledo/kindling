@@ -55,35 +55,30 @@ struct OnboardingStartView: View {
                             step = 2
 
                             let screenshots =
-                                screenshotManager.fetchScreenshots()
+                            screenshotManager.fetchScreenshots().prefix(5)
 
                             print("Found \(screenshots.count) screenshots")
 
-                            //                            let images: [UIImage] = try await screenshotManager.loadImage(
-                            //                                from: firstScreenshot
-                            //                            )
+                            let images: [(String, UIImage?)] =
+                                await withTaskGroup(
+                                    of: (String, UIImage?).self
+                                ) { group in
+                                    for screenshot in screenshots {
+                                        group.addTask {
 
-                            let images: [UIImage] = await withTaskGroup(
-                                of: UIImage?.self
-                            ) { group in
-                                for screenshot in screenshots {
-                                    group.addTask {
+                                            return
+                                                try! await screenshotManager
+                                                .loadImage(from: screenshot)
 
-                                        return
-                                            try? await screenshotManager
-                                            .loadImage(from: screenshot)
+                                        }
                                     }
-                                }
 
-                                var results = [UIImage]()
-                                for await result in group {
-                                    if result != nil {
-
-                                        results.append(result!)
+                                    var results = [(String, UIImage?)]()
+                                    for await result in group {
+                                        results.append(result)
                                     }
+                                    return results
                                 }
-                                return results
-                            }
 
                             cards = try await uploadImages(images: images)
 

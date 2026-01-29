@@ -11,24 +11,25 @@ import UIKit
 import Vision
 
 func uploadImages(
-    images: [UIImage]
+    images: [(String, UIImage?)]
 ) async throws -> [Item] {
-    let entries: [String] = await withTaskGroup(of: String.self) { group in
+    let entries: [String: String] = await withTaskGroup(of: (String, String).self) { group in
 
         for image in images {
             group.addTask {
+                return (image.0,
                 await recognizeText(
-                    in: image,
+                    in: image.1!,
                     recognitionLevel: .accurate,
                     languages: ["en"],
                     usesLanguageCorrection: true
-                )
+                ))
             }
         }
 
-        var results: [String] = []
+        var results: [String: String] = [:]
         for await result in group {
-            results.append(result)
+            results[result.0] = result.1
         }
         return results
     }

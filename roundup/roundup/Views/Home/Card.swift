@@ -39,24 +39,26 @@ struct Card: View {
                         .foregroundStyle(.white.opacity(0.5))
                 }
                 Spacer()
-                Text(card.title)
+                Text(card.name!)
                     .font(.editorialNew(.regular, size: 24))
                     .foregroundStyle(.white)
 
                 HStack {
                     // extra content
-                    Text(card.location_type)
-                    Text("•")
+                    if card.location_type != nil {
+                        Text(card.location_type!)
+                        Text("•")
+                    }
                     if card.duration != nil {
 
                         Text(card.duration!)
                         Text("•")
                     }
                     HStack(spacing: 0) {
-                        ForEach(0..<card.pricing, id: \.self) { _ in
+                        ForEach(0..<card.pricing!, id: \.self) { _ in
                             Text("$")
                         }
-                        ForEach(0..<(3 - card.pricing), id: \.self) { _ in
+                        ForEach(0..<(3 - card.pricing!), id: \.self) { _ in
                             Text("$")
                         }
                         .foregroundStyle(.white.opacity(0.5))
@@ -74,7 +76,7 @@ struct Card: View {
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .contentShape(RoundedRectangle(cornerRadius: 24))
         .task {
-            player = AVPlayer(url: URL(string: card.media_url)!)
+            player = AVPlayer(url: URL(string: card.media_url!)!)
             player?.isMuted = true
             player?.play()
         }

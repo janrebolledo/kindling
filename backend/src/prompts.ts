@@ -50,11 +50,11 @@ Extract the following when available in the OCR text:
 3. **location**: City or neighborhood name ONLY
    - Do NOT include street addresses
    - Do NOT include venue names
-   - Extract just the geographic area (city, neighborhood, region)
+   - Extract just the geographic area (city, neighborhood, region) and state
    - Examples:
-     * "The Night Owl in downtown Fullerton" → location: "Fullerton"
-     * "Omo Mercado · Rancho Cucamonga" → location: "Rancho Cucamonga"
-     * "Eucalyptus trail · Chino Hills" → location: "Chino Hills"
+     * "The Night Owl in downtown Fullerton" → location: "Fullerton, California"
+     * "Omo Mercado · Rancho Cucamonga" → location: "Rancho Cucamonga, California"
+     * "Eucalyptus trail · Chino Hills" → location: "Chino Hills, California"
 
 4. **address**: Full street address if present in OCR text
    - Only extract if explicitly mentioned in the text
@@ -124,7 +124,7 @@ Output:
   "item": {
     "name": "Summer Jazz Festival",
     "venue": "Griffith Park",
-    "location": "Los Angeles",
+    "location": "Los Angeles, California",
     "address": "4730 Crystal Springs Dr, Los Angeles, CA",
     "date": "2024-07-15",
     "time": "6:00 PM",
@@ -143,7 +143,7 @@ Output:
   "item": {
     "name": null,
     "venue": "Omo Mercado",
-    "location": "Rancho Cucamonga",
+    "location": "Rancho Cucamonga, California",
     "address": null,
     "date": null,
     "time": null,
@@ -162,7 +162,7 @@ Output:
   "item": {
     "name": null,
     "venue": "Eucalyptus Trail",
-    "location": "Chino Hills",
+    "location": "Chino Hills, California",
     "address": null,
     "date": null,
     "time": null,
@@ -181,7 +181,7 @@ Output:
   "item": {
     "name": null,
     "venue": "The Night Owl",
-    "location": "Fullerton",
+    "location": "Fullerton, California",
     "address": null,
     "date": null,
     "time": null,

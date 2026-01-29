@@ -49,7 +49,7 @@ class ScreenshotManager {
         from asset: PHAsset,
         targetSize: CGSize = PHImageManagerMaximumSize,
 
-    ) async throws -> UIImage? {
+    ) async throws -> (String, UIImage?) {
         let options = PHImageRequestOptions()
         options.isSynchronous = false
         options.deliveryMode = .highQualityFormat
@@ -61,7 +61,7 @@ class ScreenshotManager {
                 contentMode: .aspectFit,
                 options: options
             ) { image, _ in
-                continuation.resume(returning: image)
+                continuation.resume(returning: (asset.localIdentifier, image))
             }
         }
 

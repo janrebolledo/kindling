@@ -40,24 +40,22 @@ app.use('*', cors());
 
 // TODO: rename this endpoint to something better lol
 app.post('/ideas', async (c) => {
-  const screenshots: [string] = await c.req.json();
-  // console.log(body);
-  const aiLocationData = await Promise.all(
-    screenshots.map(
-      async (screenshot: string) => await parseScreenshot(screenshot),
-    ),
+  console.log('POST /ideas');
+  const screenshots: { string: string } = await c.req.json();
+  const aiLocationData: { [key: string]: ExtractionResult } = {};
+
+  await Promise.all(
+    Object.entries(screenshots).map(async ([key, value]) => {
+      aiLocationData[key] = await parseScreenshot(value);
+    }),
   );
-
-  console.log(aiLocationData[0]);
-
-  // return;
 
   // TODO: make database searching more thorough
   // reform prompt data to match database
   const { data, error } = await supabase
     .from('ideas')
     .select()
-    .textSearch('title', `${aiLocationData[0].item.venue}`, {
+    .textSearch('venue', `${Object.entries(aiLocationData)[0][1].item.venue}`, {
       type: 'websearch',
     });
 
@@ -69,9 +67,11 @@ app.post('/ideas', async (c) => {
     console.log(error);
   }
 
-  const places = await getLocationDetails(
-    `${aiLocationData[0].item.name} ${aiLocationData[0].item.location} ${aiLocationData[0].item.address}`,
-  );
+  const places = {};
+
+  // const places = await getLocationDetails(
+  //   `${aiLocationData[0].item.name} ${aiLocationData[0].item.location} ${aiLocationData[0].item.address}`,
+  // );
   // save query to supabase
 
   console.log({ data, places });

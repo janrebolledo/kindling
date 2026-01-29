@@ -15,13 +15,16 @@ let supabase = SupabaseClient(
 
 struct Item: Decodable, Identifiable {
     let id: Int
-    let title: String
-    let type: String
-    let description: String
-    let media_url: String
-    let location_address: String
-    let location_city: String
-    let location_type: String
-    let pricing: Int
+    let name: String?
+    let type: String?
+    let description: String?
+    let media_url: String?
+    let address: String?
+    let location: String?
+    let location_type: String?
     let duration: String?
+    let pricing: Int?
+    let date: String?
+    let time: String?
+    let venue: String?
 }
