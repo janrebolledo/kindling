@@ -46,49 +46,47 @@ struct OnboardingStartView: View {
                         title: "allow access to photos to start",
                         systemName: "heart.fill"
                     ) {
-                        screenshotManager.requestPhotoLibraryAccess {
-                            granted in
-                            guard granted else {
-                                print("Photo library access denied")
-                                return
-                            }
+                        Task {
+
+                            _ =
+                                await screenshotManager
+                                .requestPhotoLibraryAccess()
 
                             step = 2
-                            // Fetch screenshots
-                            screenshotManager.fetchScreenshots {
-                                screenshots in
-                                //                                screenshots = screenshots
-                                print("Found \(screenshots.count) screenshots")
 
-                                // Load first screenshot as example
-                                if let firstScreenshot = screenshots.first {
-                                    screenshotManager.loadImage(
-                                        from: firstScreenshot
-                                    ) { image in
-                                        if let image = image {
-                                            print(
-                                                "Loaded screenshot: \(image.size)"
-                                            )
-                                            // Use the image here
-                                            Task {
-                                                cards = try await uploadImage(
-                                                    fileName: "screenshot.png",
-                                                    image: image
-                                                )
-                                                print(cards)
-                                            }
-                                        }
+                            let screenshots =
+                                screenshotManager.fetchScreenshots()
+
+                            print("Found \(screenshots.count) screenshots")
+
+                            //                            let images: [UIImage] = try await screenshotManager.loadImage(
+                            //                                from: firstScreenshot
+                            //                            )
+
+                            let images: [UIImage] = await withTaskGroup(
+                                of: UIImage?.self
+                            ) { group in
+                                for screenshot in screenshots {
+                                    group.addTask {
+
+                                        return
+                                            try? await screenshotManager
+                                            .loadImage(from: screenshot)
                                     }
-
-                                    // Get metadata
-                                    let info =
-                                        screenshotManager
-                                        .getScreenshotInfo(
-                                            from: firstScreenshot
-                                        )
-                                    print("Screenshot info: \(info)")
                                 }
+
+                                var results = [UIImage]()
+                                for await result in group {
+                                    if result != nil {
+
+                                        results.append(result!)
+                                    }
+                                }
+                                return results
                             }
+
+                            cards = try await uploadImages(images: images)
+
                         }
                     }
 

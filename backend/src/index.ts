@@ -2,15 +2,15 @@ import 'bun';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { GoogleGenAI } from '@google/genai';
-import { parseScreenshotPrompt } from './prompts';
 import { createClient } from '@supabase/supabase-js';
+import { parseScreenshot, ExtractionResult } from './utils/parseScreenshot';
 
 const supabase = createClient(
   'https://bfbaqyhyxergcpsyhzcc.supabase.co',
   'sb_publishable_Q3wc-o2JVqIYPQVw47306w_zpKAE0VI',
 );
 
-const ai = new GoogleGenAI({
+export const ai = new GoogleGenAI({
   apiKey: Bun.env['GEMINI_API_KEY'],
 });
 
@@ -34,36 +34,30 @@ async function getLocationDetails(textQuery: String) {
   return data;
 }
 
-async function parseScreenshot(text: string) {
-  console.log('req started');
-
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash-lite-preview-09-2025',
-    contents: parseScreenshotPrompt + text,
-  });
-
-  const data = JSON.parse(response.text || '[]');
-  return data;
-}
-
 const app = new Hono();
 
 app.use('*', cors());
 
 // TODO: rename this endpoint to something better lol
-app.post('/v2/places', async (c) => {
-  const body = (await c.req.json()).entries;
-  // TODO: make prompt better
-  const aiLocationData = await parseScreenshot(body);
+app.post('/ideas', async (c) => {
+  const screenshots: [string] = await c.req.json();
+  // console.log(body);
+  const aiLocationData = await Promise.all(
+    screenshots.map(
+      async (screenshot: string) => await parseScreenshot(screenshot),
+    ),
+  );
 
-  console.log(aiLocationData);
+  console.log(aiLocationData[0]);
+
+  // return;
 
   // TODO: make database searching more thorough
   // reform prompt data to match database
   const { data, error } = await supabase
     .from('ideas')
     .select()
-    .textSearch('title', `${aiLocationData.item.location}`, {
+    .textSearch('title', `${aiLocationData[0].item.venue}`, {
       type: 'websearch',
     });
 
@@ -76,7 +70,7 @@ app.post('/v2/places', async (c) => {
   }
 
   const places = await getLocationDetails(
-    `${aiLocationData.item.name} ${aiLocationData.item.location} ${aiLocationData.item.address}`,
+    `${aiLocationData[0].item.name} ${aiLocationData[0].item.location} ${aiLocationData[0].item.address}`,
   );
   // save query to supabase
 

@@ -10,20 +10,31 @@ import Photos
 import UIKit
 import Vision
 
-func uploadImage(
-    fileName: String,
-    image: UIImage,
+func uploadImages(
+    images: [UIImage]
 ) async throws -> [Item] {
-    let text = await recognizeText(
-        in: image,
-        recognitionLevel: .accurate,
-        languages: ["en"],
-        usesLanguageCorrection: true
-    )
+    let entries: [String] = await withTaskGroup(of: String.self) { group in
+
+        for image in images {
+            group.addTask {
+                await recognizeText(
+                    in: image,
+                    recognitionLevel: .accurate,
+                    languages: ["en"],
+                    usesLanguageCorrection: true
+                )
+            }
+        }
+
+        var results: [String] = []
+        for await result in group {
+            results.append(result)
+        }
+        return results
+    }
 
     // TODO: make this a more permanent url, ie get this hosted!!
-    let url = URL(string: "http://10.110.198.101:3000/v2/places")
-    print("req start")
+    let url = URL(string: "http://localhost:3000/ideas")
 
     var urlRequest = URLRequest(url: url!)
     urlRequest.httpMethod = "POST"
@@ -33,10 +44,8 @@ func uploadImage(
         forHTTPHeaderField: "Content-Type"
     )
     urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
-    let body: [String: String] = [
-        "entries": text.joined(separator: "\n")
-    ]
-    urlRequest.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+    urlRequest.httpBody = try JSONSerialization.data(withJSONObject: entries)
 
     let (data, response) = try await URLSession.shared.data(for: urlRequest)
 

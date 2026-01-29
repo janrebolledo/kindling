@@ -8,54 +8,65 @@ import Photos
 import UIKit
 
 class ScreenshotManager {
-    
+
     // Request photo library access
-    func requestPhotoLibraryAccess(completion: @escaping (Bool) -> Void) {
-        PHPhotoLibrary.requestAuthorization { status in
-            DispatchQueue.main.async {
-                completion(status == .authorized || status == .limited)
-            }
-        }
+    func requestPhotoLibraryAccess() async -> Bool {
+        let status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+
+        return (status == .authorized || status == .limited)
     }
-    
+
     // Fetch all screenshots from the photo library
-    func fetchScreenshots(completion: @escaping ([PHAsset]) -> Void) {
+    func fetchScreenshots() -> [PHAsset] {
         let fetchOptions = PHFetchOptions()
-        
+
         // Filter for screenshots using mediaSubtypes
-        fetchOptions.predicate = NSPredicate(format: "mediaSubtypes == %d", PHAssetMediaSubtype.photoScreenshot.rawValue)
-        
+        fetchOptions.predicate = NSPredicate(
+            format: "mediaSubtypes == %d",
+            PHAssetMediaSubtype.photoScreenshot.rawValue
+        )
+
         // Sort by creation date (newest first)
-        fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-        
-        let screenshots = PHAsset.fetchAssets(with: .image, options: fetchOptions)
-        
+        fetchOptions.sortDescriptors = [
+            NSSortDescriptor(key: "creationDate", ascending: false)
+        ]
+
+        let screenshots = PHAsset.fetchAssets(
+            with: .image,
+            options: fetchOptions
+        )
+
         var screenshotArray: [PHAsset] = []
         screenshots.enumerateObjects { asset, _, _ in
             screenshotArray.append(asset)
         }
-        
-        completion(screenshotArray)
+
+        return screenshotArray
     }
-    
+
     // Load image from PHAsset
-    func loadImage(from asset: PHAsset, targetSize: CGSize = PHImageManagerMaximumSize, completion: @escaping (UIImage?) -> Void) {
+    func loadImage(
+        from asset: PHAsset,
+        targetSize: CGSize = PHImageManagerMaximumSize,
+
+    ) async throws -> UIImage? {
         let options = PHImageRequestOptions()
         options.isSynchronous = false
         options.deliveryMode = .highQualityFormat
-        
-        PHImageManager.default().requestImage(
-            for: asset,
-            targetSize: targetSize,
-            contentMode: .aspectFit,
-            options: options
-        ) { image, _ in
-            DispatchQueue.main.async {
-                completion(image)
+
+        return try await withCheckedThrowingContinuation { continuation in
+            PHImageManager.default().requestImage(
+                for: asset,
+                targetSize: targetSize,
+                contentMode: .aspectFit,
+                options: options
+            ) { image, _ in
+                continuation.resume(returning: image)
             }
         }
+
     }
-    
+
     // Get screenshot metadata
     func getScreenshotInfo(from asset: PHAsset) -> [String: Any] {
         return [
@@ -63,7 +74,7 @@ class ScreenshotManager {
             "modificationDate": asset.modificationDate ?? Date(),
             "pixelWidth": asset.pixelWidth,
             "pixelHeight": asset.pixelHeight,
-            "localIdentifier": asset.localIdentifier
+            "localIdentifier": asset.localIdentifier,
         ]
     }
 }
