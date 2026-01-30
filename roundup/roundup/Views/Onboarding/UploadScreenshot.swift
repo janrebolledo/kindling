@@ -10,14 +10,20 @@ import Photos
 import UIKit
 import Vision
 
+
 struct Upload: Codable {
     let id: String
     let text: String
 }
 
+struct ItemWrapper: Decodable, Identifiable {
+    let id: String
+    let data: Item
+}
+
 func uploadImages(
     images: [(String, UIImage?)]
-) async throws -> [Item] {
+) async throws -> [ItemWrapper] {
     let entries: [Upload] = await withTaskGroup(
         of: (String, String).self
     ) { group in
@@ -42,7 +48,6 @@ func uploadImages(
         }
         return results
     }
-    print(entries)
 
     // TODO: make this a more permanent url, ie get this hosted!!
     let url = URL(string: "http://localhost:3000/ideas")
@@ -67,7 +72,7 @@ func uploadImages(
     print(data)
 
     let decoder = JSONDecoder()
-    let items = try decoder.decode([Item].self, from: data)
+    let items = try decoder.decode([ItemWrapper].self, from: data)
     print(items)
 
     return items

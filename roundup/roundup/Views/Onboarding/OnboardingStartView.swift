@@ -10,7 +10,7 @@ import SwiftUI
 
 struct OnboardingStartView: View {
     @Binding var step: Int
-    @Binding var cards: [Item]
+    @Binding var cards: [ItemWrapper]
     @State private var screenshotManager = ScreenshotManager()
     var screenshots: [PHAsset] = []
 

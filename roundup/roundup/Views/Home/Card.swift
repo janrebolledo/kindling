@@ -39,7 +39,7 @@ struct Card: View {
                         .foregroundStyle(.white.opacity(0.5))
                 }
                 Spacer()
-                Text(card.name!)
+                Text(card.venue!)
                     .font(.editorialNew(.regular, size: 24))
                     .foregroundStyle(.white)
 
@@ -75,11 +75,11 @@ struct Card: View {
         .frame(height: 200)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .contentShape(RoundedRectangle(cornerRadius: 24))
-        .task {
-            player = AVPlayer(url: URL(string: card.media_url!)!)
-            player?.isMuted = true
-            player?.play()
-        }
+//        .task {
+//            player = AVPlayer(url: URL(string: card.media_url!)!)
+//            player?.isMuted = true
+//            player?.play()
+//        }
 
     }
 }

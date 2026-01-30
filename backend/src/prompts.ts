@@ -95,6 +95,7 @@ Special Cases:
 
 OUTPUT FORMAT
 Respond ONLY with valid JSON. Do NOT include \`\`\`json or any other markdown formatting. Use title case for name, venue, location, address.
+This is a batch request, return an array of JSON objects.
 
 Structure:
 {
@@ -218,6 +219,15 @@ Output:
   "status": "skipped",
   "reason": "Not from social media, text messages, or comment sections",
   "item": null
+}
+
+For the final output, include the image ID in the object
+
+Example
+
+{
+  "id": $id,
+  "data": $data,
 }
 
 CRITICAL REMINDERS

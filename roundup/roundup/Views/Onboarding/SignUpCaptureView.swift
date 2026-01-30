@@ -9,7 +9,7 @@ internal import PostgREST
 import Supabase
 
 struct SignUpCaptureView: View {
-    @Binding var cards: [Item]
+    @Binding var cards: [ItemWrapper]
     @State private var screenshotManager = ScreenshotManager()
     
     var body: some View {
@@ -50,7 +50,7 @@ struct SignUpCaptureView: View {
 
             VStack {
                 ForEach(cards) { card in
-                    Card(card: card)
+                    Card(card: card.data)
                         .padding(.horizontal)
                 }
             }
