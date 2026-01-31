@@ -77,10 +77,11 @@ Extract the following when available in the OCR text:
    - "food": Restaurants, cafes, bars, food trucks, bakeries
    - Use the most appropriate tag based on the primary purpose
 
-8. **activity_type**: Type of activity (only for tag="activity")
-   - Examples: "outdoors", "hiking", "trail", "water activity", "indoor", "art", "sports"
-   - Set to null for events and food
-   - Only populate if it's an activity
+8. **activity_type**: Type of activity
+   - Examples: "⛰️ Outdoors", "🎷 Music", "☕ Coffee Shop", "🎡 Festival", "🏅 Sports", "️🎨 Art", "🍽️ Restaurant", "🍦 Dessert"
+
+9. **description**: A soft description of item
+   - Examples: "A whimsical, picturesque, hiking trail surrounded by mooing friends.", "A Mexico City inspired cafe framed by the LA Metro."
 
 Handling Missing Information:
 - Do NOT use web search or external lookups
@@ -110,6 +111,7 @@ Structure:
     "time": "HH:MM AM/PM or null",
     "tag": "activity" | "event" | "food",
     "activity_type": "string or null"
+    "description": "string"
   }
 }
 
@@ -130,7 +132,8 @@ Output:
     "date": "2024-07-15",
     "time": "6:00 PM",
     "tag": "event",
-    "activity_type": null
+    "activity_type": "🎷 Music",
+    "description": "A sunny little jazz portal in Griffith Park, where the hills hum and the trees keep time."
   }
 }
 
@@ -149,7 +152,8 @@ Output:
     "date": null,
     "time": null,
     "tag": "food",
-    "activity_type": null
+    "activity_type": "🍽️ Restaurant",
+    "description": "A cozy Inland Empire wine haven where vinyl spins, glasses clink, and time walks barefoot."
   }
 }
 
@@ -168,7 +172,8 @@ Output:
     "date": null,
     "time": null,
     "tag": "activity",
-    "activity_type": "hiking"
+    "activity_type": "⛰️ Outdoor",
+    "description": "A whimsical, picturesque, hiking trail surrounded by mooing friends."
   }
 }
 
@@ -187,7 +192,8 @@ Output:
     "date": null,
     "time": null,
     "tag": "event",
-    "activity_type": null
+    "activity_type": "🎷 Music",
+    "description": "A vintage americana coffeehouse where musicians and creatives find their flock."
   }
 }
 

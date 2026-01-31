@@ -64,7 +64,6 @@ class ScreenshotManager {
                 continuation.resume(returning: (asset.localIdentifier, image))
             }
         }
-
     }
 
     // Get screenshot metadata
@@ -76,5 +75,37 @@ class ScreenshotManager {
             "pixelHeight": asset.pixelHeight,
             "localIdentifier": asset.localIdentifier,
         ]
+    }
+}
+
+func loadImage(
+    from id: String,
+    targetSize: CGSize = PHImageManagerMaximumSize,
+
+) async throws -> UIImage? {
+    let fetchOptions = PHFetchOptions()
+    let fetchResult = PHAsset.fetchAssets(
+        withLocalIdentifiers: [id],
+        options: fetchOptions
+    )
+
+    guard let asset = fetchResult.firstObject else {
+        print("was unable to fetch asset :(")
+        return nil
+    }
+
+    let options = PHImageRequestOptions()
+    options.isSynchronous = false
+    options.deliveryMode = .highQualityFormat
+
+    return try await withCheckedThrowingContinuation { continuation in
+        PHImageManager.default().requestImage(
+            for: asset,
+            targetSize: targetSize,
+            contentMode: .aspectFit,
+            options: options
+        ) { image, _ in
+            continuation.resume(returning: image)
+        }
     }
 }

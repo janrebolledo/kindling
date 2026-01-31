@@ -50,10 +50,10 @@ struct ContentView: View {
             .frame(height: 350)
 
             VStack {
-                ForEach(cards) { card in
-                    Card(card: card)
-                        .padding(.horizontal)
-                }
+//                ForEach(cards) { card in
+//                    Card(card: card)
+//                        .padding(.horizontal)
+//                }
             }
             .task {
                 do {

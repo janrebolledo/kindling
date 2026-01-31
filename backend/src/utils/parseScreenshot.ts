@@ -34,6 +34,7 @@ export type ExtractionResult = {
       time: string | null;
       tag: ExtractionTag;
       activity_type: string | null;
+      description: string | null;
     };
   };
 };

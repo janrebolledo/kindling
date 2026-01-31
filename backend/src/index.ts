@@ -4,6 +4,8 @@ import { cors } from 'hono/cors';
 import { GoogleGenAI } from '@google/genai';
 import { createClient } from '@supabase/supabase-js';
 import { parseScreenshot } from './utils/parseScreenshot';
+import { mapPriceLevelToInt } from './utils/mapPriceLevelToInt';
+import { generateUniqueId } from './utils/generateUniqueId';
 
 const supabase = createClient(
   'https://bfbaqyhyxergcpsyhzcc.supabase.co',
@@ -31,7 +33,25 @@ async function getLocationDetails(textQuery: String) {
   );
   const data = await response.json();
 
-  return data;
+  if (data.places[0].photos == undefined) {
+    return { data, image: null };
+  }
+
+  const image = (
+    await fetch(
+      `https://places.googleapis.com/v1/${data.places[0].photos[0].name}/media?key=${Bun.env['GOOGLE_MAPS_API_KEY']}&maxHeightPx=1600`,
+      {
+        method: 'GET',
+        // @ts-ignore
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': Bun.env['GOOGLE_MAPS_API_KEY'],
+        },
+      },
+    )
+  ).url;
+
+  return { data, image };
 }
 
 const app = new Hono();
@@ -44,6 +64,7 @@ app.post('/ideas', async (c) => {
   const screenshots: [{ id: string; text: string }] = await c.req.json();
   const aiLocationData = await parseScreenshot(JSON.stringify(screenshots));
 
+  // todo: implement edge workers, database/api racing, & streaming response
   const results = await Promise.all(
     aiLocationData.map(async (entry) => {
       const { id, data } = entry;
@@ -66,29 +87,47 @@ app.post('/ideas', async (c) => {
         return {
           id,
           data: matches[0],
-          // error,
+          error,
         };
 
       console.log('no matches found :( searching maps api');
-      const mapsLocationData = await (
-        await getLocationDetails(
-          `${data.item.venue ?? ''} ${data.item.location ?? ''} ${data.item.address ?? ''}`,
-        )
-      ).places[0];
+      const mapsData = await getLocationDetails(
+        `${data.item.venue ?? ''} ${data.item.location ?? ''} ${data.item.address ?? ''}`,
+      );
+      const mapsLocationData = mapsData.data.places[0];
 
-      // post this to supabase
+      const city = mapsLocationData.addressComponents.filter(
+        (i: {
+          longText: string;
+          shortText: string;
+          types: [string];
+          languageCode: string;
+        }) => i.types.includes('locality') && i.types.includes('political'),
+      )[0].longText;
+      const state = mapsLocationData.addressComponents.filter(
+        (i: {
+          longText: string;
+          shortText: string;
+          types: [string];
+          languageCode: string;
+        }) =>
+          i.types.includes('administrative_area_level_1') &&
+          i.types.includes('political'),
+      )[0].longText;
+
       const newIdea = {
-        // id: crypto.randomUUID(),
-        // created_at: new Date().toISOString(),
+        id: generateUniqueId(),
         name: data.item.name ?? null,
-        type: data.item.activity_type ?? null,
-        // description: mapsLocationData.generativeSummary.overview.text,
-        media_url: '', //figure this out pls
+        type: data.item.tag ?? null,
+        description: mapsLocationData.generativeSummary
+          ? mapsLocationData.generativeSummary.overview.text
+          : data.item.description,
+        media_url: mapsData.image ?? null,
         address: mapsLocationData.formattedAddress,
-        location: `${mapsLocationData.addressComponents[2].longText}, ${mapsLocationData.addressComponents[4].longText}`,
-        location_type: '',
+        location: `${city}, ${state}`,
+        location_type: data.item.activity_type ?? null,
         duration: null,
-        pricing: 0, // map the google 'inexpensive' tags to ints
+        pricing: mapPriceLevelToInt(mapsLocationData.priceLevel),
         date: data.item.date ?? null,
         time: data.item.time ?? null,
         venue: mapsLocationData.displayName.text,
@@ -105,6 +144,8 @@ app.post('/ideas', async (c) => {
       };
     }),
   );
+
+  console.log(results);
 
   return c.json(results.filter((i) => i != null));
 });

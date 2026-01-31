@@ -48,9 +48,9 @@ struct SignUpCaptureView: View {
             }
             .frame(height: 350)
 
-            VStack {
+            VStack(spacing: 24) {
                 ForEach(cards) { card in
-                    Card(card: card.data)
+                    Card(card: card)
                         .padding(.horizontal)
                 }
             }
