@@ -11,6 +11,7 @@ import SwiftUI
 struct OnboardingStartView: View {
     @Binding var step: Int
     @Binding var cards: [ItemWrapper]
+    @Binding var screenshotCount: Int
     @State private var screenshotManager = ScreenshotManager()
     var screenshots: [PHAsset] = []
 
@@ -54,10 +55,12 @@ struct OnboardingStartView: View {
 
                             step = 2
 
-                            let screenshots =
-                            screenshotManager.fetchScreenshots().prefix(5)
-
-                            print("Found \(screenshots.count) screenshots")
+                            var screenshots =
+                                screenshotManager.fetchScreenshots()
+                            screenshotCount = screenshots.count
+                            screenshots =
+                                Array(screenshots.prefix(5))
+                            print("Parsing \(screenshots.count) screenshots")
 
                             let images: [(String, UIImage?)] =
                                 await withTaskGroup(

@@ -33,6 +33,10 @@ async function getLocationDetails(textQuery: String) {
   );
   const data = await response.json();
 
+  if (data.places == undefined) {
+    return null;
+  }
+
   if (data.places[0].photos == undefined) {
     return { data, image: null };
   }
@@ -69,12 +73,14 @@ app.post('/ideas', async (c) => {
     aiLocationData.map(async (entry) => {
       const { id, data } = entry;
       if (
+        data == null ||
         data.status != 'success' ||
         data.item == null ||
         data.item.venue == null
       ) {
         return;
       }
+      console.log(data);
 
       const { data: matches, error } = await supabase
         .from('ideas')
@@ -94,7 +100,7 @@ app.post('/ideas', async (c) => {
       const mapsData = await getLocationDetails(
         `${data.item.venue ?? ''} ${data.item.location ?? ''} ${data.item.address ?? ''}`,
       );
-      const mapsLocationData = mapsData.data.places[0];
+      const mapsLocationData = mapsData?.data.places[0];
 
       const city = mapsLocationData.addressComponents.filter(
         (i: {
@@ -122,7 +128,7 @@ app.post('/ideas', async (c) => {
         description: mapsLocationData.generativeSummary
           ? mapsLocationData.generativeSummary.overview.text
           : data.item.description,
-        media_url: mapsData.image ?? null,
+        media_url: mapsData?.image ?? null,
         address: mapsLocationData.formattedAddress,
         location: `${city}, ${state}`,
         location_type: data.item.activity_type ?? null,
@@ -144,8 +150,6 @@ app.post('/ideas', async (c) => {
       };
     }),
   );
-
-  console.log(results);
 
   return c.json(results.filter((i) => i != null));
 });

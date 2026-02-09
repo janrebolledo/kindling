@@ -50,6 +50,13 @@ struct ContentView: View {
             .frame(height: 350)
 
             VStack {
+                Button("hi") {
+                    Task {
+                        do {
+                            try await supabase.auth.signOut()
+                        }
+                    }
+                }
 //                ForEach(cards) { card in
 //                    Card(card: card)
 //                        .padding(.horizontal)
@@ -61,6 +68,7 @@ struct ContentView: View {
                     cards = try await supabase.from("ideas").select().execute()
                         .value
                     print(cards)
+                    // TODO: find out why cards arent being returned :(
                 } catch {
                     //                dump(error)
                 }
