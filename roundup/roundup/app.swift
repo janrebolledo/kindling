@@ -5,8 +5,8 @@
 //  Created by Jan Rebolledo on 1/14/26.
 //
 
-import SwiftUI
 import Supabase
+import SwiftUI
 
 @main
 struct AppEntry: App {
@@ -17,11 +17,11 @@ struct AppEntry: App {
 
         WindowGroup {
             Group {
-//                if !authenticated {
+                if !authenticated {
                     OnboardingView()
-//                } else {
-//                    ContentView()
-//                }
+                } else {
+                    ContentView()
+                }
             }
             .task {
                 for await state in supabase.auth.authStateChanges {
@@ -29,7 +29,6 @@ struct AppEntry: App {
                         state.event
                     ) {
                         authenticated = state.session != nil
-                        print(authenticated)
                     }
                 }
             }

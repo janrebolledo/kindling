@@ -142,8 +142,6 @@ struct SignUpView: View {
                             password: "example-password"
                         )
                         result = .success(())
-                        // TODO: delete this next line to prevent lots of extra collections being made lol
-                        await InitializeCollection(items: cards)
                     }
                 }
             } catch {

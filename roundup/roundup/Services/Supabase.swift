@@ -27,4 +27,21 @@ struct Item: Decodable, Identifiable {
     let date: String?
     let time: String?
     let venue: String?
+    let created_at: String?
+}
+
+struct collection: Encodable, Identifiable {
+    let id: Int
+    let name: String?
+    let emoji: String?
+    let user_id: UUID?
+}
+
+struct collection_item: Encodable, Decodable, Identifiable {
+    let id: Int
+    let created_at: String?
+    let local_id: String
+    let idea_id: Int
+    let user_id: UUID
+    let collection_id: Int
 }

@@ -9,7 +9,7 @@ import { generateUniqueId } from './utils/generateUniqueId';
 
 const supabase = createClient(
   'https://bfbaqyhyxergcpsyhzcc.supabase.co',
-  'sb_publishable_Q3wc-o2JVqIYPQVw47306w_zpKAE0VI',
+  Bun.env['SUPABASE_API_KEY']!,
 );
 
 export const ai = new GoogleGenAI({
@@ -152,13 +152,6 @@ app.post('/ideas', async (c) => {
   );
 
   return c.json(results.filter((i) => i != null));
-});
-
-app.get('/', async (c) => {
-  return c.json([
-    { response: 'helloooooo', id: 200 },
-    { response: 'helloooooo', id: 202 },
-  ]);
 });
 
 export default app;
