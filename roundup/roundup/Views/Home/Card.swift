@@ -114,6 +114,7 @@ struct HomeCard: View {
                 if card.ideas?.media_url != nil {
                     AsyncImage(url: URL(string: (card.ideas?.media_url!)!)) {
                         image in
+                        image.image?.resizable()
                             .scaledToFill()
                             .frame(
                                 width: geometry.size.width,
