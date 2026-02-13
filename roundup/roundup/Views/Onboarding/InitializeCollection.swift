@@ -32,7 +32,6 @@ func InitializeCollection(items: [ItemWrapper]) async {
                     idea_id: item.data.id,
                     user_id: userId!,
                     collection_id: newCollection.id
-
                 )
             )
         }

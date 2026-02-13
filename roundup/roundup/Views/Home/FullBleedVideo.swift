@@ -16,6 +16,7 @@ struct FullBleedVideo: UIViewRepresentable {
         let view = PlayerView()
         view.playerLayer.player = player
         view.playerLayer.videoGravity = .resizeAspectFill
+        player.isMuted = true
         return view
     }
 

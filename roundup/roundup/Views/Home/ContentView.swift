@@ -93,10 +93,6 @@ struct ContentView: View {
                 }
                 .padding()
 
-                //                ForEach(cards) { card in
-                //                    Card(card: card)
-                //                        .padding(.horizontal)
-                //                }
             }
             .task {
                 do {

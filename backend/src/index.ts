@@ -1,5 +1,6 @@
 import 'bun';
 import { Hono } from 'hono';
+import { streamSSE } from 'hono/streaming';
 import { cors } from 'hono/cors';
 import { GoogleGenAI } from '@google/genai';
 import { createClient } from '@supabase/supabase-js';
@@ -62,96 +63,116 @@ const app = new Hono();
 
 app.use('*', cors());
 
+app.use('*', async (c, next) => {
+  const start = Date.now();
+  await next();
+  const ms = Date.now() - start;
+  console.log(`${c.req.method} ${c.req.path} ${ms}ms`);
+});
+
+type IdeaResult = { id: string; data: Record<string, unknown>; error?: unknown };
+
+async function processEntry(
+  entry: { id: string; data: unknown },
+): Promise<IdeaResult | undefined> {
+  const { id, data } = entry;
+  if (
+    data == null ||
+    (data as { status?: string }).status != 'success' ||
+    (data as { item?: { venue?: string } }).item == null ||
+    (data as { item?: { venue?: string } }).item!.venue == null
+  ) {
+    return undefined;
+  }
+  const item = (data as { item: Record<string, unknown> }).item;
+  const venue = (item.venue ?? '') as string;
+  const location = (item.location ?? '') as string;
+  const address = (item.address ?? '') as string;
+  const query = `${venue} ${location} ${address}`.trim();
+
+  // Database/API racing: run Supabase and Maps in parallel
+  const [supabaseResult, mapsData] = await Promise.all([
+    supabase
+      .from('ideas')
+      .select()
+      .textSearch('venue', venue, { type: 'websearch' }),
+    getLocationDetails(query),
+  ]);
+
+  const { data: matches, error } = supabaseResult;
+  if (matches && matches.length > 0) {
+    return { id, data: matches[0] as Record<string, unknown>, error };
+  }
+
+  if (!mapsData?.data?.places?.[0]) {
+    return undefined;
+  }
+  const mapsLocationData = mapsData.data.places[0] as {
+    addressComponents: Array<{
+      longText: string;
+      types: string[];
+    }>;
+    generativeSummary?: { overview?: { text?: string } };
+    formattedAddress?: string;
+    priceLevel?: string;
+    displayName?: { text?: string };
+  };
+  const cityComp = mapsLocationData.addressComponents?.find(
+    (i) => i.types?.includes('locality') && i.types?.includes('political'),
+  );
+  const stateComp = mapsLocationData.addressComponents?.find(
+    (i) =>
+      i.types?.includes('administrative_area_level_1') &&
+      i.types?.includes('political'),
+  );
+  const city = cityComp?.longText ?? '';
+  const state = stateComp?.longText ?? '';
+
+  const newIdea = {
+    id: generateUniqueId(),
+    name: (item.name as string | null) ?? null,
+    type: (item.tag as string | null) ?? null,
+    description: mapsLocationData.generativeSummary?.overview?.text ?? (item.description as string | null) ?? null,
+    media_url: mapsData?.image ?? null,
+    address: mapsLocationData.formattedAddress ?? null,
+    location: `${city}${city && state ? ', ' : ''}${state}`.trim() || null,
+    location_type: (item.activity_type as string | null) ?? null,
+    duration: null,
+    pricing: mapPriceLevelToInt(mapsLocationData.priceLevel ?? 'PRICE_LEVEL_UNSPECIFIED'),
+    date: (item.date as string | null) ?? null,
+    time: (item.time as string | null) ?? null,
+    venue: mapsLocationData.displayName?.text ?? (item.venue as string) ?? null,
+  };
+
+  const { error: uploadError } = await supabase.from('ideas').insert([newIdea]);
+  return { id, data: newIdea as Record<string, unknown>, error: uploadError };
+}
+
 // TODO: rename this endpoint to something better lol
 app.post('/ideas', async (c) => {
   console.log('POST /ideas');
   const screenshots: [{ id: string; text: string }] = await c.req.json();
   const aiLocationData = await parseScreenshot(JSON.stringify(screenshots));
 
-  // todo: implement edge workers, database/api racing, & streaming response
-  const results = await Promise.all(
-    aiLocationData.map(async (entry) => {
-      const { id, data } = entry;
-      if (
-        data == null ||
-        data.status != 'success' ||
-        data.item == null ||
-        data.item.venue == null
-      ) {
-        return;
-      }
-      console.log(data);
-
-      const { data: matches, error } = await supabase
-        .from('ideas')
-        .select()
-        .textSearch('venue', data.item.venue!, {
-          type: 'websearch',
-        });
-
-      if (matches && matches.length > 0)
-        return {
-          id,
-          data: matches[0],
-          error,
-        };
-
-      console.log('no matches found :( searching maps api');
-      const mapsData = await getLocationDetails(
-        `${data.item.venue ?? ''} ${data.item.location ?? ''} ${data.item.address ?? ''}`,
-      );
-      const mapsLocationData = mapsData?.data.places[0];
-
-      const city = mapsLocationData.addressComponents.filter(
-        (i: {
-          longText: string;
-          shortText: string;
-          types: [string];
-          languageCode: string;
-        }) => i.types.includes('locality') && i.types.includes('political'),
-      )[0].longText;
-      const state = mapsLocationData.addressComponents.filter(
-        (i: {
-          longText: string;
-          shortText: string;
-          types: [string];
-          languageCode: string;
-        }) =>
-          i.types.includes('administrative_area_level_1') &&
-          i.types.includes('political'),
-      )[0].longText;
-
-      const newIdea = {
-        id: generateUniqueId(),
-        name: data.item.name ?? null,
-        type: data.item.tag ?? null,
-        description: mapsLocationData.generativeSummary
-          ? mapsLocationData.generativeSummary.overview.text
-          : data.item.description,
-        media_url: mapsData?.image ?? null,
-        address: mapsLocationData.formattedAddress,
-        location: `${city}, ${state}`,
-        location_type: data.item.activity_type ?? null,
-        duration: null,
-        pricing: mapPriceLevelToInt(mapsLocationData.priceLevel),
-        date: data.item.date ?? null,
-        time: data.item.time ?? null,
-        venue: mapsLocationData.displayName.text,
-      };
-
-      const { error: uploadError } = await supabase
-        .from('ideas')
-        .insert([newIdea]);
-
-      return {
-        id,
-        data: newIdea,
-        error: uploadError,
-      };
-    }),
-  );
-
-  return c.json(results.filter((i) => i != null));
+  return streamSSE(c, async (stream) => {
+    await Promise.all(
+      aiLocationData.map(async (entry) => {
+        try {
+          const result = await processEntry(entry);
+          if (result != null) {
+            await stream.writeSSE({
+              data: JSON.stringify(result),
+              event: 'idea',
+            });
+          }
+        } catch (err) {
+          console.error('processEntry error', err);
+        }
+      }),
+    );
+    await stream.writeSSE({ event: 'done', data: '' });
+    await stream.close();
+  });
 });
 
 export default app;

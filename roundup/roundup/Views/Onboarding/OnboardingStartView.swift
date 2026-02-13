@@ -12,7 +12,9 @@ struct OnboardingStartView: View {
     @Binding var step: Int
     @Binding var cards: [ItemWrapper]
     @Binding var screenshotCount: Int
+    @Binding var firstCardLoaded: Bool
     @State private var screenshotManager = ScreenshotManager()
+    @State private var buttonPressed: Bool = false
     var screenshots: [PHAsset] = []
 
     var body: some View {
@@ -25,7 +27,7 @@ struct OnboardingStartView: View {
 
                 LinearGradient(
                     colors: [
-                        .white.opacity(0), .white.opacity(0),
+                        .white.opacity(0), .white.opacity(1),
                         .white.opacity(1),
                     ],
                     startPoint: .top,
@@ -53,7 +55,10 @@ struct OnboardingStartView: View {
                                 await screenshotManager
                                 .requestPhotoLibraryAccess()
 
-                            step = 2
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                buttonPressed = true
+                                step = 2
+                            }
 
                             var screenshots =
                                 screenshotManager.fetchScreenshots()
@@ -83,8 +88,22 @@ struct OnboardingStartView: View {
                                     return results
                                 }
 
-                            cards = try await uploadImages(images: images)
-
+                            do {
+                                cards = []
+                                for try await item in uploadImagesStreaming(
+                                    images: images
+                                ) {
+                                    await MainActor.run {
+                                        firstCardLoaded = true
+                                        if firstCardLoaded == true && step == 2 {
+                                            step = 3
+                                        }
+                                        cards.append(item)
+                                    }
+                                }
+                            } catch {
+                                print("upload error: \(error)")
+                            }
                         }
                     }
 
@@ -144,5 +163,6 @@ struct OnboardingStartView: View {
             }
         }
         .ignoresSafeArea()
+        .opacity(buttonPressed ? 0 : 1)
     }
 }

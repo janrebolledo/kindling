@@ -9,7 +9,7 @@ import SwiftUI
 struct StyledButton: View {
     var title: String
     var systemName: String?
-    var action: () -> Void
+    var action: () -> Void?
 
     var body: some View {
         Button(action: {

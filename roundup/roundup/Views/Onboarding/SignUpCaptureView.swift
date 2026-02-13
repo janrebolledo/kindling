@@ -18,12 +18,12 @@ struct SignUpCaptureView: View {
         ScrollView {
             ZStack(alignment: .leading) {
 
-                Image("background")
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(maxWidth: .infinity, minHeight: 350)
-                    .clipped()
-
+//                Image("background")
+//                    .resizable()
+//                    .aspectRatio(contentMode: .fill)
+//                    .frame(maxWidth: .infinity, minHeight: 350)
+//                    .clipped()
+//
                 LinearGradient(
                     gradient: Gradient(colors: [
                         .white.opacity(0),
