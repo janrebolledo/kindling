@@ -10,17 +10,17 @@ internal import PostgREST
 import Supabase
 import SwiftUI
 
-struct collectionWrapper: Decodable, Identifiable {
+struct CollectionWrapper: Decodable, Identifiable {
     let id: Int
     let created_at: String
     let name: String
     let emoji: String
     let user_id: UUID
-    let collection_items: [collectionItemWrapper]?
+    let collection_items: [CollectionItemWrapper]?
 
 }
 
-struct collectionItemWrapper: Decodable, Identifiable {
+struct CollectionItemWrapper: Decodable, Identifiable, CardData {
     let id: Int
     let created_at: String
     let local_id: String
@@ -31,7 +31,7 @@ struct collectionItemWrapper: Decodable, Identifiable {
 }
 
 struct ContentView: View {
-    @State private var collections: [collectionWrapper] = []
+    @State private var collections: [CollectionWrapper] = []
 
     var body: some View {
 
@@ -84,7 +84,7 @@ struct ContentView: View {
                         if collection.collection_items != nil {
                             ForEach(collection.collection_items!) { item in
 
-                                HomeCard(card: item)
+                                Card(card: item)
                                 //                                .padding(.horizontal)
                             }
                         }

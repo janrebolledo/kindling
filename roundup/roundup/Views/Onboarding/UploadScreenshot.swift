@@ -15,15 +15,26 @@ struct Upload: Codable {
     let text: String
 }
 
-struct ItemWrapper: Decodable, Identifiable {
-    let id: String
-    let data: Item
+// ItemWrapper and collectionItemWrapper will conform to this protocol
+
+protocol CardData {
+    var id: Int { get }
+    var local_id: String { get }
+    var ideas: Item? { get }
+}
+
+struct ItemWrapper: Decodable, Identifiable, CardData {
+    let id: Int
+    let local_id: String
+    let ideas: Item?
 }
 
 private let ideasURL = URL(string: "http://localhost:3000/ideas")!
 
 /// Builds the OCR entries and shared request for POST /ideas. Caller sets body and uses for streaming or single response.
-private func makeEntriesAndRequest(entries: [Upload]) throws -> (URLRequest, [Upload]) {
+private func makeEntriesAndRequest(entries: [Upload]) throws -> (
+    URLRequest, [Upload]
+) {
     var urlRequest = URLRequest(url: ideasURL)
     urlRequest.httpMethod = "POST"
     urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -39,7 +50,9 @@ func uploadImagesStreaming(
     AsyncThrowingStream { continuation in
         Task {
             do {
-                let entries: [Upload] = await withTaskGroup(of: (String, String).self) { group in
+                let entries: [Upload] = await withTaskGroup(
+                    of: (String, String).self
+                ) { group in
                     for image in images {
                         group.addTask {
                             (
@@ -60,13 +73,25 @@ func uploadImagesStreaming(
                     return results
                 }
 
-                let (urlRequest, _) = try makeEntriesAndRequest(entries: entries)
-                let (bytes, response) = try await URLSession.shared.bytes(for: urlRequest)
+                let (urlRequest, _) = try makeEntriesAndRequest(
+                    entries: entries
+                )
+                let (bytes, response) = try await URLSession.shared.bytes(
+                    for: urlRequest
+                )
 
                 guard let httpResponse = response as? HTTPURLResponse,
-                      (200 ..< 300).contains(httpResponse.statusCode)
+                    (200..<300).contains(httpResponse.statusCode)
                 else {
-                    continuation.finish(throwing: NSError(domain: "UploadScreenshot", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"]))
+                    continuation.finish(
+                        throwing: NSError(
+                            domain: "UploadScreenshot",
+                            code: -1,
+                            userInfo: [
+                                NSLocalizedDescriptionKey: "Invalid response"
+                            ]
+                        )
+                    )
                     return
                 }
 
@@ -78,28 +103,46 @@ func uploadImagesStreaming(
                     while true {
                         var idx = 0
                         while idx + 1 < byteBuffer.count {
-                            if byteBuffer[idx] == doubleNewline[0], byteBuffer[idx + 1] == doubleNewline[1] { break }
+                            if byteBuffer[idx] == doubleNewline[0],
+                                byteBuffer[idx + 1] == doubleNewline[1]
+                            {
+                                break
+                            }
                             idx += 1
                         }
                         guard idx + 1 < byteBuffer.count else { break }
                         let eventBytes = Array(byteBuffer[..<idx])
                         byteBuffer.removeFirst(idx + 2)
-                        guard let eventBlock = String(bytes: eventBytes, encoding: .utf8) else { break }
-                        let eventType = eventBlock.split(separator: "\n").reduce(into: (event: "", data: "")) { acc, line in
-                            let s = String(line)
-                            if s.hasPrefix("event: ") {
-                                acc.event = String(s.dropFirst(7)).trimmingCharacters(in: .whitespaces)
-                            } else if s.hasPrefix("data: ") {
-                                acc.data = (acc.data.isEmpty ? "" : acc.data + "\n") + String(s.dropFirst(6))
+                        guard
+                            let eventBlock = String(
+                                bytes: eventBytes,
+                                encoding: .utf8
+                            )
+                        else { break }
+                        let eventType = eventBlock.split(separator: "\n")
+                            .reduce(into: (event: "", data: "")) { acc, line in
+                                let s = String(line)
+                                if s.hasPrefix("event: ") {
+                                    acc.event = String(s.dropFirst(7))
+                                        .trimmingCharacters(in: .whitespaces)
+                                } else if s.hasPrefix("data: ") {
+                                    acc.data =
+                                        (acc.data.isEmpty
+                                            ? "" : acc.data + "\n")
+                                        + String(s.dropFirst(6))
+                                }
                             }
-                        }
                         if eventType.event == "done" {
                             continuation.finish()
                             return
                         }
                         if eventType.event == "idea", !eventType.data.isEmpty {
                             if let data = eventType.data.data(using: .utf8),
-                               let wrapper = try? decoder.decode(ItemWrapper.self, from: data) {
+                                let wrapper = try? decoder.decode(
+                                    ItemWrapper.self,
+                                    from: data
+                                )
+                            {
                                 continuation.yield(wrapper)
                             }
                         }
@@ -118,5 +161,6 @@ func uploadImages(images: [(String, UIImage?)]) async throws -> [ItemWrapper] {
     for try await item in uploadImagesStreaming(images: images) {
         items.append(item)
     }
+    print(items)
     return items
 }

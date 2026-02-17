@@ -5,8 +5,6 @@
 //  Created by Jan Rebolledo on 1/26/26.
 //
 
-// OCRTextRecognizer.swift
-
 import UIKit
 import Vision
 

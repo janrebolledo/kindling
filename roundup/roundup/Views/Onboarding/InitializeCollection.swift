@@ -28,8 +28,8 @@ func InitializeCollection(items: [ItemWrapper]) async {
                 collection_item(
                     id: Int.random(in: 0...100_000_000),
                     created_at: nil,
-                    local_id: item.id,
-                    idea_id: item.data.id,
+                    local_id: item.local_id,
+                    idea_id: (item.ideas?.id)!,
                     user_id: userId!,
                     collection_id: newCollection.id
                 )

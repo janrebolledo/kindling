@@ -70,11 +70,17 @@ app.use('*', async (c, next) => {
   console.log(`${c.req.method} ${c.req.path} ${ms}ms`);
 });
 
-type IdeaResult = { id: string; data: Record<string, unknown>; error?: unknown };
+type IdeaResult = {
+  id: number;
+  local_id: string;
+  ideas: Record<string, unknown>;
+  error?: unknown;
+};
 
-async function processEntry(
-  entry: { id: string; data: unknown },
-): Promise<IdeaResult | undefined> {
+async function processEntry(entry: {
+  id: string;
+  data: unknown;
+}): Promise<IdeaResult | undefined> {
   const { id, data } = entry;
   if (
     data == null ||
@@ -101,7 +107,12 @@ async function processEntry(
 
   const { data: matches, error } = supabaseResult;
   if (matches && matches.length > 0) {
-    return { id, data: matches[0] as Record<string, unknown>, error };
+    return {
+      id: matches[0].id,
+      local_id: id,
+      ideas: matches[0] as Record<string, unknown>,
+      error,
+    };
   }
 
   if (!mapsData?.data?.places?.[0]) {
@@ -132,20 +143,30 @@ async function processEntry(
     id: generateUniqueId(),
     name: (item.name as string | null) ?? null,
     type: (item.tag as string | null) ?? null,
-    description: mapsLocationData.generativeSummary?.overview?.text ?? (item.description as string | null) ?? null,
+    description:
+      mapsLocationData.generativeSummary?.overview?.text ??
+      (item.description as string | null) ??
+      null,
     media_url: mapsData?.image ?? null,
     address: mapsLocationData.formattedAddress ?? null,
     location: `${city}${city && state ? ', ' : ''}${state}`.trim() || null,
     location_type: (item.activity_type as string | null) ?? null,
     duration: null,
-    pricing: mapPriceLevelToInt(mapsLocationData.priceLevel ?? 'PRICE_LEVEL_UNSPECIFIED'),
+    pricing: mapPriceLevelToInt(
+      mapsLocationData.priceLevel ?? 'PRICE_LEVEL_UNSPECIFIED',
+    ),
     date: (item.date as string | null) ?? null,
     time: (item.time as string | null) ?? null,
     venue: mapsLocationData.displayName?.text ?? (item.venue as string) ?? null,
   };
 
   const { error: uploadError } = await supabase.from('ideas').insert([newIdea]);
-  return { id, data: newIdea as Record<string, unknown>, error: uploadError };
+  return {
+    id: generateUniqueId(),
+    local_id: id,
+    ideas: newIdea as Record<string, unknown>,
+    error: uploadError,
+  };
 }
 
 // TODO: rename this endpoint to something better lol
