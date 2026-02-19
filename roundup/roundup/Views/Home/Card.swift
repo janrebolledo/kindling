@@ -56,7 +56,7 @@ struct Card: View {
                     }
                     Spacer()
                     Text((card.ideas?.venue!)!)
-                        .font(.editorialNew(.regular, size: 24))
+                        .font(.editorialNew(.regular, size: 20))
                         .foregroundStyle(.white)
 
                     HStack {
