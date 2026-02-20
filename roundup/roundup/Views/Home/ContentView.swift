@@ -151,6 +151,7 @@ enum tab: String {
 struct ContentView: View {
     @State var currentTab: tab? = .new
     @State var animatedTab: tab? = .new
+    let generator = UIImpactFeedbackGenerator(style: .medium)
 
     var body: some View {
 
@@ -187,6 +188,7 @@ struct ContentView: View {
             withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                 animatedTab = newTab
             }
+            generator.impactOccurred()
         }
         
         .overlay {
@@ -276,12 +278,12 @@ struct ContentView: View {
                         }
                         .font(.neueMontreal(.regular, size: 14))
                         .padding(4)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 100).stroke(
-                                .white.opacity(0.4),
-                                lineWidth: 2
-                            )
-                        )
+//                        .overlay(
+//                            RoundedRectangle(cornerRadius: 100).stroke(
+//                                .white.opacity(0.4),
+//                                lineWidth: 2
+//                            )
+//                        )
                         .clipShape(RoundedRectangle(cornerRadius: 100))
                         .glassEffect(.clear)
                         .shadow(radius: 5)

@@ -8,6 +8,7 @@ import SwiftUI
 
 struct Card: View {
     @State var image: UIImage? = nil
+    @State var sheetPresented: Bool = false
 
     var card: CardData
     var body: some View {
@@ -70,7 +71,8 @@ struct Card: View {
                         }
                         if card.ideas?.pricing != nil {
                             HStack(spacing: 0) {
-                                ForEach(0..<(card.ideas?.pricing!)!, id: \.self) {
+                                ForEach(0..<(card.ideas?.pricing!)!, id: \.self)
+                                {
                                     _ in
                                     Text("$")
                                 }
@@ -100,9 +102,18 @@ struct Card: View {
                 image = try await loadImage(from: card.local_id)
             }
         }
+        .onTapGesture {
+            print("hi")
+            sheetPresented = true
+        }
+        .sheet(isPresented: $sheetPresented) {
+//            sheetContent
+//            Text("hi")
+            IdeaView()
+                .presentationDragIndicator(.visible)
+        }
     }
 }
-
 
 #Preview {
     ContentView()
