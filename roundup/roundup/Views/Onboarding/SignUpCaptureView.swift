@@ -54,7 +54,7 @@ struct SignUpCaptureView: View {
                 spacing: 10
             ) {
                 ForEach(cards) { card in
-                    Card(card: card)
+                    Card(function: deleteCard, card: card)
                 }
             }
             .padding(.horizontal)
@@ -91,6 +91,12 @@ struct SignUpCaptureView: View {
             }.ignoresSafeArea()
         )
 
+    }
+    func deleteCard(item: ItemWrapper?) async {
+
+        cards = cards.filter { el in
+            return el.id != item?.id
+        }
     }
 }
 

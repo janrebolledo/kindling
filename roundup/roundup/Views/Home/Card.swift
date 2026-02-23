@@ -9,6 +9,7 @@ import SwiftUI
 struct Card: View {
     @State var image: UIImage? = nil
     @State var sheetPresented: Bool = false
+    var function: ((ItemWrapper?) async -> Void)?
 
     var card: CardData
     var body: some View {
@@ -105,10 +106,9 @@ struct Card: View {
             sheetPresented = true
         }
         .sheet(isPresented: $sheetPresented) {
-            //            sheetContent
-            //            Text("hi")
-            IdeaView(card: card)
+            IdeaView(card: card, function: function!)
                 .presentationDragIndicator(.visible)
+                .scrollBounceBehavior(.automatic)
         }
     }
 }

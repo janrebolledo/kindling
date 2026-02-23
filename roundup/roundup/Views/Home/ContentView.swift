@@ -73,11 +73,13 @@ struct PinsView: View {
                         )
                     }
 
-                    Text("\(collection?.collection_items?.count ?? 0) ideas saved")
-                        .foregroundStyle(.gray)
-                        .font(
-                            .neueMontreal(.regular, size: 16)
-                        )
+                    Text(
+                        "\(collection?.collection_items?.count ?? 0) ideas saved"
+                    )
+                    .foregroundStyle(.gray)
+                    .font(
+                        .neueMontreal(.regular, size: 16)
+                    )
                 }
                 Spacer()
                 Button("", systemImage: "xmark") {
@@ -118,29 +120,33 @@ struct PinsView: View {
                 if collection?.collection_items != nil {
                     ForEach((collection?.collection_items)!) { item in
 
-                        Card(card: item)
-                        //                                .padding(.horizontal)
+                        Card(function: fetchCards, card: item)
                     }
                 }
             }
             .padding()
             .padding(.bottom, 200)
             .task {
-                do {
-                    print("try to get cards pls")
-                    collections =
-                        try await supabase
-                        .from("collections")
-                        .select("*, collection_items(*, ideas(*))").execute()
-                        .value
-                    collection = collections[0]
-
-                } catch {
-                    dump(error)
-                }
+                await fetchCards(item: nil)
             }
         }
         .edgesIgnoringSafeArea(.top)
+    }
+
+    func fetchCards(item: ItemWrapper?) async {
+        do {
+            collections =
+                try await supabase
+                .from("collections")
+                .select("*, collection_items(*, ideas(*))").execute()
+                .value
+            if collections.first != nil {
+                collection = collections.first
+            }
+
+        } catch {
+            dump(error)
+        }
     }
 }
 
@@ -184,14 +190,14 @@ struct ContentView: View {
             .scrollTargetBehavior(.paging)
             .scrollPosition(id: $currentTab)
         }
-        
+
         .onChange(of: currentTab) { _, newTab in
             withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                 animatedTab = newTab
             }
             generator.impactOccurred()
         }
-        
+
         .overlay {
             VStack {
 
@@ -279,12 +285,12 @@ struct ContentView: View {
                         }
                         .font(.neueMontreal(.regular, size: 14))
                         .padding(4)
-//                        .overlay(
-//                            RoundedRectangle(cornerRadius: 100).stroke(
-//                                .white.opacity(0.4),
-//                                lineWidth: 2
-//                            )
-//                        )
+                        //                        .overlay(
+                        //                            RoundedRectangle(cornerRadius: 100).stroke(
+                        //                                .white.opacity(0.4),
+                        //                                lineWidth: 2
+                        //                            )
+                        //                        )
                         .clipShape(RoundedRectangle(cornerRadius: 100))
                         .glassEffect(.clear)
                         .shadow(radius: 5)

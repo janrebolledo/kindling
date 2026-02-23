@@ -8,6 +8,18 @@
 import Supabase
 import SwiftUI
 
+private struct IsAuthenticatedKey: EnvironmentKey {
+    static var defaultValue: Bool = false
+
+}
+
+extension EnvironmentValues {
+    var isAuthenticated: Bool {
+        get { self[IsAuthenticatedKey.self] }
+        set { self[IsAuthenticatedKey.self] = newValue }
+    }
+}
+
 @main
 struct AppEntry: App {
     @State private var onboardingCompleted = false
@@ -23,6 +35,7 @@ struct AppEntry: App {
                     ContentView()
                 }
             }
+            .environment(\.isAuthenticated, authenticated)
             .task {
                 for await state in supabase.auth.authStateChanges {
                     if [.initialSession, .signedIn, .signedOut].contains(
@@ -33,6 +46,5 @@ struct AppEntry: App {
                 }
             }
         }
-
     }
 }

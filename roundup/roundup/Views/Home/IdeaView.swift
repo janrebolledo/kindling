@@ -8,11 +8,16 @@
 import CoreLocation
 import MapKit
 import Observation
+import Photos
+import Supabase
 import SwiftUI
 
 struct IdeaView: View {
     let HERO_HEIGHT: CGFloat = 500
     var card: CardData
+    var function: (ItemWrapper?) async -> Void
+
+    @Environment(\.dismiss) private var dismiss
 
     @State private var mapItem: MKMapItem?
     @State private var localImage: UIImage?
@@ -233,6 +238,7 @@ struct IdeaView: View {
                         } else {
                             RoundedRectangle(cornerRadius: 20)
                                 .fill(Color.gray.opacity(0.3))
+                                .frame(height: 93)
                         }
                     }
                     .frame(width: 93)
@@ -260,11 +266,11 @@ struct IdeaView: View {
                     title: "delete from collection & device",
                     systemName: "trash.fill"
                 ) {
-
+                    Task { await deleteFromCollection(deleteFromDevice: true) }
                 }
 
                 Button("delete from collection & keep on device") {
-
+                    Task { await deleteFromCollection(deleteFromDevice: false) }
                 }
                 .foregroundStyle(.secondary)
                 .font(.neueMontreal(.regular, size: 14))
@@ -297,6 +303,33 @@ struct IdeaView: View {
             Task { await fetchETA() }
         }
 
+    }
+
+    private func deleteFromCollection(deleteFromDevice: Bool = false) async {
+        do {
+            try await supabase
+                .from("collection_items")
+                .delete()
+                .eq("id", value: card.id)
+                .execute()
+
+            if deleteFromDevice {
+                let fetchResult = PHAsset.fetchAssets(
+                    withLocalIdentifiers: [card.local_id],
+                    options: nil
+                )
+                if let asset = fetchResult.firstObject {
+                    try await PHPhotoLibrary.shared().performChanges {
+                        PHAssetChangeRequest.deleteAssets([asset] as NSArray)
+                    }
+                }
+            }
+
+            dismiss()
+            await function(card as? ItemWrapper)
+        } catch {
+            print("Error deleting: \(error)")
+        }
     }
 
     private func placeholderImage(geometry: GeometryProxy) -> some View {
@@ -345,10 +378,10 @@ struct IdeaView: View {
             parser.formatOptions = [.withFullDate]
             date = parser.date(from: created)
         }
-        guard let d = date else { return "Screenshot on \(created)" }
+        guard let d = date else { return "Saved on \(created)" }
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d, yyyy"
-        return "Screenshot on \(formatter.string(from: d))"
+        return "Saved on \(formatter.string(from: d))"
     }
 }
 
@@ -381,28 +414,28 @@ private final class LocationManager: NSObject, CLLocationManagerDelegate {
         location = nil
     }
 }
-
-#Preview {
-    IdeaView(
-        card: ItemWrapper(
-            id: 0,
-            local_id: "preview",
-            ideas: Item(
-                id: 0,
-                name: nil,
-                type: nil,
-                description: nil,
-                media_url: nil,
-                address: "Eucalyptus, Trail Loop, Chino Hills, CA 91709, USA",
-                location: nil,
-                location_type: "Outdoors",
-                duration: "2–3 hrs",
-                pricing: 1,
-                date: nil,
-                time: nil,
-                venue: "Eucalyptus Loop Trail",
-                created_at: "2026-01-10"
-            )
-        )
-    )
-}
+//
+//#Preview {
+//    IdeaView(
+//        card: ItemWrapper(
+//            id: 0,
+//            local_id: "preview",
+//            ideas: Item(
+//                id: 0,
+//                name: nil,
+//                type: nil,
+//                description: nil,
+//                media_url: nil,
+//                address: "Eucalyptus, Trail Loop, Chino Hills, CA 91709, USA",
+//                location: nil,
+//                location_type: "Outdoors",
+//                duration: "2–3 hrs",
+//                pricing: 1,
+//                date: nil,
+//                time: nil,
+//                venue: "Eucalyptus Loop Trail",
+//                created_at: "2026-01-10"
+//            )
+//        ), fetchCards:
+//    )
+//}
