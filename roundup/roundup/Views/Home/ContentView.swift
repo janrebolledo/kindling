@@ -73,7 +73,7 @@ struct PinsView: View {
                         )
                     }
 
-                    Text("32 ideas saved")
+                    Text("\(collection?.collection_items?.count ?? 0) ideas saved")
                         .foregroundStyle(.gray)
                         .font(
                             .neueMontreal(.regular, size: 16)
@@ -124,6 +124,7 @@ struct PinsView: View {
                 }
             }
             .padding()
+            .padding(.bottom, 200)
             .task {
                 do {
                     print("try to get cards pls")

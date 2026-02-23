@@ -9,6 +9,7 @@ import SwiftUI
 struct StyledButton: View {
     var title: String
     var systemName: String?
+    var type: String?
     var action: () -> Void?
 
     var body: some View {
@@ -16,10 +17,16 @@ struct StyledButton: View {
             action()
         }) {
             ZStack {
-                Image("button")
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if type == "delete" {
+
+                    Color(red: 208/255, green: 0/255, blue: 0/255)
+                    LinearGradient(gradient: Gradient(colors: [.white.opacity(0.2), .white.opacity(0)]), startPoint: .top, endPoint: .center)
+                } else {
+                    Image("button")
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
 
                 HStack {
 
@@ -51,7 +58,8 @@ struct StyledButton: View {
 #Preview {
     StyledButton(
         title: "allow access to photos to start",
-        systemName: "heart.fill"
+        systemName: "heart.fill",
+        type: "delete"
     ) {
         print("fireeee")
     }

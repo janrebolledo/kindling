@@ -58,6 +58,7 @@ struct SignUpCaptureView: View {
                 }
             }
             .padding(.horizontal)
+            .padding(.bottom, 200)
         }
         .edgesIgnoringSafeArea(.top)
         .overlay(

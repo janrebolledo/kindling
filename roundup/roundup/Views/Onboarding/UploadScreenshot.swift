@@ -29,7 +29,7 @@ struct ItemWrapper: Decodable, Identifiable, CardData {
     let ideas: Item?
 }
 
-private let ideasURL = URL(string: "http://localhost:3000/ideas")!
+private let ideasURL = URL(string: "http://192.168.50.40:3000/ideas")!
 
 /// Builds the OCR entries and shared request for POST /ideas. Caller sets body and uses for streaming or single response.
 private func makeEntriesAndRequest(entries: [Upload]) throws -> (

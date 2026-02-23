@@ -103,13 +103,12 @@ struct Card: View {
             }
         }
         .onTapGesture {
-            print("hi")
             sheetPresented = true
         }
         .sheet(isPresented: $sheetPresented) {
 //            sheetContent
 //            Text("hi")
-            IdeaView()
+            IdeaView(card: card)
                 .presentationDragIndicator(.visible)
         }
     }
