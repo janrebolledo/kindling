@@ -7,8 +7,8 @@
 
 import CoreLocation
 import MapKit
-import SwiftUI
 import Observation
+import SwiftUI
 
 struct IdeaView: View {
     let HERO_HEIGHT: CGFloat = 500
@@ -20,7 +20,9 @@ struct IdeaView: View {
     @State private var locationManager = LocationManager()
 
     private var address: String {
-        (card.ideas?.location ?? card.ideas?.address ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        (card.ideas?.address ?? card.ideas?.location ?? "").trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
     }
 
     private var venueTitle: String {
@@ -35,7 +37,9 @@ struct IdeaView: View {
                 VStack {
                     GeometryReader { geometry in
                         Group {
-                            if let mediaUrl = card.ideas?.media_url, let url = URL(string: mediaUrl) {
+                            if let mediaUrl = card.ideas?.media_url,
+                                let url = URL(string: mediaUrl)
+                            {
                                 AsyncImage(url: url) { phase in
                                     switch phase {
                                     case .success(let image):
@@ -124,15 +128,29 @@ struct IdeaView: View {
                                     Text((card.ideas?.location_type!)!)
                                 }
                                 if card.ideas?.duration != nil {
-                                    if card.ideas?.location_type != nil { Text("•") }
+                                    if card.ideas?.location_type != nil {
+                                        Text("•")
+                                    }
                                     Text((card.ideas?.duration!)!)
                                 }
                                 if card.ideas?.pricing != nil {
-                                    if card.ideas?.location_type != nil || card.ideas?.duration != nil { Text("•") }
+                                    if card.ideas?.location_type != nil
+                                        || card.ideas?.duration != nil
+                                    {
+                                        Text("•")
+                                    }
                                     HStack(spacing: 0) {
-                                        ForEach(0..<(card.ideas?.pricing!)!, id: \.self) { _ in Text("$") }
-                                        ForEach(0..<(3 - (card.ideas?.pricing!)!), id: \.self) { _ in
-                                            Text("$").foregroundStyle(.secondary)
+                                        ForEach(
+                                            0..<(card.ideas?.pricing!)!,
+                                            id: \.self
+                                        ) { _ in Text("$") }
+                                        ForEach(
+                                            0..<(3 - (card.ideas?.pricing!)!),
+                                            id: \.self
+                                        ) { _ in
+                                            Text("$").foregroundStyle(
+                                                .secondary
+                                            )
                                         }
                                     }
                                 }
@@ -150,7 +168,11 @@ struct IdeaView: View {
 
             VStack(spacing: 24) {
                 HStack {
-                    Text(address.isEmpty ? "—" : address)
+                    Text(
+                        (card.ideas?.location?.isEmpty ?? true)
+                            ? (card.ideas?.address ?? "—")
+                            : card.ideas?.location ?? "—"
+                    )
                     Spacer()
                     Image(systemName: "car.fill")
                     Text(etaString ?? "—")
@@ -204,7 +226,7 @@ struct IdeaView: View {
                 HStack {
 
                     Group {
-                         if localImage != nil {
+                        if localImage != nil {
                             Image(uiImage: localImage!)
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
@@ -255,9 +277,17 @@ struct IdeaView: View {
             locationManager.requestLocation()
             Task {
                 localImage = try await loadImage(from: card.local_id)
-                if !address.isEmpty {
-                    await geocodeAddress()
+
+                if !address.isEmpty,
+                    let request = MKGeocodingRequest(addressString: address)
+                {
+                    do {
+                        mapItem = try await request.mapItems.first
+                    } catch {
+                        print("error: \(error)")
+                    }
                 }
+
             }
         }
         .onChange(of: locationManager.location) { _, _ in
@@ -270,7 +300,7 @@ struct IdeaView: View {
     }
 
     private func placeholderImage(geometry: GeometryProxy) -> some View {
-        VStack {Color.gray.opacity(0.2)}
+        VStack { Color.gray.opacity(0.2) }
             .frame(
                 width: geometry.size.width,
                 height: HERO_HEIGHT
@@ -278,26 +308,10 @@ struct IdeaView: View {
             .clipped()
     }
 
-    private func geocodeAddress() async {
-        let geocoder = CLGeocoder()
-        do {
-            let placemarks = try await geocoder.geocodeAddressString(address)
-            guard let placemark = placemarks.first, let location = placemark.location else { return }
-            let mkPlacemark = MKPlacemark(
-                coordinate: location.coordinate,
-                addressDictionary: placemark.addressDictionary
-            )
-            await MainActor.run {
-                mapItem = MKMapItem(placemark: mkPlacemark)
-            }
-            await fetchETA()
-        } catch {
-            print("geocode error: \(error)")
-        }
-    }
-
     private func fetchETA() async {
-        guard let destination = mapItem, locationManager.location != nil else { return }
+        guard let destination = mapItem, locationManager.location != nil else {
+            return
+        }
         let request = MKDirections.Request()
         request.source = MKMapItem.forCurrentLocation()
         request.destination = destination
@@ -353,11 +367,17 @@ private final class LocationManager: NSObject, CLLocationManagerDelegate {
         manager.requestLocation()
     }
 
-    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+    func locationManager(
+        _ manager: CLLocationManager,
+        didUpdateLocations locations: [CLLocation]
+    ) {
         location = locations.last
     }
 
-    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+    func locationManager(
+        _ manager: CLLocationManager,
+        didFailWithError error: Error
+    ) {
         location = nil
     }
 }
