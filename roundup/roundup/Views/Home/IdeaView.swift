@@ -5,8 +5,10 @@
 //  Created by Jan Rebolledo on 2/19/26.
 //
 
+import CoreLocation
 import MapKit
 import SwiftUI
+import Observation
 
 struct IdeaView: View {
     let HERO_HEIGHT: CGFloat = 500
@@ -14,6 +16,8 @@ struct IdeaView: View {
 
     @State private var mapItem: MKMapItem?
     @State private var localImage: UIImage?
+    @State private var etaString: String?
+    @State private var locationManager = LocationManager()
 
     private var address: String {
         (card.ideas?.location ?? card.ideas?.address ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -149,7 +153,7 @@ struct IdeaView: View {
                     Text(address.isEmpty ? "—" : address)
                     Spacer()
                     Image(systemName: "car.fill")
-                    Text("1h 8m")
+                    Text(etaString ?? "—")
                 }
                 .font(.neueMontreal(.regular, size: 16))
                 .padding(.horizontal, 24)
@@ -189,8 +193,6 @@ struct IdeaView: View {
                     .padding()
                 } else {
                     VStack {
-//                        Text("loading map")
-//                            .font(.neueMontreal(.regular, size: 16))
                     }
                     .frame(height: 250)
                     .frame(maxWidth: .infinity)
@@ -250,19 +252,19 @@ struct IdeaView: View {
         }
         .ignoresSafeArea()
         .onAppear {
+            locationManager.requestLocation()
             Task {
                 localImage = try await loadImage(from: card.local_id)
-                if !address.isEmpty, let request = MKGeocodingRequest(addressString: address) {
-                    do {
-                        let mapitems = try await request.mapItems
-                        if let mapitem = mapitems.first {
-                            mapItem = mapitem
-                        }
-                    } catch {
-                        print("error: \(error)")
-                    }
+                if !address.isEmpty {
+                    await geocodeAddress()
                 }
             }
+        }
+        .onChange(of: locationManager.location) { _, _ in
+            Task { await fetchETA() }
+        }
+        .onChange(of: mapItem) { _, _ in
+            Task { await fetchETA() }
         }
 
     }
@@ -274,6 +276,44 @@ struct IdeaView: View {
                 height: HERO_HEIGHT
             )
             .clipped()
+    }
+
+    private func geocodeAddress() async {
+        let geocoder = CLGeocoder()
+        do {
+            let placemarks = try await geocoder.geocodeAddressString(address)
+            guard let placemark = placemarks.first, let location = placemark.location else { return }
+            let mkPlacemark = MKPlacemark(
+                coordinate: location.coordinate,
+                addressDictionary: placemark.addressDictionary
+            )
+            await MainActor.run {
+                mapItem = MKMapItem(placemark: mkPlacemark)
+            }
+            await fetchETA()
+        } catch {
+            print("geocode error: \(error)")
+        }
+    }
+
+    private func fetchETA() async {
+        guard let destination = mapItem, locationManager.location != nil else { return }
+        let request = MKDirections.Request()
+        request.source = MKMapItem.forCurrentLocation()
+        request.destination = destination
+        request.transportType = .automobile
+        let directions = MKDirections(request: request)
+        do {
+            let response = try await directions.calculate()
+            guard let route = response.routes.first else { return }
+            let interval = route.expectedTravelTime
+            let hours = Int(interval) / 3600
+            let minutes = (Int(interval) % 3600) / 60
+            let formatted = hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
+            await MainActor.run { etaString = formatted }
+        } catch {
+            await MainActor.run { etaString = nil }
+        }
     }
 
     private var savedFromText: String {
@@ -295,6 +335,30 @@ struct IdeaView: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d, yyyy"
         return "Screenshot on \(formatter.string(from: d))"
+    }
+}
+
+private final class LocationManager: NSObject, CLLocationManagerDelegate {
+    var location: CLLocation?
+    private let manager = CLLocationManager()
+
+    override init() {
+        super.init()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyKilometer
+    }
+
+    func requestLocation() {
+        manager.requestWhenInUseAuthorization()
+        manager.requestLocation()
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        location = locations.last
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        location = nil
     }
 }
 

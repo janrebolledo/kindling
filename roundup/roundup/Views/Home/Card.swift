@@ -63,27 +63,26 @@ struct Card: View {
                     HStack {
                         if card.ideas?.location_type != nil {
                             Text((card.ideas?.location_type!)!)
-                            Text("•")
                         }
                         if card.ideas?.duration != nil {
+                            if card.ideas?.location_type != nil { Text("•") }
                             Text((card.ideas?.duration!)!)
-                            Text("•")
                         }
                         if card.ideas?.pricing != nil {
+                            if card.ideas?.location_type != nil
+                                || card.ideas?.duration != nil
+                            {
+                                Text("•")
+                            }
                             HStack(spacing: 0) {
                                 ForEach(0..<(card.ideas?.pricing!)!, id: \.self)
-                                {
-                                    _ in
-                                    Text("$")
-                                }
+                                { _ in Text("$") }
                                 ForEach(
                                     0..<(3 - (card.ideas?.pricing!)!),
                                     id: \.self
-                                ) {
-                                    _ in
-                                    Text("$")
+                                ) { _ in
+                                    Text("$").foregroundStyle(.secondary)
                                 }
-                                .foregroundStyle(.white.opacity(0.5))
                             }
                         }
                     }
@@ -106,8 +105,8 @@ struct Card: View {
             sheetPresented = true
         }
         .sheet(isPresented: $sheetPresented) {
-//            sheetContent
-//            Text("hi")
+            //            sheetContent
+            //            Text("hi")
             IdeaView(card: card)
                 .presentationDragIndicator(.visible)
         }
