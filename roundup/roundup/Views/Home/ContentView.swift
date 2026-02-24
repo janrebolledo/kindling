@@ -158,6 +158,7 @@ enum tab: String {
 struct ContentView: View {
     @State var currentTab: tab? = .new
     @State var animatedTab: tab? = .new
+    @State private var searchQuery: String
     let generator = UIImpactFeedbackGenerator(style: .medium)
 
     var body: some View {
@@ -285,20 +286,74 @@ struct ContentView: View {
                         }
                         .font(.neueMontreal(.regular, size: 14))
                         .padding(4)
-                        //                        .overlay(
-                        //                            RoundedRectangle(cornerRadius: 100).stroke(
-                        //                                .white.opacity(0.4),
-                        //                                lineWidth: 2
-                        //                            )
-                        //                        )
                         .clipShape(RoundedRectangle(cornerRadius: 100))
                         .glassEffect(.clear)
-                        .shadow(radius: 5)
+                        .shadow(color: .primary.opacity(0.1), radius: 5)
 
                         //                    search/button goes here
+                        if animatedTab == .new {
 
-                        HStack {
-                            Text("search")
+                            HStack {
+                                Button(
+                                    action: {
+                                        print("hi")
+                                    }
+                                ) {
+                                    HStack {
+
+                                        Image(systemName: "plus")
+                                        Text("save idea")
+                                            .frame(
+                                                maxWidth: .infinity,
+                                                maxHeight: 46
+                                            )
+                                            .font(
+                                                .neueMontreal(
+                                                    .regular,
+                                                    size: 14
+                                                )
+                                            )
+                                    }
+                                    .padding(.horizontal, 24)
+                                }
+                                .frame(width: 180)
+                                .buttonStyle(.glassProminent)
+                                .tint(Color("hotpink"))
+                                .shadow(color: .primary.opacity(0.1), radius: 5)
+                            }
+
+                        }
+
+                        if animatedTab == .pins {
+
+                            HStack {
+
+                                Button(
+                                    action: {
+                                        print("hi")
+                                    }
+                                ) {
+                                    HStack {
+
+                                        Image(systemName: "magnifyingglass")
+                                        TextField("search", text: $searchQuery)
+                                            .frame(
+                                                maxWidth: .infinity,
+                                                maxHeight: 46
+                                            )
+                                            .font(
+                                                .neueMontreal(
+                                                    .regular,
+                                                    size: 14
+                                                )
+                                            )
+                                    }
+                                    .padding(.horizontal, 24)
+                                }
+                                .frame(width: 180)
+                                .buttonStyle(.glass)
+                                .shadow(color: .primary.opacity(0.1), radius: 5)
+                            }
                         }
                     }
                     .padding(.bottom, 64)
