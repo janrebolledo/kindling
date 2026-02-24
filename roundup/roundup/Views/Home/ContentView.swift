@@ -162,6 +162,7 @@ struct ContentView: View {
     @State private var isSearching: Bool = false
     @FocusState private var searchFocused: Bool
     @State private var placeholderIndex: Int = 0
+    @State private var keyboardHeight: CGFloat = 0
     let searchPlaceholders = [
         "search", "cafes to study from...", "things to do...",
         "places to eat...",
@@ -227,10 +228,24 @@ struct ContentView: View {
             .padding(.horizontal, 24)
         }
         .frame(width: 180)
-        .frame(height: 64)
+        .frame(height: 60)
         .buttonStyle(.glassProminent)
         .tint(Color("hotpink"))
         .shadow(color: .primary.opacity(0.1), radius: 5)
+        .transition(.scale.combined(with: .opacity))
+    }
+
+    @ViewBuilder private var closeButton: some View {
+        Button {
+            searchQuery = ""
+            searchFocused = false
+        } label: {
+            Image(systemName: "xmark")
+                .padding(.vertical, 12)
+                .padding(.horizontal, 6)
+        }
+        .frame(maxWidth: 64, maxHeight: 64)
+        .buttonStyle(.glass)
         .transition(.scale.combined(with: .opacity))
     }
 
@@ -241,7 +256,7 @@ struct ContentView: View {
             ZStack(alignment: .leading) {
                 if searchQuery.isEmpty {
                     Text(searchPlaceholders[placeholderIndex])
-                        .foregroundStyle(Color.black.opacity(0.5))
+                        .foregroundStyle(Color.primary.opacity(0.5))
                         .font(.neueMontreal(.regular, size: 14))
                         .allowsHitTesting(false)
                         .id(placeholderIndex)
@@ -252,20 +267,9 @@ struct ContentView: View {
                     .font(.neueMontreal(.regular, size: 14))
                     .frame(maxWidth: .infinity)
             }
-            if isSearching {
-                Button {
-                    searchQuery = ""
-                    searchFocused = false
-                } label: {
-                    Image(systemName: "xmark")
-                        .foregroundStyle(.primary.opacity(0.6))
-                }
-                .buttonStyle(.plain)
-                .transition(.opacity.combined(with: .scale))
-            }
         }
         .padding(.horizontal, 20)
-        .frame(height: 64)
+        .frame(height: 60)
         .frame(maxWidth: isSearching ? .infinity : 180)
         .clipShape(RoundedRectangle(cornerRadius: 100))
         .glassEffect(.clear)
@@ -334,7 +338,7 @@ struct ContentView: View {
         }
 
         .overlay {
-            VStack {
+            VStack(spacing: 0) {
 
                 Spacer()
                 ZStack(alignment: .bottom) {
@@ -342,7 +346,7 @@ struct ContentView: View {
                         maxBlurRadius: 20,
                         direction: .blurredBottomClearTop
                     )
-                    .frame(height: 200)
+                    .frame(height: 100)
                     LinearGradient(
                         gradient: Gradient(colors: [
                             Color(uiColor: UIColor.systemBackground).opacity(0),
@@ -351,20 +355,37 @@ struct ContentView: View {
                         startPoint: .top,
                         endPoint: .bottom
                     )
-                    .frame(maxWidth: .infinity, maxHeight: 200)
+                    .frame(maxWidth: .infinity, maxHeight: 100)
 
                     HStack(spacing: 12) {
                         if !isSearching { tabPill }
-                        if animatedTab == .new && !isSearching {
-                            saveIdeaButton
-                        }
+                        if animatedTab == .new && !isSearching { saveIdeaButton }
                         if animatedTab == .pins { searchBar }
+                        if isSearching { closeButton }
                     }
-                    .padding(.bottom, 64)
+                    .padding(.bottom, keyboardHeight > 0 ? 16 : 64)
                     .padding(.horizontal, 16)
                 }
+                Color(uiColor: UIColor.systemBackground)
+                    .frame(height: keyboardHeight)
+                    .frame(maxWidth: .infinity)
             }
         }
         .ignoresSafeArea()
+        .onReceive(
+            NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)
+        ) { notification in
+            guard let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                keyboardHeight = frame.height
+            }
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)
+        ) { _ in
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                keyboardHeight = 0
+            }
+        }
     }
 }
