@@ -158,8 +158,133 @@ enum tab: String {
 struct ContentView: View {
     @State var currentTab: tab? = .new
     @State var animatedTab: tab? = .new
-    @State private var searchQuery: String
+    @State private var searchQuery: String = ""
+    @State private var isSearching: Bool = false
+    @FocusState private var searchFocused: Bool
+    @State private var placeholderIndex: Int = 0
+    let searchPlaceholders = [
+        "search", "cafes to study from...", "things to do...",
+        "places to eat...",
+    ]
     let generator = UIImpactFeedbackGenerator(style: .medium)
+
+    @ViewBuilder private var tabPill: some View {
+        ZStack {
+            VStack {}
+                .frame(width: 76, height: 52)
+                .glassEffect(.clear.interactive().tint(.white))
+                .clipShape(RoundedRectangle(cornerRadius: 100))
+                .offset(x: animatedTab == .new ? -40 : 40)
+            HStack {
+                Button {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7))
+                    { currentTab = .new }
+                } label: {
+                    VStack {
+                        Image(systemName: "staroflife.fill")
+                        Text("new")
+                    }
+                    .foregroundStyle(
+                        animatedTab == .new ? Color("hotpink") : .primary
+                    )
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 8)
+                Button {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7))
+                    { currentTab = .pins }
+                } label: {
+                    VStack {
+                        Image(systemName: "pin.fill")
+                        Text("pins")
+                    }
+                    .foregroundStyle(
+                        animatedTab == .pins ? Color("hotpink") : .primary
+                    )
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 8)
+            }
+        }
+        .font(.neueMontreal(.regular, size: 14))
+        .padding(4)
+        .clipShape(RoundedRectangle(cornerRadius: 100))
+        .glassEffect(.clear)
+        .shadow(color: .primary.opacity(0.1), radius: 5)
+        .transition(.scale.combined(with: .opacity))
+    }
+
+    @ViewBuilder private var saveIdeaButton: some View {
+        Button(action: { print("hi") }) {
+            HStack {
+                Image(systemName: "plus")
+                Text("save idea")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .font(.neueMontreal(.regular, size: 14))
+            }
+            .padding(.horizontal, 24)
+        }
+        .frame(width: 180)
+        .frame(height: 64)
+        .buttonStyle(.glassProminent)
+        .tint(Color("hotpink"))
+        .shadow(color: .primary.opacity(0.1), radius: 5)
+        .transition(.scale.combined(with: .opacity))
+    }
+
+    @ViewBuilder private var searchBar: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.primary.opacity(0.5))
+            ZStack(alignment: .leading) {
+                if searchQuery.isEmpty {
+                    Text(searchPlaceholders[placeholderIndex])
+                        .foregroundStyle(Color.black.opacity(0.5))
+                        .font(.neueMontreal(.regular, size: 14))
+                        .allowsHitTesting(false)
+                        .id(placeholderIndex)
+                        .transition(.opacity)
+                }
+                TextField("", text: $searchQuery)
+                    .focused($searchFocused)
+                    .font(.neueMontreal(.regular, size: 14))
+                    .frame(maxWidth: .infinity)
+            }
+            if isSearching {
+                Button {
+                    searchQuery = ""
+                    searchFocused = false
+                } label: {
+                    Image(systemName: "xmark")
+                        .foregroundStyle(.primary.opacity(0.6))
+                }
+                .buttonStyle(.plain)
+                .transition(.opacity.combined(with: .scale))
+            }
+        }
+        .padding(.horizontal, 20)
+        .frame(height: 64)
+        .frame(maxWidth: isSearching ? .infinity : 180)
+        .clipShape(RoundedRectangle(cornerRadius: 100))
+        .glassEffect(.clear)
+        .shadow(color: .primary.opacity(0.1), radius: 5)
+        .animation(
+            .spring(response: 0.4, dampingFraction: 0.7),
+            value: isSearching
+        )
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                guard searchQuery.isEmpty else { continue }
+                withAnimation(.easeInOut(duration: 0.4)) {
+                    placeholderIndex =
+                        (placeholderIndex + 1) % searchPlaceholders.count
+                }
+            }
+        }
+    }
 
     var body: some View {
 
@@ -197,6 +322,15 @@ struct ContentView: View {
                 animatedTab = newTab
             }
             generator.impactOccurred()
+            if isSearching {
+                searchFocused = false
+                searchQuery = ""
+            }
+        }
+        .onChange(of: searchFocused) { _, focused in
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                isSearching = focused
+            }
         }
 
         .overlay {
@@ -219,144 +353,15 @@ struct ContentView: View {
                     )
                     .frame(maxWidth: .infinity, maxHeight: 200)
 
-                    HStack(spacing: 16) {
-
-                        ZStack {
-
-                            VStack {
-                            }
-                            .frame(width: 76, height: 52)
-                            .glassEffect(
-                                .clear.interactive().tint(.white)
-                            )
-                            .clipShape(RoundedRectangle(cornerRadius: 100))
-                            .offset(x: animatedTab == .new ? -40 : 40)
-
-                            HStack {
-
-                                Button {
-                                    withAnimation(
-                                        .spring(
-                                            response: 0.4,
-                                            dampingFraction: 0.7
-                                        )
-                                    ) {
-
-                                        currentTab = .new
-                                    }
-                                } label: {
-                                    VStack {
-                                        Image(systemName: "staroflife.fill")
-                                        Text("new")
-                                    }
-                                    .foregroundStyle(
-                                        animatedTab == .new
-                                            ? Color("hotpink") : .primary
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                                .padding(.horizontal, 24)
-                                .padding(.vertical, 8)
-
-                                Button {
-                                    withAnimation(
-                                        .spring(
-                                            response: 0.4,
-                                            dampingFraction: 0.7
-                                        )
-                                    ) {
-
-                                        currentTab = .pins
-                                    }
-                                } label: {
-                                    VStack {
-                                        Image(systemName: "pin.fill")
-                                        Text("pins")
-                                    }
-                                    .foregroundStyle(
-                                        animatedTab == .pins
-                                            ? Color("hotpink") : .primary
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                                .padding(.horizontal, 24)
-                                .padding(.vertical, 8)
-
-                            }
+                    HStack(spacing: 12) {
+                        if !isSearching { tabPill }
+                        if animatedTab == .new && !isSearching {
+                            saveIdeaButton
                         }
-                        .font(.neueMontreal(.regular, size: 14))
-                        .padding(4)
-                        .clipShape(RoundedRectangle(cornerRadius: 100))
-                        .glassEffect(.clear)
-                        .shadow(color: .primary.opacity(0.1), radius: 5)
-
-                        //                    search/button goes here
-                        if animatedTab == .new {
-
-                            HStack {
-                                Button(
-                                    action: {
-                                        print("hi")
-                                    }
-                                ) {
-                                    HStack {
-
-                                        Image(systemName: "plus")
-                                        Text("save idea")
-                                            .frame(
-                                                maxWidth: .infinity,
-                                                maxHeight: 46
-                                            )
-                                            .font(
-                                                .neueMontreal(
-                                                    .regular,
-                                                    size: 14
-                                                )
-                                            )
-                                    }
-                                    .padding(.horizontal, 24)
-                                }
-                                .frame(width: 180)
-                                .buttonStyle(.glassProminent)
-                                .tint(Color("hotpink"))
-                                .shadow(color: .primary.opacity(0.1), radius: 5)
-                            }
-
-                        }
-
-                        if animatedTab == .pins {
-
-                            HStack {
-
-                                Button(
-                                    action: {
-                                        print("hi")
-                                    }
-                                ) {
-                                    HStack {
-
-                                        Image(systemName: "magnifyingglass")
-                                        TextField("search", text: $searchQuery)
-                                            .frame(
-                                                maxWidth: .infinity,
-                                                maxHeight: 46
-                                            )
-                                            .font(
-                                                .neueMontreal(
-                                                    .regular,
-                                                    size: 14
-                                                )
-                                            )
-                                    }
-                                    .padding(.horizontal, 24)
-                                }
-                                .frame(width: 180)
-                                .buttonStyle(.glass)
-                                .shadow(color: .primary.opacity(0.1), radius: 5)
-                            }
-                        }
+                        if animatedTab == .pins { searchBar }
                     }
                     .padding(.bottom, 64)
+                    .padding(.horizontal, 16)
                 }
             }
         }
