@@ -154,7 +154,13 @@ struct PinsView: View {
 struct NewView: View {
     @State private var screenshotManager = ScreenshotManager()
     @State private var newCards = [ItemWrapper]()
-    @State private var newStoredCards = [CollectionItemWrapper]()
+    @State private var newStoredCards = [CollectionItemWrapper]() {
+        didSet {
+            isSaveButtonDisabled = newStoredCards.count == 0
+        }
+    }
+    @State private var currentCardIndex = 0
+    @Binding var isSaveButtonDisabled: Bool
 
     var body: some View {
 
@@ -221,7 +227,7 @@ struct NewView: View {
                             await InitializeCollectionItems(items: newCards)
                             let uploadedIDs = images.map { $0.0 }
                             parsedScreenshotsService.markAsParsed(uploadedIDs)
-                            await fetchCards()
+                            await fetchCards(item: nil)
                         } catch {
                             print("upload error: \(error)")
                         }
@@ -230,21 +236,33 @@ struct NewView: View {
             } else {
 
                 VStack {
-
-                    ForEach(newStoredCards) { card in
-                        Card(card: card)
+                    VStack {
+                        HStack {
+                            Text("New Captures")
+                                .font(.editorialNew(.regular, size: 24))
+                            Text(
+                                "\(currentCardIndex + 1)/\(newStoredCards.count)"
+                            )
+                        }
                     }
+                    .padding(.top, 128)
+
+                    IdeaView(
+                        card: newStoredCards[currentCardIndex],
+                        function: fetchCards
+                    )
+                    .padding(.bottom, 128)
                 }
             }
 
         }.onAppear {
             Task {
-                await fetchCards()
+                await fetchCards(item: nil)
             }
         }
     }
 
-    func fetchCards() async {
+    func fetchCards(item: ItemWrapper?) async {
         do {
             newStoredCards =
                 try await supabase
@@ -279,6 +297,7 @@ struct ContentView: View {
         "places to eat...",
     ]
     let generator = UIImpactFeedbackGenerator(style: .medium)
+    @State private var isSaveButtonDisabled: Bool = false
 
     @ViewBuilder private var tabPill: some View {
         ZStack {
@@ -344,6 +363,7 @@ struct ContentView: View {
         .tint(Color("hotpink"))
         .shadow(color: .primary.opacity(0.1), radius: 5)
         .transition(.scale.combined(with: .opacity))
+        .disabled(isSaveButtonDisabled)
     }
 
     @ViewBuilder private var closeButton: some View {
@@ -412,7 +432,7 @@ struct ContentView: View {
                     VStack {
                         // new tab
 
-                        NewView()
+                        NewView(isSaveButtonDisabled: $isSaveButtonDisabled)
                     }
                     .containerRelativeFrame(.horizontal)
                     .id(tab.new)
