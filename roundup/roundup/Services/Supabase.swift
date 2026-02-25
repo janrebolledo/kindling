@@ -43,5 +43,12 @@ struct collection_item: Encodable, Decodable, Identifiable {
     let local_id: String
     let idea_id: Int
     let user_id: UUID
-    let collection_id: Int
+    let collection_id: Int?
+}
+
+struct UserData: Decodable {
+    let id: Int
+    let user_id: UUID
+    let parsed_screenshot_ids: [String]
+    let created_at: String?
 }

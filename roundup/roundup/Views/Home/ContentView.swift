@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Photos
 internal import PostgREST
 import Supabase
 import SwiftUI
@@ -26,7 +27,7 @@ struct CollectionItemWrapper: Decodable, Identifiable, CardData {
     let local_id: String
     let idea_id: Int
     let user_id: UUID
-    let collection_id: Int
+    let collection_id: Int?
     let ideas: Item?
 }
 
@@ -147,6 +148,116 @@ struct PinsView: View {
         } catch {
             dump(error)
         }
+    }
+}
+
+struct NewView: View {
+    @State private var screenshotManager = ScreenshotManager()
+    @State private var newCards = [ItemWrapper]()
+    @State private var newStoredCards = [CollectionItemWrapper]()
+
+    var body: some View {
+
+        VStack {
+            if newStoredCards.count == 0 {
+
+                Text("all clear 🫡")
+                    .font(.editorialNew(.regular, size: 24))
+                Text("you've cleaned up all of your screenshots")
+                    .font(.neueMontreal(.regular, size: 14))
+
+                Button("clear local storage") {
+                    UserDefaults.standard.set(
+                        [Any](),
+                        forKey: "parsedScreenshotLocalIDs"
+                    )
+                }
+
+                Button("parse more screenshots") {
+                    Task {
+                        var screenshots =
+                            screenshotManager.fetchScreenshots()
+                        let parsedScreenshotsService =
+                            ParsedScreenshotsService()
+                        let parsedIDs =
+                            parsedScreenshotsService.loadLocalParsedIDs()
+                        screenshots = screenshots.filter {
+                            !parsedIDs.contains($0.localIdentifier)
+                        }
+                        screenshots =
+                            Array(screenshots.prefix(5))
+                        print("Parsing \(screenshots.count) screenshots")
+
+                        let images: [(String, UIImage?)] =
+                            await withTaskGroup(
+                                of: (String, UIImage?).self
+                            ) { group in
+                                for screenshot in screenshots {
+                                    group.addTask {
+
+                                        return
+                                            try! await screenshotManager
+                                            .loadImage(from: screenshot)
+
+                                    }
+                                }
+
+                                var results = [(String, UIImage?)]()
+                                for await result in group {
+                                    results.append(result)
+                                }
+                                return results
+                            }
+
+                        do {
+                            newCards = []
+                            for try await item in uploadImagesStreaming(
+                                images: images
+                            ) {
+                                await MainActor.run {
+                                    newCards.append(item)
+                                }
+                            }
+                            await InitializeCollectionItems(items: newCards)
+                            let uploadedIDs = images.map { $0.0 }
+                            parsedScreenshotsService.markAsParsed(uploadedIDs)
+                            await fetchCards()
+                        } catch {
+                            print("upload error: \(error)")
+                        }
+                    }
+                }
+            } else {
+
+                VStack {
+
+                    ForEach(newStoredCards) { card in
+                        Card(card: card)
+                    }
+                }
+            }
+
+        }.onAppear {
+            Task {
+                await fetchCards()
+            }
+        }
+    }
+
+    func fetchCards() async {
+        do {
+            newStoredCards =
+                try await supabase
+                .from("collection_items")
+                .select("*, ideas(*))")
+                .is("collection_id", value: nil)
+                .execute()
+                .value
+            print(newStoredCards)
+        } catch {
+            print(error)
+        }
+
     }
 }
 
@@ -301,14 +412,13 @@ struct ContentView: View {
                     VStack {
                         // new tab
 
-                        Color.blue
+                        NewView()
                     }
                     .containerRelativeFrame(.horizontal)
                     .id(tab.new)
                     VStack {
                         // pins tab
 
-                        //                    Color.red
                         PinsView()
                     }
                     .containerRelativeFrame(.horizontal)
@@ -359,7 +469,9 @@ struct ContentView: View {
 
                     HStack(spacing: 12) {
                         if !isSearching { tabPill }
-                        if animatedTab == .new && !isSearching { saveIdeaButton }
+                        if animatedTab == .new && !isSearching {
+                            saveIdeaButton
+                        }
                         if animatedTab == .pins { searchBar }
                         if isSearching { closeButton }
                     }
@@ -373,15 +485,23 @@ struct ContentView: View {
         }
         .ignoresSafeArea()
         .onReceive(
-            NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)
+            NotificationCenter.default.publisher(
+                for: UIResponder.keyboardWillShowNotification
+            )
         ) { notification in
-            guard let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+            guard
+                let frame = notification.userInfo?[
+                    UIResponder.keyboardFrameEndUserInfoKey
+                ] as? CGRect
+            else { return }
             withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                 keyboardHeight = frame.height
             }
         }
         .onReceive(
-            NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)
+            NotificationCenter.default.publisher(
+                for: UIResponder.keyboardWillHideNotification
+            )
         ) { _ in
             withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                 keyboardHeight = 0

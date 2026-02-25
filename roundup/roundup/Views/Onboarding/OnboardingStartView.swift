@@ -62,6 +62,9 @@ struct OnboardingStartView: View {
 
                             var screenshots =
                                 screenshotManager.fetchScreenshots()
+                            let parsedScreenshotsService = ParsedScreenshotsService()
+                            let parsedIDs = parsedScreenshotsService.loadLocalParsedIDs()
+                            screenshots = screenshots.filter { !parsedIDs.contains($0.localIdentifier) }
                             screenshotCount = screenshots.count
                             screenshots =
                                 Array(screenshots.prefix(5))
@@ -101,6 +104,8 @@ struct OnboardingStartView: View {
                                         cards.append(item)
                                     }
                                 }
+                                let uploadedIDs = images.map { $0.0 }
+                                parsedScreenshotsService.markAsParsed(uploadedIDs)
                             } catch {
                                 print("upload error: \(error)")
                             }
