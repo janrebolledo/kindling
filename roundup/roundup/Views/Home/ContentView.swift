@@ -133,7 +133,12 @@ struct ContentView: View {
     }
 
     @ViewBuilder private var saveIdeaButton: some View {
-        Button(action: { Task { await newVM.saveCurrentCard() } }) {
+        Button(action: {
+            Task {
+                await newVM.saveCurrentCard()
+                await pinsVM.fetchCards()
+            }
+        }) {
             HStack {
                 Image(systemName: "plus")
                 Text("save idea")
