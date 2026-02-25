@@ -100,6 +100,7 @@ struct NewView: View {
                         ],
                         function: { _ in await viewModel.fetchCards() }
                     )
+                    .id(viewModel.newStoredCards[viewModel.currentCardIndex].id)
                     .padding(.bottom, 128)
                 }
             }
