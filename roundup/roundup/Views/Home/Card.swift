@@ -15,10 +15,11 @@ struct Card: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .bottomLeading) {
-                if card.ideas?.media_url != nil {
-                    AsyncImage(url: URL(string: (card.ideas?.media_url)!)) {
-                        image in
-                        image.image?.resizable()
+                if let mediaUrl = card.ideas?.media_url,
+                    let url = URL(string: mediaUrl)
+                {
+                    AsyncImage(url: url) { phase in
+                        phase.image?.resizable()
                             .scaledToFill()
                             .frame(
                                 width: geometry.size.width,
@@ -27,8 +28,8 @@ struct Card: View {
                             .clipped()
                     }
                 } else {
-                    if image != nil {
-                        Image(uiImage: image!)
+                    if let image {
+                        Image(uiImage: image)
                             .resizable()
                             .scaledToFill()
                             .frame(
@@ -37,7 +38,6 @@ struct Card: View {
                             )
                             .clipped()
                     }
-
                 }
 
                 LinearGradient(
@@ -57,29 +57,30 @@ struct Card: View {
                             .foregroundStyle(.white.opacity(0.5))
                     }
                     Spacer()
-                    Text((card.ideas?.venue!)!)
+                    Text(card.ideas?.venue ?? "Unknown")
                         .font(.editorialNew(.regular, size: 20))
                         .foregroundStyle(.white)
 
                     HStack {
-                        if card.ideas?.location_type != nil {
-                            Text((card.ideas?.location_type!)!)
+                        if let locationType = card.ideas?.location_type {
+                            Text(locationType)
                         }
-                        if card.ideas?.duration != nil {
+                        if let duration = card.ideas?.duration {
                             if card.ideas?.location_type != nil { Text("•") }
-                            Text((card.ideas?.duration!)!)
+                            Text(duration)
                         }
-                        if card.ideas?.pricing != nil {
+                        if let pricing = card.ideas?.pricing {
                             if card.ideas?.location_type != nil
                                 || card.ideas?.duration != nil
                             {
                                 Text("•")
                             }
                             HStack(spacing: 0) {
-                                ForEach(0..<(card.ideas?.pricing!)!, id: \.self)
-                                { _ in Text("$") }
+                                ForEach(0..<pricing, id: \.self) {
+                                    _ in Text("$")
+                                }
                                 ForEach(
-                                    0..<(3 - (card.ideas?.pricing!)!),
+                                    0..<max(0, 3 - pricing),
                                     id: \.self
                                 ) { _ in
                                     Text("$").foregroundStyle(.secondary)
@@ -106,7 +107,7 @@ struct Card: View {
             sheetPresented = true
         }
         .sheet(isPresented: $sheetPresented) {
-            IdeaView(card: card, function: function!)
+            IdeaView(card: card, function: function ?? { _ in })
                 .presentationDragIndicator(.visible)
                 .scrollBounceBehavior(.automatic)
         }

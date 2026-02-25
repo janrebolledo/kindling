@@ -13,7 +13,6 @@ import Supabase
 import SwiftUI
 
 struct IdeaView: View {
-    let HERO_HEIGHT: CGFloat = 500
     var card: CardData
     var function: (ItemWrapper?) async -> Void
 
@@ -61,16 +60,16 @@ struct IdeaView: View {
                                 }
                                 .frame(
                                     width: geometry.size.width,
-                                    height: HERO_HEIGHT
+                                    height: LayoutConstants.heroHeight
                                 )
                                 .clipped()
-                            } else if localImage != nil {
-                                Image(uiImage: localImage!)
+                            } else if let localImage {
+                                Image(uiImage: localImage)
                                     .resizable()
                                     .aspectRatio(contentMode: .fill)
                                     .frame(
                                         width: geometry.size.width,
-                                        height: HERO_HEIGHT
+                                        height: LayoutConstants.heroHeight
                                     )
                                     .clipped()
                             } else {
@@ -98,7 +97,7 @@ struct IdeaView: View {
                             )
                     }
                     .padding(32)
-                    .frame(height: HERO_HEIGHT * 0.6)
+                    .frame(height: LayoutConstants.heroHeight * 0.6)
                     .frame(maxWidth: .infinity)
                     Spacer()
 
@@ -129,16 +128,16 @@ struct IdeaView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .multilineTextAlignment(.leading)
                             HStack(spacing: 12) {
-                                if card.ideas?.location_type != nil {
-                                    Text((card.ideas?.location_type!)!)
+                                if let locationType = card.ideas?.location_type {
+                                    Text(locationType)
                                 }
-                                if card.ideas?.duration != nil {
+                                if let duration = card.ideas?.duration {
                                     if card.ideas?.location_type != nil {
                                         Text("•")
                                     }
-                                    Text((card.ideas?.duration!)!)
+                                    Text(duration)
                                 }
-                                if card.ideas?.pricing != nil {
+                                if let pricing = card.ideas?.pricing {
                                     if card.ideas?.location_type != nil
                                         || card.ideas?.duration != nil
                                     {
@@ -146,11 +145,11 @@ struct IdeaView: View {
                                     }
                                     HStack(spacing: 0) {
                                         ForEach(
-                                            0..<(card.ideas?.pricing!)!,
+                                            0..<pricing,
                                             id: \.self
                                         ) { _ in Text("$") }
                                         ForEach(
-                                            0..<(3 - (card.ideas?.pricing!)!),
+                                            0..<max(0, 3 - pricing),
                                             id: \.self
                                         ) { _ in
                                             Text("$").foregroundStyle(
@@ -165,7 +164,7 @@ struct IdeaView: View {
                         .padding(.horizontal, 24)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
-                    .frame(height: HERO_HEIGHT * 0.4)
+                    .frame(height: LayoutConstants.heroHeight * 0.4)
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -186,15 +185,10 @@ struct IdeaView: View {
                 .padding(.horizontal, 24)
                 .foregroundStyle(.secondary)
 
-                if mapItem != nil && mapItem?.location.coordinate != nil {
+                if let coordinate = mapItem?.location.coordinate {
                     ZStack {
-
                         Map {
-
-                            Marker(
-                                venueTitle,
-                                coordinate: (mapItem?.location.coordinate)!
-                            )
+                            Marker(venueTitle, coordinate: coordinate)
                         }
                         Button("open in Apple Maps ↗") {
                             mapItem?.openInMaps()
@@ -231,8 +225,8 @@ struct IdeaView: View {
                 HStack {
 
                     Group {
-                        if localImage != nil {
-                            Image(uiImage: localImage!)
+                        if let localImage {
+                            Image(uiImage: localImage)
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
                         } else {
@@ -336,7 +330,7 @@ struct IdeaView: View {
         VStack { Color.gray.opacity(0.2) }
             .frame(
                 width: geometry.size.width,
-                height: HERO_HEIGHT
+                height: LayoutConstants.heroHeight
             )
             .clipped()
     }
@@ -414,28 +408,3 @@ private final class LocationManager: NSObject, CLLocationManagerDelegate {
         location = nil
     }
 }
-//
-//#Preview {
-//    IdeaView(
-//        card: ItemWrapper(
-//            id: 0,
-//            local_id: "preview",
-//            ideas: Item(
-//                id: 0,
-//                name: nil,
-//                type: nil,
-//                description: nil,
-//                media_url: nil,
-//                address: "Eucalyptus, Trail Loop, Chino Hills, CA 91709, USA",
-//                location: nil,
-//                location_type: "Outdoors",
-//                duration: "2–3 hrs",
-//                pricing: 1,
-//                date: nil,
-//                time: nil,
-//                venue: "Eucalyptus Loop Trail",
-//                created_at: "2026-01-10"
-//            )
-//        ), fetchCards:
-//    )
-//}
