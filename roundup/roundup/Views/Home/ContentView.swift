@@ -258,7 +258,8 @@ struct ContentView: View {
                         maxBlurRadius: 20,
                         direction: .blurredBottomClearTop
                     )
-                    .frame(height: 100)
+                    .frame(height: 150)
+                    .allowsHitTesting(false)
                     LinearGradient(
                         gradient: Gradient(colors: [
                             Color(uiColor: UIColor.systemBackground).opacity(0),
@@ -267,7 +268,8 @@ struct ContentView: View {
                         startPoint: .top,
                         endPoint: .bottom
                     )
-                    .frame(maxWidth: .infinity, maxHeight: 100)
+                    .frame(maxWidth: .infinity, maxHeight: 150)
+                    .allowsHitTesting(false)
 
                     HStack(spacing: 12) {
                         if !homeVM.isSearching { tabPill }

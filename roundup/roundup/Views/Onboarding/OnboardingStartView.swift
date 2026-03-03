@@ -45,6 +45,12 @@ struct OnboardingStartView: View {
                         .font(
                             .editorialNew(.regular, size: 32)
                         )
+                    Button("clear local storage") {
+                        UserDefaults.standard.set(
+                            [Any](),
+                            forKey: "parsedScreenshotLocalIDs"
+                        )
+                    }
                     StyledButton(
                         title: "allow access to photos to start",
                         systemName: "heart.fill"
@@ -105,7 +111,7 @@ struct OnboardingStartView: View {
                                     }
                                 }
                                 let uploadedIDs = images.map { $0.0 }
-                                parsedScreenshotsService.markAsParsed(uploadedIDs)
+//                                parsedScreenshotsService.markAsParsed(uploadedIDs)
                             } catch {
                                 print("upload error: \(error)")
                             }

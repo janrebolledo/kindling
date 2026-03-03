@@ -17,15 +17,9 @@ struct NewView: View {
 
                 Text("all clear 🫡")
                     .font(.editorialNew(.regular, size: 24))
+                    .padding(.bottom, 16)
                 Text("you've cleaned up all of your screenshots")
                     .font(.neueMontreal(.regular, size: 14))
-
-                Button("clear local storage") {
-                    UserDefaults.standard.set(
-                        [Any](),
-                        forKey: "parsedScreenshotLocalIDs"
-                    )
-                }
 
                 Button("parse more screenshots") {
                     Task {
@@ -82,27 +76,80 @@ struct NewView: View {
                 }
             } else {
 
-                VStack {
-                    VStack {
-                        HStack {
-                            Text("New Captures")
-                                .font(.editorialNew(.regular, size: 24))
-                            Text(
-                                "\(viewModel.currentCardIndex + 1)/\(viewModel.newStoredCards.count)"
-                            )
-                        }
-                    }
-                    .padding(.top, 128)
+                ZStack(alignment: .top) {
 
                     IdeaView(
                         card: viewModel.newStoredCards[
                             viewModel.currentCardIndex
                         ],
-                        function: { _ in await viewModel.fetchCards() }
+                        function: { _ in viewModel.advanceToNextCard() }
                     )
                     .id(viewModel.newStoredCards[viewModel.currentCardIndex].id)
+                    .padding(.top, 100)
                     .padding(.bottom, 128)
+
+                    ZStack(alignment: .top) {
+                        Color(UIColor.systemBackground).frame(
+                            maxWidth: .infinity,
+                            maxHeight: 100
+                        )
+
+                        VariableBlurView(
+                            maxBlurRadius: 5,
+                            direction: .blurredTopClearBottom
+                        )
+                        .frame(height: 100)
+                        .allowsHitTesting(false)
+                        .padding(.top, 100)
+                        LinearGradient(
+                            gradient: Gradient(colors: [
+                                Color(uiColor: UIColor.systemBackground)
+                                    .opacity(1),
+                                Color(uiColor: UIColor.systemBackground)
+                                    .opacity(0),
+                            ]),
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: 100)
+                        .allowsHitTesting(false)
+                        .padding(.top, 100)
+                        VStack {
+                            HStack {
+                                Text("New Captures")
+                                    .font(.editorialNew(.regular, size: 24))
+                                Spacer()
+                                Text(
+                                    "\(viewModel.currentCardIndex + 1)/\(viewModel.sessionTotal)"
+                                )
+                                .font(.neueMontreal(.regular, size: 12))
+                            }
+                            HStack(spacing: 4) {
+                                ForEach(
+                                    0..<viewModel.sessionTotal,
+                                    id: \.self
+                                ) { index in
+                                    Color.primary
+                                        .frame(
+                                            maxWidth: index
+                                                == viewModel.currentCardIndex
+                                            ? .infinity : 50,
+                                            maxHeight: 4
+                                        )
+                                        .clipShape(.capsule)
+                                        .opacity(
+                                            index == viewModel.currentCardIndex
+                                                ? 1 : 0.5
+                                        )
+                                        .animation(AnimationConstants.spring, value: viewModel.currentCardIndex)
+                                }
+                            }
+                        }
+                        .padding(.top, 100)
+                        .padding(.horizontal, 24)
+                    }
                 }
+                .ignoresSafeArea(edges: .top)
             }
         }
         .task {

@@ -82,19 +82,19 @@ struct IdeaView: View {
 
                 VStack {
                     VStack(alignment: .trailing) {
-                        Text("from @fff")
-                            .padding(12)
-                            .glassEffect(
-                                .clear.tint(
-                                    Color(uiColor: UIColor.systemBackground)
-                                        .opacity(0.5)
-                                )
-                            )
-                            .frame(
-                                maxWidth: .infinity,
-                                maxHeight: .infinity,
-                                alignment: .topTrailing
-                            )
+//                        Text("from @fff")
+//                            .padding(12)
+//                            .glassEffect(
+//                                .clear.tint(
+//                                    Color(uiColor: UIColor.systemBackground)
+//                                        .opacity(0.5)
+//                                )
+//                            )
+//                            .frame(
+//                                maxWidth: .infinity,
+//                                maxHeight: .infinity,
+//                                alignment: .topTrailing
+//                            )
                     }
                     .padding(32)
                     .frame(height: LayoutConstants.heroHeight * 0.6)

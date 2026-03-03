@@ -13,6 +13,7 @@ class NewViewModel {
     var newCards: [ItemWrapper] = []
     var newStoredCards: [CollectionItemWrapper] = []
     var currentCardIndex: Int = 0
+    var sessionTotal: Int = 0
     var screenshotManager = ScreenshotManager()
     var isLoading: Bool = false
     var error: Error? = nil
@@ -28,9 +29,22 @@ class NewViewModel {
                 .is("collection_id", value: nil)
                 .execute()
                 .value
+            if sessionTotal == 0 {
+                sessionTotal = newStoredCards.count
+            }
         } catch {
             self.error = error
             print(error)
+        }
+    }
+
+    func advanceToNextCard() {
+        if currentCardIndex < sessionTotal - 1 {
+            currentCardIndex += 1
+        } else {
+            sessionTotal = 0
+            currentCardIndex = 0
+            Task { await fetchCards() }
         }
     }
 
@@ -60,11 +74,7 @@ class NewViewModel {
                 .eq("id", value: currentCard.id)
                 .execute()
 
-            await fetchCards()
-
-            if currentCardIndex >= newStoredCards.count {
-                currentCardIndex = max(0, newStoredCards.count - 1)
-            }
+            advanceToNextCard()
         } catch {
             self.error = error
             print(error)
