@@ -5,11 +5,47 @@
 //  Created by Jan Rebolledo on 3/8/26.
 //
 
+import CoreLocation
 import Photos
 import SwiftUI
 
 private enum PermissionStatus {
     case pending, granted, denied
+}
+
+private func requestLocationAccess() async -> Bool {
+    let manager = CLLocationManager()
+    let status = manager.authorizationStatus
+
+    if status == .authorizedWhenInUse || status == .authorizedAlways {
+        return true
+    }
+    if status == .denied || status == .restricted {
+        return false
+    }
+
+    return await withCheckedContinuation { continuation in
+        let delegate = LocationDelegate(continuation: continuation)
+        manager.delegate = delegate
+        manager.requestWhenInUseAuthorization()
+        // Keep delegate alive until callback fires
+        objc_setAssociatedObject(manager, "delegate", delegate, .OBJC_ASSOCIATION_RETAIN)
+    }
+}
+
+private class LocationDelegate: NSObject, CLLocationManagerDelegate {
+    private var continuation: CheckedContinuation<Bool, Never>?
+
+    init(continuation: CheckedContinuation<Bool, Never>) {
+        self.continuation = continuation
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let status = manager.authorizationStatus
+        guard status != .notDetermined else { return }
+        continuation?.resume(returning: status == .authorizedWhenInUse || status == .authorizedAlways)
+        continuation = nil
+    }
 }
 
 struct OnboardingPermissionsView: View {
@@ -24,6 +60,7 @@ struct OnboardingPermissionsView: View {
 
     @State private var networkStatus: PermissionStatus = .pending
     @State private var photosStatus: PermissionStatus = .pending
+    @State private var locationStatus: PermissionStatus = .pending
     @State private var isProcessing: Bool = false
     @State private var spinAngle: Double = 0
 
@@ -47,6 +84,7 @@ struct OnboardingPermissionsView: View {
                         errorMessage = nil
                         networkStatus = .pending
                         photosStatus = .pending
+                        locationStatus = .pending
                         isProcessing = false
                         startUpload()
                     }
@@ -61,6 +99,7 @@ struct OnboardingPermissionsView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         permissionRow(label: "network", status: networkStatus)
                         permissionRow(label: "photos", status: photosStatus)
+                        permissionRow(label: "location", status: locationStatus)
                     }
                 }
             }
@@ -118,7 +157,11 @@ struct OnboardingPermissionsView: View {
                     return
                 }
 
-                await MainActor.run { isProcessing = true }
+                let locationGranted = await requestLocationAccess()
+                await MainActor.run {
+                    locationStatus = locationGranted ? .granted : .denied
+                    isProcessing = true
+                }
 
                 var screenshots = screenshotManager.fetchScreenshots()
                 let parsedScreenshotsService = ParsedScreenshotsService()
