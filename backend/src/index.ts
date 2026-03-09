@@ -173,6 +173,7 @@ async function processEntry(entry: {
 app.post('/ideas', async (c) => {
   console.log('POST /ideas');
   const screenshots: [{ id: string; text: string }] = await c.req.json();
+  if (!screenshots || screenshots.length === 0) return c.json([], 200);
   const aiLocationData = await parseScreenshot(JSON.stringify(screenshots));
 
   return streamSSE(c, async (stream) => {
