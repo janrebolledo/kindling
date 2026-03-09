@@ -10,12 +10,6 @@ import SwiftUI
 
 struct OnboardingStartView: View {
     @Binding var step: Int
-    @Binding var cards: [ItemWrapper]
-    @Binding var screenshotCount: Int
-    @Binding var firstCardLoaded: Bool
-    @State private var screenshotManager = ScreenshotManager()
-    @State private var buttonPressed: Bool = false
-    var screenshots: [PHAsset] = []
 
     var body: some View {
         VStack {
@@ -55,67 +49,7 @@ struct OnboardingStartView: View {
                         title: "allow access to photos to start",
                         systemName: "heart.fill"
                     ) {
-                        Task {
-
-                            _ =
-                                await screenshotManager
-                                .requestPhotoLibraryAccess()
-
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                buttonPressed = true
-                                step = 2
-                            }
-
-                            var screenshots =
-                                screenshotManager.fetchScreenshots()
-                            let parsedScreenshotsService = ParsedScreenshotsService()
-                            let parsedIDs = parsedScreenshotsService.loadLocalParsedIDs()
-                            screenshots = screenshots.filter { !parsedIDs.contains($0.localIdentifier) }
-                            screenshotCount = screenshots.count
-                            screenshots =
-                                Array(screenshots.prefix(5))
-                            print("Parsing \(screenshots.count) screenshots")
-
-                            let images: [(String, UIImage?)] =
-                                await withTaskGroup(
-                                    of: (String, UIImage?).self
-                                ) { group in
-                                    for screenshot in screenshots {
-                                        group.addTask {
-
-                                            return
-                                                try! await screenshotManager
-                                                .loadImage(from: screenshot)
-
-                                        }
-                                    }
-
-                                    var results = [(String, UIImage?)]()
-                                    for await result in group {
-                                        results.append(result)
-                                    }
-                                    return results
-                                }
-
-                            do {
-                                cards = []
-                                for try await item in uploadImagesStreaming(
-                                    images: images
-                                ) {
-                                    await MainActor.run {
-                                        firstCardLoaded = true
-                                        if firstCardLoaded == true && step == 2 {
-                                            step = 3
-                                        }
-                                        cards.append(item)
-                                    }
-                                }
-                                let uploadedIDs = images.map { $0.0 }
-//                                parsedScreenshotsService.markAsParsed(uploadedIDs)
-                            } catch {
-                                print("upload error: \(error)")
-                            }
-                        }
+                        step = 2
                     }
 
                 }.padding(.top, 100).padding(.bottom, 20)
@@ -174,6 +108,5 @@ struct OnboardingStartView: View {
             }
         }
         .ignoresSafeArea()
-        .opacity(buttonPressed ? 0 : 1)
     }
 }

@@ -134,6 +134,7 @@ struct ContentView: View {
 
     @ViewBuilder private var saveIdeaButton: some View {
         Button(action: {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             Task {
                 await newVM.saveCurrentCard()
                 await pinsVM.fetchCards()

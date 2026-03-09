@@ -84,7 +84,7 @@ struct SignUpCaptureView: View {
                         title: "sign up to view all activities",
                         systemName: "heart.fill"
                     ) {
-                        step = 4
+                        step = 5
                     }
                     .padding(.bottom, 64)
                 }

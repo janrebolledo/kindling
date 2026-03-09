@@ -10,6 +10,7 @@ import SwiftUI
 
 struct OnboardingAnimationView: View {
     @Binding var player: AVPlayer
+    @Binding var appeared: Bool
     @State var textVisible: Bool = false
 
     var body: some View {
@@ -42,8 +43,10 @@ struct OnboardingAnimationView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             Task {
+                await player.seek(to: .zero)
                 player.play()
-                try await Task.sleep(for: .seconds(0.2))
+                appeared = true
+                try await Task.sleep(for: .seconds(0.8))
 
                 await MainActor.run {
                     withAnimation(.easeOut(duration: 0.3)) {
@@ -56,8 +59,9 @@ struct OnboardingAnimationView: View {
 }
 
 #Preview {
+    @Previewable @State var appeared = false
     @State var player: AVPlayer = AVPlayer(
         url: Bundle.main.url(forResource: "onboarding", withExtension: ".mp4")!
     )
-    OnboardingAnimationView(player: $player, )
+    OnboardingAnimationView(player: $player, appeared: $appeared)
 }

@@ -10,9 +10,9 @@ import Supabase
 
 enum CategoryFilter: String, CaseIterable {
     case all = "all"
-    case activities = "activities"
-    case events = "events"
-    case eats = "eats"
+    case activities = "activity"
+    case events = "event"
+    case eats = "food"
 }
 
 @Observable
