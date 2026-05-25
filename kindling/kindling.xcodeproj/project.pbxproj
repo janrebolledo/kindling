@@ -20,7 +20,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		ACC4DFC32F1887F40067658A /* Exceptions for "roundup" folder in "roundup" target */ = {
+		ACC4DFC32F1887F40067658A /* Exceptions for "kindling" folder in "roundup" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -30,12 +30,12 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		ACC4DFB72F1887F20067658A /* roundup */ = {
+		ACC4DFB72F1887F20067658A /* kindling */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				ACC4DFC32F1887F40067658A /* Exceptions for "roundup" folder in "roundup" target */,
+				ACC4DFC32F1887F40067658A /* Exceptions for "kindling" folder in "roundup" target */,
 			);
-			path = roundup;
+			path = kindling;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -61,7 +61,7 @@
 			isa = PBXGroup;
 			children = (
 				ACC4DFB62F1887F20067658A /* Products */,
-				ACC4DFB72F1887F20067658A /* roundup */,
+				ACC4DFB72F1887F20067658A /* kindling */,
 			);
 			sourceTree = "<group>";
 		};
@@ -89,7 +89,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				ACC4DFB72F1887F20067658A /* roundup */,
+				ACC4DFB72F1887F20067658A /* kindling */,
 			);
 			name = roundup;
 			packageProductDependencies = (
