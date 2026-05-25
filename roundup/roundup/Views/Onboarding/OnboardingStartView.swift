@@ -30,7 +30,7 @@ struct OnboardingStartView: View {
                 .frame(maxHeight: .infinity)
 
                 VStack {
-                    Text("the round up").font(
+                    Text("kindling").font(
                         .editorialNew(.italic, size: 24)
                     )
                     Spacer()
@@ -39,12 +39,12 @@ struct OnboardingStartView: View {
                         .font(
                             .editorialNew(.regular, size: 32)
                         )
-                    Button("clear local storage") {
-                        UserDefaults.standard.set(
-                            [Any](),
-                            forKey: "parsedScreenshotLocalIDs"
-                        )
-                    }
+//                    Button("clear local storage") {
+//                        UserDefaults.standard.set(
+//                            [Any](),
+//                            forKey: "parsedScreenshotLocalIDs"
+//                        )
+//                    }
                     StyledButton(
                         title: "allow access to photos to start",
                         systemName: "heart.fill"

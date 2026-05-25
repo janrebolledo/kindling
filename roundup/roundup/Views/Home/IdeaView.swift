@@ -9,6 +9,7 @@ import CoreLocation
 import MapKit
 import Observation
 import Photos
+import QuickLook
 import Supabase
 import SwiftUI
 
@@ -22,6 +23,7 @@ struct IdeaView: View {
     @State private var localImage: UIImage?
     @State private var etaString: String?
     @State private var locationManager = LocationManager()
+    @State private var quickLookURL: URL?
 
     private var address: String {
         (card.ideas?.address ?? card.ideas?.location ?? "").trimmingCharacters(
@@ -246,6 +248,15 @@ struct IdeaView: View {
                     .shadow(radius: 5)
                     .padding()
                     .rotationEffect(.degrees(Double.random(in: -6...6)))
+                    .onTapGesture {
+                        guard let localImage else { return }
+                        let url = FileManager.default.temporaryDirectory
+                            .appendingPathComponent("preview_\(card.local_id).jpg")
+                        if let data = localImage.jpegData(compressionQuality: 0.95) {
+                            try? data.write(to: url)
+                            quickLookURL = url
+                        }
+                    }
 
                     VStack(alignment: .leading) {
                         Text("Saved From")
@@ -273,6 +284,7 @@ struct IdeaView: View {
             }
         }
         .ignoresSafeArea()
+        .quickLookPreview($quickLookURL)
         .onAppear {
             locationManager.requestLocation()
             Task {
