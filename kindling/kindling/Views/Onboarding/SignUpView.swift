@@ -35,15 +35,10 @@ struct SignUpView: View {
                 .frame(maxWidth: .infinity, maxHeight: 350)
 
                 VStack(alignment: .center) {
-                    Text("log in or sign up").font(
-                        Font.custom("PPEditorialNew-Italic", size: 24)
-                    )
+                    Text("log in or sign up")
 
                     Text("keep your screenshots clutter free")
                         .foregroundStyle(.gray)
-                        .font(
-                            Font.custom("PPNeueMontreal-Medium", size: 16)
-                        )
                 }
                 .padding()
             }
@@ -62,7 +57,6 @@ struct SignUpView: View {
                 .textContentType(.emailAddress)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-                .font(.neueMontreal(.regular, size: 16))
                 .padding(.horizontal, 24)
                 .frame(maxWidth: 300, maxHeight: 50)
                 .overlay(
@@ -77,7 +71,6 @@ struct SignUpView: View {
 
                 TextField("••••", text: $password)
                     .textContentType(.password)
-                    .font(.neueMontreal(.regular, size: 16))
                     .padding(.horizontal, 24)
                     .frame(maxWidth: 300, maxHeight: 50)
                     .overlay(
@@ -86,22 +79,15 @@ struct SignUpView: View {
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 24))
                     .contentShape(RoundedRectangle(cornerRadius: 24))
-                StyledButton(
-                    title: "continue",
-                ) {
-                    continueButtonTapped()
-                    print(email)
-                }
-                Text("or")
-
+                
                 Button(action: {
                     print("hi")
+                    continueButtonTapped()
                 }) {
-                    Image("google")
+                    Image(systemName: "apple.logo")
                         .resizable()
                         .frame(maxWidth: 24, maxHeight: 24)
-                    Text("continue with google")
-                        .font(.neueMontreal(.regular, size: 16))
+                    Text("continue with Apple")
                         .foregroundStyle(.black)
                 }
                 .padding(.horizontal, 24)

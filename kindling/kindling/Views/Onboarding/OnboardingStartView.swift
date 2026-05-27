@@ -30,15 +30,10 @@ struct OnboardingStartView: View {
                 .frame(maxHeight: .infinity)
 
                 VStack {
-                    Text("kindling").font(
-                        .editorialNew(.italic, size: 24)
-                    )
+                    Text("kindling")
                     Spacer()
                     Text("don't let your screenshots disappear")
                         .multilineTextAlignment(.center)
-                        .font(
-                            .editorialNew(.regular, size: 32)
-                        )
 //                    Button("clear local storage") {
 //                        UserDefaults.standard.set(
 //                            [Any](),

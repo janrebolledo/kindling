@@ -12,37 +12,26 @@ struct OnboardingView: View {
     @State private var accessGranted = false
     @State private var cards: [ItemWrapper] = []
     @State private var firstCardLoaded: Bool = false
-    @State private var screenshotCount: Int = 0
-    @State private var animationAppeared: Bool = false
-    @State private var player: AVPlayer = AVPlayer(
-        url: Bundle.main.url(forResource: "onboarding", withExtension: ".mp4")!
-    )
 
     var body: some View {
         if step == 1 {
             OnboardingStartView(step: $step)
         }
-        if step == 2 || (step == 3 && !animationAppeared) {
+        if step == 2 {
             OnboardingPermissionsView(
                 step: $step,
                 cards: $cards,
-                screenshotCount: $screenshotCount,
                 firstCardLoaded: $firstCardLoaded
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         if step == 3 {
-            OnboardingAnimationView(player: $player, appeared: $animationAppeared)
-                .frame(maxHeight: animationAppeared ? nil : 0)
-        }
-        if step == 4 {
             SignUpCaptureView(
                 cards: $cards,
                 step: $step,
-                screenshotCount: $screenshotCount
             )
         }
-        if step == 5 {
+        if step == 4 {
             SignUpView(cards: $cards)
         }
     }

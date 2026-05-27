@@ -9,7 +9,19 @@ import Supabase
 import SwiftUI
 
 struct PinsView: View {
-    var viewModel: PinsViewModel
+    @State var collections: [CollectionWrapper] = []
+    @State var collection: CollectionWrapper? = nil
+    @State var selectedFilter: CategoryFilter = .all
+    var isLoading: Bool = false
+
+    var filteredItems: [CollectionItemWrapper] {
+        guard selectedFilter != .all else {
+            return collection?.collection_items ?? []
+        }
+        return (collection?.collection_items ?? []).filter {
+            $0.ideas?.type?.lowercased() == selectedFilter.rawValue
+        }
+    }
 
     var body: some View {
         ScrollView {
@@ -19,21 +31,14 @@ struct PinsView: View {
                         .resizable()
                         .frame(width: 64, height: 64)
                     HStack(spacing: 0) {
-                        Text("the ").font(
-                            .editorialNew(.regular, size: 24)
-                        )
-                        Text("list").font(
-                            .editorialNew(.italic, size: 24)
-                        )
+                        Text("the ")
+                        Text("list")
                     }
 
                     Text(
-                        "\(viewModel.collection?.collection_items?.count ?? 0) ideas saved"
+                        "\(collection?.collection_items?.count ?? 0) ideas saved"
                     )
                     .foregroundStyle(.gray)
-                    .font(
-                        .neueMontreal(.regular, size: 16)
-                    )
                 }
                 Spacer()
                 Button("", systemImage: "xmark") {
@@ -52,10 +57,10 @@ struct PinsView: View {
                 HStack(spacing: 8) {
                     ForEach(CategoryFilter.allCases, id: \.self) { filter in
                         PillButton(
-                            isSelected: viewModel.selectedFilter == filter,
+                            isSelected: selectedFilter == filter,
                             label: filter.rawValue
                         ) {
-                            viewModel.selectedFilter = filter
+                            selectedFilter = filter
                         }
                     }
                 }
@@ -67,9 +72,8 @@ struct PinsView: View {
                 columns: [GridItem(.flexible()), GridItem(.flexible())],
                 spacing: 10
             ) {
-                ForEach(viewModel.filteredItems) { item in
+                ForEach(filteredItems) { item in
                     Card(
-                        function: { _ in await viewModel.fetchCards() },
                         card: item
                     )
                 }
@@ -79,7 +83,16 @@ struct PinsView: View {
         }
         .edgesIgnoringSafeArea(.top)
         .task {
-            await viewModel.fetchCards()
+            do {
+                collections =
+                    try await supabase
+                    .from("collections")
+                    .select("*, collection_items(*, ideas(*))").execute()
+                    .value
+                collection = collections.first
+            } catch {
+                dump(error)
+            }
         }
     }
 }

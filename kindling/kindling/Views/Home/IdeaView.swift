@@ -9,7 +9,6 @@ import CoreLocation
 import MapKit
 import Observation
 import Photos
-import QuickLook
 import Supabase
 import SwiftUI
 
@@ -23,7 +22,6 @@ struct IdeaView: View {
     @State private var localImage: UIImage?
     @State private var etaString: String?
     @State private var locationManager = LocationManager()
-    @State private var quickLookURL: URL?
 
     private var address: String {
         (card.ideas?.address ?? card.ideas?.location ?? "").trimmingCharacters(
@@ -57,7 +55,7 @@ struct IdeaView: View {
                                     case .empty:
                                         placeholderImage(geometry: geometry)
                                     @unknown default:
-                                        placeholderImage(geometry: geometry)
+                                        VStack {  }
                                     }
                                 }
                                 .frame(
@@ -126,7 +124,6 @@ struct IdeaView: View {
                             Spacer()
 
                             Text(venueTitle)
-                                .font(.editorialNew(.regular, size: 32))
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .multilineTextAlignment(.leading)
                             HStack(spacing: 12) {
@@ -161,7 +158,6 @@ struct IdeaView: View {
                                     }
                                 }
                             }
-                            .font(.neueMontreal(.regular, size: 16))
                         }
                         .padding(.horizontal, 24)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -183,7 +179,6 @@ struct IdeaView: View {
                     Image(systemName: "car.fill")
                     Text(etaString ?? "—")
                 }
-                .font(.neueMontreal(.regular, size: 16))
                 .padding(.horizontal, 24)
                 .foregroundStyle(.secondary)
 
@@ -248,22 +243,12 @@ struct IdeaView: View {
                     .shadow(radius: 5)
                     .padding()
                     .rotationEffect(.degrees(Double.random(in: -6...6)))
-                    .onTapGesture {
-                        guard let localImage else { return }
-                        let url = FileManager.default.temporaryDirectory
-                            .appendingPathComponent("preview_\(card.local_id).jpg")
-                        if let data = localImage.jpegData(compressionQuality: 0.95) {
-                            try? data.write(to: url)
-                            quickLookURL = url
-                        }
-                    }
 
                     VStack(alignment: .leading) {
                         Text("Saved From")
                             .foregroundStyle(.secondary)
                         Text(savedFromText)
                     }
-                    .font(.neueMontreal(.regular, size: 16))
 
                 }
 
@@ -278,13 +263,11 @@ struct IdeaView: View {
                     Task { await deleteFromCollection(deleteFromDevice: false) }
                 }
                 .foregroundStyle(.secondary)
-                .font(.neueMontreal(.regular, size: 14))
                 .padding(.bottom, 72)
 
             }
         }
         .ignoresSafeArea()
-        .quickLookPreview($quickLookURL)
         .onAppear {
             locationManager.requestLocation()
             Task {

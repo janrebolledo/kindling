@@ -16,16 +16,16 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		ACC4DFB52F1887F20067658A /* roundup.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = roundup.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		ACC4DFB52F1887F20067658A /* kindling.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = kindling.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		ACC4DFC32F1887F40067658A /* Exceptions for "kindling" folder in "roundup" target */ = {
+		ACC4DFC32F1887F40067658A /* Exceptions for "kindling" folder in "kindling" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
-			target = ACC4DFB42F1887F20067658A /* roundup */;
+			target = ACC4DFB42F1887F20067658A /* kindling */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -33,7 +33,7 @@
 		ACC4DFB72F1887F20067658A /* kindling */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				ACC4DFC32F1887F40067658A /* Exceptions for "kindling" folder in "roundup" target */,
+				ACC4DFC32F1887F40067658A /* Exceptions for "kindling" folder in "kindling" target */,
 			);
 			path = kindling;
 			sourceTree = "<group>";
@@ -68,7 +68,7 @@
 		ACC4DFB62F1887F20067658A /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				ACC4DFB52F1887F20067658A /* roundup.app */,
+				ACC4DFB52F1887F20067658A /* kindling.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -76,9 +76,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		ACC4DFB42F1887F20067658A /* roundup */ = {
+		ACC4DFB42F1887F20067658A /* kindling */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = ACC4DFC02F1887F30067658A /* Build configuration list for PBXNativeTarget "roundup" */;
+			buildConfigurationList = ACC4DFC02F1887F30067658A /* Build configuration list for PBXNativeTarget "kindling" */;
 			buildPhases = (
 				ACC4DFB12F1887F20067658A /* Sources */,
 				ACC4DFB22F1887F20067658A /* Frameworks */,
@@ -91,7 +91,7 @@
 			fileSystemSynchronizedGroups = (
 				ACC4DFB72F1887F20067658A /* kindling */,
 			);
-			name = roundup;
+			name = kindling;
 			packageProductDependencies = (
 				ACC4E0702F189B350067658A /* Auth */,
 				ACC4E0722F189B350067658A /* Functions */,
@@ -100,8 +100,8 @@
 				ACC4E0782F189B350067658A /* Storage */,
 				ACC4E07A2F189B350067658A /* Supabase */,
 			);
-			productName = roundup;
-			productReference = ACC4DFB52F1887F20067658A /* roundup.app */;
+			productName = kindling;
+			productReference = ACC4DFB52F1887F20067658A /* kindling.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -112,7 +112,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2620;
-				LastUpgradeCheck = 2620;
+				LastUpgradeCheck = 2650;
 				TargetAttributes = {
 					ACC4DFB42F1887F20067658A = {
 						CreatedOnToolsVersion = 26.2;
@@ -136,7 +136,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				ACC4DFB42F1887F20067658A /* roundup */,
+				ACC4DFB42F1887F20067658A /* kindling */,
 			);
 		};
 /* End PBXProject section */
@@ -221,6 +221,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -278,6 +279,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
 			};
@@ -292,7 +294,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = FDX72WZH23;
 				ENABLE_PREVIEWS = YES;
-				INFOPLIST_FILE = roundup/Info.plist;
+				INFOPLIST_FILE = kindling/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -303,7 +305,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = janrebolledo.roundup;
+				PRODUCT_BUNDLE_IDENTIFIER = janrebolledo.kindling;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -324,7 +326,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = FDX72WZH23;
 				ENABLE_PREVIEWS = YES;
-				INFOPLIST_FILE = roundup/Info.plist;
+				INFOPLIST_FILE = kindling/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -335,7 +337,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = janrebolledo.roundup;
+				PRODUCT_BUNDLE_IDENTIFIER = janrebolledo.kindling;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -359,7 +361,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		ACC4DFC02F1887F30067658A /* Build configuration list for PBXNativeTarget "roundup" */ = {
+		ACC4DFC02F1887F30067658A /* Build configuration list for PBXNativeTarget "kindling" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				ACC4DFC12F1887F30067658A /* Debug */,

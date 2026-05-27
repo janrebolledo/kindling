@@ -53,12 +53,10 @@ struct Card: View {
                     HStack(alignment: .top) {
                         Spacer()
                         Text("tap to view")
-                            .font(.neueMontreal(.regular, size: 16))
                             .foregroundStyle(.white.opacity(0.5))
                     }
                     Spacer()
                     Text(card.ideas?.venue ?? "Unknown")
-                        .font(.editorialNew(.regular, size: 20))
                         .foregroundStyle(.white)
 
                     HStack {
@@ -89,7 +87,6 @@ struct Card: View {
                         }
                     }
                     .foregroundStyle(.white)
-                    .font(.neueMontreal(.regular, size: 16))
                 }
                 .padding(20)
             }

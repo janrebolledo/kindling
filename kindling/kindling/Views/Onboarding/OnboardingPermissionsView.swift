@@ -51,7 +51,6 @@ private class LocationDelegate: NSObject, CLLocationManagerDelegate {
 struct OnboardingPermissionsView: View {
     @Binding var step: Int
     @Binding var cards: [ItemWrapper]
-    @Binding var screenshotCount: Int
     @Binding var firstCardLoaded: Bool
 
     @State private var screenshotManager = ScreenshotManager()
@@ -71,7 +70,6 @@ struct OnboardingPermissionsView: View {
             if let error = errorMessage {
                 VStack(spacing: 16) {
                     Text("something went wrong")
-                        .font(.editorialNew(.italic, size: 24))
                     Text(error)
                         .font(.system(size: 14))
                         .foregroundStyle(.secondary)
@@ -92,7 +90,6 @@ struct OnboardingPermissionsView: View {
             } else {
                 VStack(spacing: 24) {
                     Text(isProcessing ? "processing your screenshots" : "checking for permissions")
-                        .font(.neueMontreal(.regular, size: 14))
                         .foregroundStyle(.secondary)
                         .animation(.easeInOut, value: isProcessing)
 
@@ -133,7 +130,6 @@ struct OnboardingPermissionsView: View {
             .frame(width: 20)
 
             Text(label)
-                .font(.neueMontreal(.regular, size: 24))
         }
         .foregroundStyle(status == .pending ? .primary : .secondary)
         .animation(.easeInOut(duration: 0.3), value: status)
@@ -169,7 +165,6 @@ struct OnboardingPermissionsView: View {
                 screenshots = screenshots.filter {
                     !parsedIDs.contains($0.localIdentifier)
                 }
-                await MainActor.run { screenshotCount = screenshots.count }
                 screenshots = Array(screenshots.prefix(5))
                 print("Parsing \(screenshots.count) screenshots")
 
@@ -192,22 +187,21 @@ struct OnboardingPermissionsView: View {
 
                 await MainActor.run {
                     cards = []
-                    step = 3
                 }
 
                 for try await item in uploadImagesStreaming(images: images) {
                     await MainActor.run {
                         if !firstCardLoaded {
                             firstCardLoaded = true
-                            step = 4
+                            step = 3
                         }
                         cards.append(item)
                     }
                 }
 
                 await MainActor.run {
-                    if step == 3 {
-                        step = 4
+                    if step == 2 {
+                        step = 3
                     }
                     isLoading = false
                 }
@@ -225,7 +219,6 @@ struct OnboardingPermissionsView: View {
     OnboardingPermissionsView(
         step: .constant(2),
         cards: .constant([]),
-        screenshotCount: .constant(0),
         firstCardLoaded: .constant(false)
     )
 }

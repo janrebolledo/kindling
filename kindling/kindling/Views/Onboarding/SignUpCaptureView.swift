@@ -11,7 +11,6 @@ import SwiftUI
 struct SignUpCaptureView: View {
     @Binding var cards: [ItemWrapper]
     @Binding var step: Int
-    @Binding var screenshotCount: Int
 
     var body: some View {
 
@@ -35,15 +34,9 @@ struct SignUpCaptureView: View {
                 .frame(maxWidth: .infinity, maxHeight: 350)
 
                 VStack(alignment: .leading) {
-                    Text("captured").font(
-                        Font.custom("PPEditorialNew-Italic", size: 24)
-                    )
+                    Text("kindling")
+                    
 
-                    Text("\(screenshotCount) screenshots saved")
-                        .foregroundStyle(.gray)
-                        .font(
-                            Font.custom("PPNeueMontreal-Medium", size: 16)
-                        )
                 }
                 .padding(.horizontal, 32)
             }
@@ -84,7 +77,7 @@ struct SignUpCaptureView: View {
                         title: "sign up to view all activities",
                         systemName: "heart.fill"
                     ) {
-                        step = 5
+                        step = 4
                     }
                     .padding(.bottom, 64)
                 }

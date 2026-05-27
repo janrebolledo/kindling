@@ -36,7 +36,6 @@ struct StyledButton: View {
                     }
                     Text(title)
                         .foregroundStyle(.white)
-                        .font(.neueMontreal(.regular, size: 16))
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding()
