@@ -4,113 +4,286 @@
 //
 //  Created by Jan Rebolledo on 1/23/26.
 //
+import CoreLocation
+import MapKit
 import SwiftUI
 
 struct Card: View {
     @State var image: UIImage? = nil
     @State var sheetPresented: Bool = false
+    @State private var mapItem: MKMapItem?
+    @State private var etaString: String?
+    @State private var locationManager = CardLocationManager()
+
     var function: ((ItemWrapper?) async -> Void)?
-
     var card: CardData
-    var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .bottomLeading) {
-                if let mediaUrl = card.ideas?.media_url,
-                    let url = URL(string: mediaUrl)
-                {
-                    AsyncImage(url: url) { phase in
-                        phase.image?.resizable()
-                            .scaledToFill()
-                            .frame(
-                                width: geometry.size.width,
-                                height: geometry.size.height
-                            )
-                            .clipped()
-                    }
-                } else {
-                    if let image {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(
-                                width: geometry.size.width,
-                                height: geometry.size.height
-                            )
-                            .clipped()
-                    }
-                }
 
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        .black.opacity(0.8),
-                        .black.opacity(0),
-                    ]),
-                    startPoint: .bottomLeading,
-                    endPoint: .topTrailing
-                )
+    private var address: String {
+        (card.ideas?.address ?? card.ideas?.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(alignment: .top) {
-                        Spacer()
-                        Text("tap to view")
-                            .foregroundStyle(.white.opacity(0.5))
-                    }
-                    Spacer()
-                    Text(card.ideas?.venue ?? "Unknown")
-                        .foregroundStyle(.white)
+    private var venueTitle: String {
+        card.ideas?.venue ?? "Untitled"
+    }
 
-                    HStack {
-                        if let locationType = card.ideas?.location_type {
-                            Text(locationType)
-                        }
-                        if let duration = card.ideas?.duration {
-                            if card.ideas?.location_type != nil { Text("•") }
-                            Text(duration)
-                        }
-                        if let pricing = card.ideas?.pricing {
-                            if card.ideas?.location_type != nil
-                                || card.ideas?.duration != nil
-                            {
-                                Text("•")
-                            }
-                            HStack(spacing: 0) {
-                                ForEach(0..<pricing, id: \.self) {
-                                    _ in Text("$")
-                                }
-                                ForEach(
-                                    0..<max(0, 3 - pricing),
-                                    id: \.self
-                                ) { _ in
-                                    Text("$").foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }
-                    .foregroundStyle(.white)
-                }
-                .padding(20)
+    private var isEvent: Bool {
+        card.ideas?.type?.lowercased() == "event"
+    }
+
+    private var eventDayString: String? {
+        guard let dateStr = card.ideas?.date, !dateStr.isEmpty else { return nil }
+        let dayFmt = DateFormatter()
+        dayFmt.dateFormat = "EEEE"
+        for fmt in ["yyyy-MM-dd", "MM/dd/yyyy", "MMMM d, yyyy", "MMM d, yyyy"] {
+            let parser = DateFormatter()
+            parser.dateFormat = fmt
+            if let date = parser.date(from: dateStr) {
+                return dayFmt.string(from: date)
             }
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: 200)
-        .clipShape(RoundedRectangle(cornerRadius: 24))
-        .contentShape(RoundedRectangle(cornerRadius: 24))
+        return dateStr
+    }
+
+    var body: some View {
+        Group {
+            if isEvent { eventCard } else { locationCard }
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 20))
         .onAppear {
+            locationManager.requestLocation()
             Task {
                 image = try await loadImage(from: card.local_id)
+                await fetchMapData()
             }
         }
-        .onTapGesture {
-            sheetPresented = true
-        }
+        .onChange(of: locationManager.location) { _, _ in Task { await fetchETA() } }
+        .onChange(of: mapItem) { _, _ in Task { await fetchETA() } }
+        .onTapGesture { sheetPresented = true }
         .sheet(isPresented: $sheetPresented) {
-            IdeaView(card: card, function: function ?? { _ in })
-                .presentationDragIndicator(.visible)
-                .scrollBounceBehavior(.automatic)
+            IdeaView(
+                card: card,
+                mapItem: mapItem,
+                etaString: etaString,
+                function: function ?? { _ in }
+            )
+            .presentationDragIndicator(.visible)
+            .scrollBounceBehavior(.automatic)
         }
     }
+
+    // MARK: - Event Card
+
+    private var eventCard: some View {
+        ZStack(alignment: .bottomLeading) {
+            cardImage
+                .frame(maxWidth: .infinity)
+                .frame(height: 250)
+                .clipShape(RoundedRectangle(cornerRadius: 20))
+
+            // Warm cream gradient from bottom
+            LinearGradient(
+                gradient: Gradient(stops: [
+                    .init(color: Color(red: 248/255, green: 246/255, blue: 240/255).opacity(0), location: 0),
+                    .init(color: Color(red: 248/255, green: 246/255, blue: 240/255), location: 1),
+                ]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 20))
+
+            VStack(alignment: .leading, spacing: 10) {
+                if let day = eventDayString {
+                    Text(day)
+                        .font(.system(size: 14, weight: .medium))
+                        .tracking(-0.35)
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(.ultraThinMaterial)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.white.opacity(0.25), lineWidth: 1)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+
+                Spacer()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(venueTitle)
+                        .font(.system(size: 24, weight: .medium))
+                        .tracking(-0.6)
+                        .foregroundStyle(.black)
+
+                    locationEtaRow(fontSize: 14, color: .black)
+
+                    if let hours = card.ideas?.open_hours,
+                       let status = resolveOpenStatus(from: hours) {
+                        HStack(spacing: 8) {
+                            Text(status.isOpen ? "Open" : "Closed").fontWeight(.medium)
+                            Text(status.detail)
+                        }
+                        .font(.system(size: 14))
+                        .tracking(-0.35)
+                        .foregroundStyle(.black.opacity(0.5))
+                    } else {
+                        HStack(spacing: 8) {
+                            if let locationType = card.ideas?.location_type {
+                                Text(locationType).fontWeight(.medium)
+                            }
+                            if let duration = card.ideas?.duration {
+                                Text(duration)
+                            }
+                        }
+                        .font(.system(size: 14))
+                        .tracking(-0.35)
+                        .foregroundStyle(.black.opacity(0.5))
+                    }
+                }
+            }
+            .padding(16)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 250)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+    }
+
+    // MARK: - Location Card
+
+    private var locationCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            cardImage
+                .frame(maxWidth: .infinity)
+                .frame(height: 150)
+                .clipShape(RoundedRectangle(cornerRadius: 20))
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(venueTitle)
+                    .font(.system(size: 20, weight: .medium))
+                    .tracking(-0.5)
+                    .foregroundStyle(.primary)
+
+                locationEtaRow(fontSize: 14, color: .secondary)
+
+                if let hours = card.ideas?.open_hours,
+                   let status = resolveOpenStatus(from: hours) {
+                    HStack(spacing: 8) {
+                        Text(status.isOpen ? "Open" : "Closed").fontWeight(.medium)
+                        Text(status.detail)
+                    }
+                    .font(.system(size: 14))
+                    .tracking(-0.35)
+                    .foregroundStyle(.primary.opacity(0.5))
+                } else {
+                    HStack(spacing: 8) {
+                        if let locationType = card.ideas?.location_type {
+                            Text(locationType).fontWeight(.medium)
+                        }
+                        if let duration = card.ideas?.duration {
+                            Text(duration)
+                        }
+                    }
+                    .font(.system(size: 14))
+                    .tracking(-0.35)
+                    .foregroundStyle(.primary.opacity(0.5))
+                }
+            }
+            .padding(8)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Shared
+
+    @ViewBuilder
+    private var cardImage: some View {
+        if let mediaUrl = card.ideas?.media_url, let url = URL(string: mediaUrl) {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let img): img.resizable().scaledToFill()
+                default: Color.gray.opacity(0.15)
+                }
+            }
+        } else if let image {
+            Image(uiImage: image).resizable().scaledToFill()
+        } else {
+            Color.gray.opacity(0.15)
+        }
+    }
+
+    @ViewBuilder
+    private func locationEtaRow(fontSize: CGFloat, color: some ShapeStyle) -> some View {
+        HStack(spacing: 4) {
+            Text(card.ideas?.location ?? "—")
+            if let eta = etaString {
+                Text("•")
+                Image(systemName: "car.fill")
+                Text(eta)
+            }
+        }
+        .font(.system(size: fontSize))
+        .tracking(-0.35)
+        .foregroundStyle(color)
+        .lineLimit(1)
+    }
+
+    // MARK: - Fetch
+
+    private func fetchMapData() async {
+        guard !address.isEmpty else { return }
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = address
+        do {
+            let response = try await MKLocalSearch(request: request).start()
+            guard let item = response.mapItems.first else { return }
+            await MainActor.run { mapItem = item }
+        } catch {
+            print("MapKit search error: \(error)")
+        }
+    }
+
+    private func fetchETA() async {
+        guard let destination = mapItem, locationManager.location != nil else { return }
+        let request = MKDirections.Request()
+        request.source = MKMapItem.forCurrentLocation()
+        request.destination = destination
+        request.transportType = .automobile
+        do {
+            let response = try await MKDirections(request: request).calculate()
+            guard let route = response.routes.first else { return }
+            let interval = route.expectedTravelTime
+            let h = Int(interval) / 3600
+            let m = (Int(interval) % 3600) / 60
+            await MainActor.run { etaString = h > 0 ? "\(h)h \(m)m" : "\(m)m" }
+        } catch {
+            await MainActor.run { etaString = nil }
+        }
+    }
+}
+
+private final class CardLocationManager: NSObject, CLLocationManagerDelegate {
+    var location: CLLocation?
+    private let manager = CLLocationManager()
+
+    override init() {
+        super.init()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyKilometer
+    }
+
+    func requestLocation() {
+        manager.requestWhenInUseAuthorization()
+        manager.requestLocation()
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        location = locations.last
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}
 }
 
 #Preview {
     ContentView()
 }
+

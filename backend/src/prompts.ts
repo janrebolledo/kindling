@@ -83,6 +83,16 @@ Extract the following when available in the OCR text:
 9. **description**: A soft description of item
    - Examples: "A whimsical, picturesque, hiking trail surrounded by mooing friends.", "A Mexico City inspired cafe framed by the LA Metro."
 
+10. **highlights**: A short AI-generated one-liner summarizing standout details about the place
+    - Only extract if there are notable highlights mentioned (e.g., hours, amenities, unique features, tips)
+    - Write as a punchy, lowercase, ampersand-joined summary
+    - Examples: "open late & has outlets on every table", "dog friendly & great for remote work", "cash only & worth the wait"
+    - Set to null if no highlights are mentioned
+
+11. **highlights_sources**: The raw text strings that were used to produce the highlights one-liner
+    - Return as an array of the exact quoted/comment strings you pulled from the OCR text
+    - Set to null if highlights is null
+
 Handling Missing Information:
 - Do NOT use web search or external lookups
 - Do NOT infer or guess information not present in the OCR text
@@ -110,8 +120,10 @@ Structure:
     "date": "YYYY-MM-DD or null",
     "time": "HH:MM AM/PM or null",
     "tag": "activity" | "event" | "food",
-    "activity_type": "string or null"
-    "description": "string"
+    "activity_type": "string or null",
+    "description": "string",
+    "highlights": "string or null",
+    "highlights_sources": ["string"] or null
   }
 }
 
@@ -133,7 +145,9 @@ Output:
     "time": "6:00 PM",
     "tag": "event",
     "activity_type": "🎷 Music",
-    "description": "A sunny little jazz portal in Griffith Park, where the hills hum and the trees keep time."
+    "description": "A sunny little jazz portal in Griffith Park, where the hills hum and the trees keep time.",
+    "highlights": null,
+    "highlights_sources": null
   }
 }
 
@@ -153,7 +167,9 @@ Output:
     "time": null,
     "tag": "food",
     "activity_type": "🍽️ Restaurant",
-    "description": "A cozy Inland Empire wine haven where vinyl spins, glasses clink, and time walks barefoot."
+    "description": "A cozy Inland Empire wine haven where vinyl spins, glasses clink, and time walks barefoot.",
+    "highlights": null,
+    "highlights_sources": null
   }
 }
 
@@ -173,7 +189,9 @@ Output:
     "time": null,
     "tag": "activity",
     "activity_type": "⛰️ Outdoor",
-    "description": "A whimsical, picturesque, hiking trail surrounded by mooing friends."
+    "description": "A whimsical, picturesque, hiking trail surrounded by mooing friends.",
+    "highlights": null,
+    "highlights_sources": null
   }
 }
 
@@ -193,7 +211,9 @@ Output:
     "time": null,
     "tag": "event",
     "activity_type": "🎷 Music",
-    "description": "A vintage americana coffeehouse where musicians and creatives find their flock."
+    "description": "A vintage americana coffeehouse where musicians and creatives find their flock.",
+    "highlights": null,
+    "highlights_sources": null
   }
 }
 
@@ -246,6 +266,8 @@ CRITICAL REMINDERS
 7. Output valid JSON only - no markdown formatting, no code blocks
 8. Skip expired events (past dates)
 9. activity_type is only for activities, null for events and food
+10. highlights should be null if no notable highlights are present in the OCR text
+11. highlights_sources must be the exact strings from the OCR that informed the highlights
 
 Screenshot Data:
 

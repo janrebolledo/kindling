@@ -28,6 +28,9 @@ struct Item: Decodable, Identifiable {
     let time: String?
     let venue: String?
     let created_at: String?
+    let highlights: String?
+    let highlights_sources: [String]?
+    let open_hours: [String]?
 }
 
 struct collection: Encodable, Identifiable {

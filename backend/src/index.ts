@@ -27,7 +27,7 @@ async function getLocationDetails(textQuery: String) {
       headers: {
         'Content-Type': 'application/json',
         'X-Goog-FieldMask':
-          'places.id,places.displayName,places.formattedAddress,places.addressComponents,places.photos,places.generativeSummary,places.priceLevel',
+        'places.id,places.displayName,places.formattedAddress,places.addressComponents,places.photos,places.generativeSummary,places.priceLevel,places.currentOpeningHours',
         'X-Goog-Api-Key': Bun.env['GOOGLE_MAPS_API_KEY'],
       },
     },
@@ -107,10 +107,21 @@ async function processEntry(entry: {
 
   const { data: matches, error } = supabaseResult;
   if (matches && matches.length > 0) {
+    const existing = matches[0] as Record<string, unknown>;
+    // Backfill open_hours on cached records that predate the column
+    if (existing.open_hours == null && mapsData?.data?.places?.[0]) {
+      const hours =
+        (mapsData.data.places[0] as { currentOpeningHours?: { weekdayDescriptions?: string[] } })
+          .currentOpeningHours?.weekdayDescriptions ?? null;
+      if (hours) {
+        await supabase.from('ideas').update({ open_hours: hours }).eq('id', existing.id);
+        existing.open_hours = hours;
+      }
+    }
     return {
       id: matches[0].id,
       local_id: id,
-      ideas: matches[0] as Record<string, unknown>,
+      ideas: existing,
       error,
     };
   }
@@ -127,6 +138,7 @@ async function processEntry(entry: {
     formattedAddress?: string;
     priceLevel?: string;
     displayName?: { text?: string };
+    currentOpeningHours?: { weekdayDescriptions?: string[] };
   };
   const cityComp = mapsLocationData.addressComponents?.find(
     (i) => i.types?.includes('locality') && i.types?.includes('political'),
@@ -158,6 +170,9 @@ async function processEntry(entry: {
     date: (item.date as string | null) ?? null,
     time: (item.time as string | null) ?? null,
     venue: mapsLocationData.displayName?.text ?? (item.venue as string) ?? null,
+    highlights: (item.highlights as string | null) ?? null,
+    highlights_sources: (item.highlights_sources as string[] | null) ?? null,
+    open_hours: mapsLocationData.currentOpeningHours?.weekdayDescriptions ?? null,
   };
 
   const { error: uploadError } = await supabase.from('ideas').insert([newIdea]);

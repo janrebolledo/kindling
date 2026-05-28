@@ -60,6 +60,8 @@ export type ExtractionResult = {
       tag: ExtractionTag;
       activity_type: string | null;
       description: string | null;
+      highlights: string | null;
+      highlights_sources: string[] | null;
     };
   };
 };

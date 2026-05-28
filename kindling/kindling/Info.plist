@@ -44,11 +44,5 @@
 	<string>Our app needs to access your gallery to help round up your screenshots.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Roundup uses your location to show driving time to this place.</string>
-	<key>UIAppFonts</key>
-	<array>
-		<string>PPEditorialNew-Italic.otf</string>
-		<string>PPEditorialNew-Regular.otf</string>
-		<string>PPNeueMontreal-Medium.otf</string>
-	</array>
 </dict>
 </plist>

@@ -12,287 +12,429 @@ import Photos
 import Supabase
 import SwiftUI
 
+private let pillBackground = Color(red: 251 / 255, green: 251 / 255, blue: 249 / 255)
+private let destructiveRed = Color(red: 1.0, green: 56 / 255, blue: 60 / 255)
+
 struct IdeaView: View {
     var card: CardData
+    var mapItem: MKMapItem?
+    var etaString: String?
     var function: (ItemWrapper?) async -> Void
 
     @Environment(\.dismiss) private var dismiss
-
-    @State private var mapItem: MKMapItem?
     @State private var localImage: UIImage?
-    @State private var etaString: String?
-    @State private var locationManager = LocationManager()
-
-    private var address: String {
-        (card.ideas?.address ?? card.ideas?.location ?? "").trimmingCharacters(
-            in: .whitespacesAndNewlines
-        )
-    }
+    @State private var screenshotDate: Date?
+    @State private var showQuickLook = false
+    @State private var isDeletingFromCollection = false
+    @State private var isDeletingFromDevice = false
 
     private var venueTitle: String {
         card.ideas?.venue ?? "Untitled"
     }
 
+    private var locationText: String {
+        (card.ideas?.location?.isEmpty ?? true)
+            ? (card.ideas?.address ?? "—")
+            : card.ideas?.location ?? "—"
+    }
+
     var body: some View {
-
         ScrollView {
+            // Hero image with gradient fade
+            heroSection
 
-            ZStack(alignment: .bottom) {
-                VStack {
-                    GeometryReader { geometry in
-                        Group {
-                            if let mediaUrl = card.ideas?.media_url,
-                                let url = URL(string: mediaUrl)
-                            {
-                                AsyncImage(url: url) { phase in
-                                    switch phase {
-                                    case .success(let image):
-                                        image
-                                            .resizable()
-                                            .aspectRatio(contentMode: .fill)
-                                    case .failure:
-                                        placeholderImage(geometry: geometry)
-                                    case .empty:
-                                        placeholderImage(geometry: geometry)
-                                    @unknown default:
-                                        VStack {  }
-                                    }
-                                }
-                                .frame(
-                                    width: geometry.size.width,
-                                    height: LayoutConstants.heroHeight
-                                )
-                                .clipped()
-                            } else if let localImage {
-                                Image(uiImage: localImage)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                                    .frame(
-                                        width: geometry.size.width,
-                                        height: LayoutConstants.heroHeight
-                                    )
-                                    .clipped()
-                            } else {
-                                placeholderImage(geometry: geometry)
-                            }
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity)
+            // Title + share + status + highlights
+            VStack(alignment: .leading, spacing: 0) {
+                // Title row
+                HStack(alignment: .center, spacing: 8) {
+                    Text(venueTitle)
+                        .font(.system(size: 32, weight: .medium))
+                        .tracking(-0.8)
+                        .foregroundStyle(.primary)
 
-                VStack {
-                    VStack(alignment: .trailing) {
-//                        Text("from @fff")
-//                            .padding(12)
-//                            .glassEffect(
-//                                .clear.tint(
-//                                    Color(uiColor: UIColor.systemBackground)
-//                                        .opacity(0.5)
-//                                )
-//                            )
-//                            .frame(
-//                                maxWidth: .infinity,
-//                                maxHeight: .infinity,
-//                                alignment: .topTrailing
-//                            )
-                    }
-                    .padding(32)
-                    .frame(height: LayoutConstants.heroHeight * 0.6)
-                    .frame(maxWidth: .infinity)
                     Spacer()
 
-                    ZStack(alignment: .bottom) {
-                        VariableBlurView(
-                            maxBlurRadius: 10,
-                            direction: .blurredBottomClearTop
-                        )
-                        .frame(maxHeight: .infinity)
-                        LinearGradient(
-                            gradient: Gradient(colors: [
-                                Color(uiColor: UIColor.systemBackground)
-                                    .opacity(0),
-                                Color(uiColor: UIColor.systemBackground)
-                                    .opacity(1),
-                                Color(uiColor: UIColor.systemBackground)
-                                    .opacity(1),
-                            ]),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        VStack(alignment: .leading, spacing: 20) {
-                            Spacer()
+                    ShareLink(
+                        item: venueTitle,
+                        subject: Text(venueTitle)
+                    ) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "square.and.arrow.up")
+                            Text("share")
+                        }
+                        .font(.system(size: 16))
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(Color.orange.opacity(0.12))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.bottom, 8)
 
-                            Text(venueTitle)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .multilineTextAlignment(.leading)
-                            HStack(spacing: 12) {
-                                if let locationType = card.ideas?.location_type {
-                                    Text(locationType)
-                                }
-                                if let duration = card.ideas?.duration {
-                                    if card.ideas?.location_type != nil {
-                                        Text("•")
-                                    }
-                                    Text(duration)
-                                }
-                                if let pricing = card.ideas?.pricing {
-                                    if card.ideas?.location_type != nil
-                                        || card.ideas?.duration != nil
-                                    {
-                                        Text("•")
-                                    }
-                                    HStack(spacing: 0) {
-                                        ForEach(
-                                            0..<pricing,
-                                            id: \.self
-                                        ) { _ in Text("$") }
-                                        ForEach(
-                                            0..<max(0, 3 - pricing),
-                                            id: \.self
-                                        ) { _ in
-                                            Text("$").foregroundStyle(
-                                                .secondary
-                                            )
-                                        }
-                                    }
-                                }
+                // Status row
+                if card.ideas?.location_type != nil || card.ideas?.duration != nil || card.ideas?.open_hours != nil {
+                    HStack(spacing: 8) {
+                        if let hours = card.ideas?.open_hours,
+                           let status = resolveOpenStatus(from: hours) {
+                            Text(status.isOpen ? "Open" : "Closed").fontWeight(.medium)
+                            Text(status.detail)
+                        } else {
+                            if let locationType = card.ideas?.location_type {
+                                Text(locationType).fontWeight(.medium)
+                            }
+                            if let hrs = card.ideas?.duration {
+                                Text(hrs)
                             }
                         }
-                        .padding(.horizontal, 24)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
-                    .frame(height: LayoutConstants.heroHeight * 0.4)
+                    .font(.system(size: 16))
+                    .tracking(-0.4)
+                    .foregroundStyle(.secondary)
                 }
-                .frame(maxWidth: .infinity)
             }
-            .padding(.bottom, 20)
+            .padding(.top, 6)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 32)
 
-            VStack(spacing: 24) {
-                HStack {
-                    Text(
-                        (card.ideas?.location?.isEmpty ?? true)
-                            ? (card.ideas?.address ?? "—")
-                            : card.ideas?.location ?? "—"
-                    )
-                    Spacer()
+            // Highlights card
+            if card.ideas?.description != nil || card.ideas?.name != nil {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("highlights")
+                        .font(.system(size: 14, weight: .medium))
+                        .tracking(-0.35)
+                        .foregroundStyle(.secondary)
+                    if let name = card.ideas?.name {
+                        Text(name)
+                            .font(.system(size: 16, weight: .medium))
+                            .tracking(-0.4)
+                            .foregroundStyle(.primary)
+                    }
+                    if let description = card.ideas?.description {
+                        Text(description)
+                            .font(.system(size: 14, weight: .medium))
+                            .tracking(-0.35)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 10)
+                .background(pillBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal, 16)
+                .padding(.bottom, 32)
+            }
+
+            // Hours card
+            if let hours = card.ideas?.open_hours, !hours.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("hours")
+                        .font(.system(size: 14, weight: .medium))
+                        .tracking(-0.35)
+                        .foregroundStyle(.secondary)
+                    ForEach(hours, id: \.self) { entry in
+                        let parts = entry.split(separator: ":", maxSplits: 1).map(String.init)
+                        HStack(alignment: .top) {
+                            Text(parts.first ?? entry)
+                                .font(.system(size: 14, weight: .medium))
+                                .tracking(-0.35)
+                                .foregroundStyle(.primary)
+                                .frame(width: 100, alignment: .leading)
+                            Text(parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : "")
+                                .font(.system(size: 14))
+                                .tracking(-0.35)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 10)
+                .background(pillBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal, 16)
+                .padding(.bottom, 32)
+            }
+
+            // Location + ETA row
+            HStack {
+                Text(locationText)
+                    .font(.system(size: 16))
+                    .tracking(-0.4)
+                    .foregroundStyle(.primary)
+
+                Spacer()
+
+                HStack(spacing: 4) {
                     Image(systemName: "car.fill")
                     Text(etaString ?? "—")
                 }
-                .padding(.horizontal, 24)
-                .foregroundStyle(.secondary)
-
-                if let coordinate = mapItem?.location.coordinate {
-                    ZStack {
-                        Map {
-                            Marker(venueTitle, coordinate: coordinate)
-                        }
-                        Button("open in Apple Maps ↗") {
-                            mapItem?.openInMaps()
-                        }
-                        .buttonStyle(.plain)
-                        .padding(12)
-                        .glassEffect(
-                            .clear.tint(
-                                Color(uiColor: UIColor.systemBackground)
-                                    .opacity(0.5)
-                            )
-                        )
-                        .frame(
-                            maxWidth: .infinity,
-                            maxHeight: .infinity,
-                            alignment: .topTrailing
-                        )
-                        .padding(12)
-                    }
-                    .frame(height: 250)
-                    .frame(maxWidth: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: 24))
-                    .padding()
-                } else {
-                    VStack {
-                    }
-                    .frame(height: 250)
-                    .frame(maxWidth: .infinity)
-                    .background(Color.gray.opacity(0.2))
-                    .clipShape(RoundedRectangle(cornerRadius: 24))
-                    .padding()
-                }
-
-                HStack {
-
-                    Group {
-                        if let localImage {
-                            Image(uiImage: localImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                        } else {
-                            RoundedRectangle(cornerRadius: 20)
-                                .fill(Color.gray.opacity(0.3))
-                                .frame(height: 93)
-                        }
-                    }
-                    .frame(width: 93)
-                    .clipShape(RoundedRectangle(cornerRadius: 20))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 20)
-                            .stroke(.white, lineWidth: 8)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 20))
-                    .contentShape(RoundedRectangle(cornerRadius: 20))
-                    .shadow(radius: 5)
-                    .padding()
-                    .rotationEffect(.degrees(Double.random(in: -6...6)))
-
-                    VStack(alignment: .leading) {
-                        Text("Saved From")
-                            .foregroundStyle(.secondary)
-                        Text(savedFromText)
-                    }
-
-                }
-
-                StyledButton(
-                    title: "delete from collection & device",
-                    systemName: "trash.fill"
-                ) {
-                    Task { await deleteFromCollection(deleteFromDevice: true) }
-                }
-
-                Button("delete from collection & keep on device") {
-                    Task { await deleteFromCollection(deleteFromDevice: false) }
-                }
-                .foregroundStyle(.secondary)
-                .padding(.bottom, 72)
-
+                .font(.system(size: 16))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(pillBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
             }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
+
+            // Map
+            mapSection
+                .padding(.horizontal, 13)
+                .padding(.bottom, 48)
+
+            // Polaroid + saved info + actions
+            savedSection
+                .padding(.horizontal, 16)
+                .padding(.bottom, 48)
+
+            // Bottom action buttons
+            VStack(spacing: 8) {
+                Button {
+                    // TODO: report issue
+                } label: {
+                    Label("Report an issue", systemImage: "exclamationmark.bubble.fill")
+                        .font(.system(size: 16, weight: .medium))
+                        .tracking(-0.4)
+                        .foregroundStyle(.primary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 42)
+                }
+                .buttonStyle(.plain)
+                .background(pillBackground)
+                .clipShape(Capsule())
+
+                Button {
+                    guard !isDeletingFromCollection else { return }
+                    isDeletingFromCollection = true
+                    Task {
+                        await deleteFromCollection(deleteFromDevice: false)
+                        isDeletingFromCollection = false
+                    }
+                } label: {
+                    Label("Delete from kindling", systemImage: "trash")
+                        .font(.system(size: 16, weight: .medium))
+                        .tracking(-0.4)
+                        .foregroundStyle(isDeletingFromCollection ? .secondary : destructiveRed)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 42)
+                }
+                .buttonStyle(.plain)
+                .background(pillBackground)
+                .clipShape(Capsule())
+                .disabled(isDeletingFromCollection)
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 72)
         }
         .ignoresSafeArea()
         .onAppear {
-            locationManager.requestLocation()
             Task {
                 localImage = try await loadImage(from: card.local_id)
+                let result = PHAsset.fetchAssets(withLocalIdentifiers: [card.local_id], options: nil)
+                screenshotDate = result.firstObject?.creationDate
+            }
+        }
+    }
 
-                if !address.isEmpty,
-                    let request = MKGeocodingRequest(addressString: address)
-                {
-                    do {
-                        mapItem = try await request.mapItems.first
-                    } catch {
-                        print("error: \(error)")
+    // MARK: - Subviews
+
+    @ViewBuilder
+    private var heroSection: some View {
+        ZStack(alignment: .bottom) {
+            GeometryReader { geometry in
+                Group {
+                    if let mediaUrl = card.ideas?.media_url,
+                        let url = URL(string: mediaUrl)
+                    {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                            default:
+                                placeholderImage(geometry: geometry)
+                            }
+                        }
+                        .frame(width: geometry.size.width, height: LayoutConstants.heroHeight)
+                        .clipped()
+                    } else if let localImage {
+                        Image(uiImage: localImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: geometry.size.width, height: LayoutConstants.heroHeight)
+                            .clipped()
+                    } else {
+                        placeholderImage(geometry: geometry)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+
+            LinearGradient(
+                gradient: Gradient(stops: [
+                    .init(color: .clear, location: 0.473),
+                    .init(color: Color(uiColor: UIColor.systemBackground), location: 1.0),
+                ]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: LayoutConstants.heroHeight)
+            .frame(maxWidth: .infinity)
+        }
+        .frame(height: LayoutConstants.heroHeight)
+    }
+
+    @ViewBuilder
+    private var mapSection: some View {
+        ZStack(alignment: .bottom) {
+            if let coordinate = mapItem?.location.coordinate {
+                Map {
+                    Marker(venueTitle, coordinate: coordinate)
+                }
+                .frame(height: 203)
+                .clipShape(RoundedRectangle(cornerRadius: 24))
+
+                Button {
+                    mapItem?.openInMaps()
+                } label: {
+                    Text("open in Maps ↗")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(Color.black.opacity(0.25))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .padding(19)
+            } else {
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(Color.gray.opacity(0.15))
+                    .frame(height: 203)
+            }
+
+            // "tap to view saved places nearby" bottom overlay
+            ZStack {
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        .clear,
+                        Color(uiColor: UIColor.systemBackground).opacity(0.75),
+                    ]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .background(.ultraThinMaterial.opacity(0.3))
+
+                Text("tap to view saved places nearby")
+                    .font(.system(size: 16, weight: .medium))
+                    .tracking(-0.4)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 53)
+            .clipShape(
+                UnevenRoundedRectangle(
+                    topLeadingRadius: 0,
+                    bottomLeadingRadius: 24,
+                    bottomTrailingRadius: 24,
+                    topTrailingRadius: 0
+                )
+            )
+        }
+        .frame(height: 203)
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+    }
+
+    @ViewBuilder
+    private var savedSection: some View {
+        VStack(alignment: .center, spacing: 16) {
+            // Polaroid
+            Group {
+                if let localImage {
+                    Image(uiImage: localImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 143, height: 143)
+                        .clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: 2))
+                } else {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.gray.opacity(0.2))
+                        .frame(width: 143, height: 143)
+                }
+            }
+            .padding(8)
+            .padding(.bottom, 24)
+            .background(.white)
+            .clipShape(RoundedRectangle(cornerRadius: 2))
+            .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 4)
+            .rotationEffect(.degrees(Double.random(in: -6...6)))
+
+            // Saved on label
+            VStack(spacing: 6) {
+                Text("Saved on")
+                    .font(.system(size: 16))
+                    .tracking(-0.4)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                Text(savedDateText)
+                    .font(.system(size: 16, weight: .medium))
+                    .tracking(-0.4)
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+
+            // View + Delete pill buttons
+            HStack(spacing: 8) {
+                Button {
+                    showQuickLook = true
+                } label: {
+                    Label("View", systemImage: "photo")
+                        .font(.system(size: 16, weight: .medium))
+                        .tracking(-0.4)
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 16)
+                        .frame(height: 42)
+                }
+                .buttonStyle(.plain)
+                .background(pillBackground)
+                .clipShape(Capsule())
+                .disabled(localImage == nil)
+                .sheet(isPresented: $showQuickLook) {
+                    if let image = localImage {
+                        ImagePreviewSheet(image: image)
                     }
                 }
 
+                Button {
+                    guard !isDeletingFromDevice else { return }
+                    isDeletingFromDevice = true
+                    Task {
+                        await deleteFromCollection(deleteFromDevice: true)
+                        isDeletingFromDevice = false
+                    }
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                        .font(.system(size: 16, weight: .medium))
+                        .tracking(-0.4)
+                        .foregroundStyle(isDeletingFromDevice ? .secondary : destructiveRed)
+                        .padding(.horizontal, 16)
+                        .frame(height: 42)
+                }
+                .buttonStyle(.plain)
+                .background(pillBackground)
+                .clipShape(Capsule())
+                .disabled(isDeletingFromDevice)
             }
         }
-        .onChange(of: locationManager.location) { _, _ in
-            Task { await fetchETA() }
-        }
-        .onChange(of: mapItem) { _, _ in
-            Task { await fetchETA() }
-        }
-
     }
+
+    // MARK: - Helpers
 
     private func deleteFromCollection(deleteFromDevice: Bool = false) async {
         do {
@@ -322,84 +464,72 @@ struct IdeaView: View {
     }
 
     private func placeholderImage(geometry: GeometryProxy) -> some View {
-        VStack { Color.gray.opacity(0.2) }
-            .frame(
-                width: geometry.size.width,
-                height: LayoutConstants.heroHeight
-            )
-            .clipped()
+        Color.gray.opacity(0.2)
+            .frame(width: geometry.size.width, height: LayoutConstants.heroHeight)
     }
 
-    private func fetchETA() async {
-        guard let destination = mapItem, locationManager.location != nil else {
-            return
-        }
-        let request = MKDirections.Request()
-        request.source = MKMapItem.forCurrentLocation()
-        request.destination = destination
-        request.transportType = .automobile
-        let directions = MKDirections(request: request)
-        do {
-            let response = try await directions.calculate()
-            guard let route = response.routes.first else { return }
-            let interval = route.expectedTravelTime
-            let hours = Int(interval) / 3600
-            let minutes = (Int(interval) % 3600) / 60
-            let formatted = hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
-            await MainActor.run { etaString = formatted }
-        } catch {
-            await MainActor.run { etaString = nil }
-        }
-    }
-
-    private var savedFromText: String {
-        guard let created = card.ideas?.created_at, !created.isEmpty else {
-            return "Screenshot from device"
-        }
-        let parser = ISO8601DateFormatter()
-        parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        var date = parser.date(from: created)
-        if date == nil {
-            parser.formatOptions = [.withInternetDateTime]
-            date = parser.date(from: created)
-        }
-        if date == nil {
-            parser.formatOptions = [.withFullDate]
-            date = parser.date(from: created)
-        }
-        guard let d = date else { return "Saved on \(created)" }
+    private var savedDateText: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d, yyyy"
-        return "Saved on \(formatter.string(from: d))"
+        if let date = screenshotDate {
+            return formatter.string(from: date)
+        }
+        return "unknown"
     }
 }
 
-private final class LocationManager: NSObject, CLLocationManagerDelegate {
-    var location: CLLocation?
-    private let manager = CLLocationManager()
+struct ImagePreviewSheet: View {
+    let image: UIImage
+    @Environment(\.dismiss) private var dismiss
 
-    override init() {
-        super.init()
-        manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyKilometer
-    }
+    @State private var scale: CGFloat = 1
+    @State private var lastScale: CGFloat = 1
+    @State private var offset: CGSize = .zero
+    @State private var lastOffset: CGSize = .zero
 
-    func requestLocation() {
-        manager.requestWhenInUseAuthorization()
-        manager.requestLocation()
-    }
-
-    func locationManager(
-        _ manager: CLLocationManager,
-        didUpdateLocations locations: [CLLocation]
-    ) {
-        location = locations.last
-    }
-
-    func locationManager(
-        _ manager: CLLocationManager,
-        didFailWithError error: Error
-    ) {
-        location = nil
+    var body: some View {
+        NavigationStack {
+            GeometryReader { geo in
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .scaleEffect(scale)
+                    .offset(offset)
+                    .gesture(
+                        MagnificationGesture()
+                            .onChanged { v in scale = max(1, lastScale * v) }
+                            .onEnded { _ in lastScale = scale }
+                            .simultaneously(with:
+                                DragGesture()
+                                    .onChanged { v in
+                                        guard scale > 1 else { return }
+                                        offset = CGSize(
+                                            width: lastOffset.width + v.translation.width,
+                                            height: lastOffset.height + v.translation.height
+                                        )
+                                    }
+                                    .onEnded { _ in lastOffset = offset }
+                            )
+                    )
+                    .onTapGesture(count: 2) {
+                        withAnimation(.spring) {
+                            scale = 1; lastScale = 1
+                            offset = .zero; lastOffset = .zero
+                        }
+                    }
+                    .animation(.interactiveSpring, value: scale)
+            }
+            .ignoresSafeArea()
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Done") { dismiss() }
+                        .fontWeight(.medium)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    ShareLink(item: Image(uiImage: image), preview: SharePreview("Screenshot", image: Image(uiImage: image)))
+                }
+            }
+        }
     }
 }
