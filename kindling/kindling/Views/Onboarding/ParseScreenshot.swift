@@ -15,32 +15,16 @@ func recognizeText(
     usesLanguageCorrection: Bool = true,
 ) async -> String {
     guard let cgImage = image.cgImage else { return "" }
-
-    // Create a new image-request handler.
-    let requestHandler = VNImageRequestHandler(cgImage: cgImage)
-
-    // Create a new request to recognize text.
-    let request = VNRecognizeTextRequest()
-
-    do {
-        // Perform the text-recognition request.
-        try requestHandler.perform([request])
-        guard
-            let observations =
-                request.results
-        else {
+    return await Task.detached(priority: .userInitiated) {
+        let requestHandler = VNImageRequestHandler(cgImage: cgImage)
+        let request = VNRecognizeTextRequest()
+        do {
+            try requestHandler.perform([request])
+            guard let observations = request.results else { return "" }
+            return observations.compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
+        } catch {
+            print("Unable to perform the requests: \(error).")
             return ""
         }
-        
-        let recognizedStrings = observations.compactMap { observation in
-            return observation.topCandidates(1).first?.string
-        }
-
-        return recognizedStrings.joined(separator: "\n")
-    } catch {
-        print("Unable to perform the requests: \(error).")
-    }
-
-    return ""
-
+    }.value
 }
