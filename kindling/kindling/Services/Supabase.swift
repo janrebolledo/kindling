@@ -54,4 +54,5 @@ struct UserData: Decodable {
     let user_id: UUID
     let parsed_screenshot_ids: [String]
     let created_at: String?
+    let preferred_transport_type: String?
 }

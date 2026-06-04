@@ -99,7 +99,8 @@ struct Card: View {
                         .foregroundStyle(.black)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
-                        .background(.ultraThinMaterial)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        .environment(\.colorScheme, .light)
                         .overlay(
                             RoundedRectangle(cornerRadius: 12)
                                 .stroke(Color.white.opacity(0.25), lineWidth: 1)

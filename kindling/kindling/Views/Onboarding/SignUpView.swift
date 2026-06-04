@@ -1,111 +1,115 @@
 import Supabase
 //
 //  SignUpView.swift
-//  roundup
-//
-//  Created by Jan Rebolledo on 1/30/26.
+//  kindling
 //
 import SwiftUI
 
 struct SignUpView: View {
     @Binding var cards: [ItemWrapper]
-    @State private var email: String = ""
-    @State private var password: String = ""
     @State private var isLoading: Bool = false
     @State var result: Result<Void, Error>?
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
-        VStack {
-            ZStack(alignment: .center) {
+        ZStack(alignment: .top) {
+            Color(.systemBackground).ignoresSafeArea()
 
-                Image("background")
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(maxWidth: .infinity, minHeight: 350)
-                    .clipped()
+            Image(colorScheme == .dark ? "gradient dark" : "gradient light")
+                .resizable()
+                .scaledToFill()
+                .frame(maxWidth: .infinity)
+                .frame(height: 400)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .ignoresSafeArea()
 
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        .white.opacity(0),
-                        .white.opacity(1),
-                    ]),
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .frame(maxWidth: .infinity, maxHeight: 350)
+            VStack(spacing: 24) {
+                // Title + logo
+                VStack(spacing: 2) {
+                    Text("sign up for")
+                        .font(.system(size: 36, weight: .medium))
+                        .tracking(-0.9)
+                        .foregroundColor(.primary)
 
-                VStack(alignment: .center) {
-                    Text("log in or sign up")
-
-                    Text("keep your screenshots clutter free")
-                        .foregroundStyle(.gray)
-                }
-                .padding()
-            }
-            .frame(maxWidth: .infinity, maxHeight: 350)
-
-            VStack(spacing: 16) {
-                Text("email")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 24)
-                TextField(
-                    "",
-                    text: $email,
-                    prompt: Text(verbatim: "name@email.com")
-                )
-                .keyboardType(.emailAddress)
-                .textContentType(.emailAddress)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .padding(.horizontal, 24)
-                .frame(maxWidth: 300, maxHeight: 50)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24)
-                        .stroke(.black.opacity(0.25), lineWidth: 4)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 24))
-                .contentShape(RoundedRectangle(cornerRadius: 24))
-                Text("password")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 24)
-
-                TextField("••••", text: $password)
-                    .textContentType(.password)
-                    .padding(.horizontal, 24)
-                    .frame(maxWidth: 300, maxHeight: 50)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 24)
-                            .stroke(.black.opacity(0.25), lineWidth: 4)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 24))
-                    .contentShape(RoundedRectangle(cornerRadius: 24))
-                
-                Button(action: {
-                    print("hi")
-                    continueButtonTapped()
-                }) {
-                    Image(systemName: "apple.logo")
+                    Image(colorScheme == .dark ? "kindling white" : "kindling black")
                         .resizable()
-                        .frame(maxWidth: 24, maxHeight: 24)
-                    Text("continue with Apple")
-                        .foregroundStyle(.black)
+                        .scaledToFit()
+                        .frame(height: 39)
                 }
-                .padding(.horizontal, 24)
-                .frame(maxWidth: 300, maxHeight: 50)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24)
-                        .stroke(.black.opacity(0.25), lineWidth: 4)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 24))
-                .contentShape(RoundedRectangle(cornerRadius: 24))
-            }
-            .frame(maxWidth: 300)
-            Spacer()
+                .multilineTextAlignment(.center)
+                .padding(.top, 24)
 
+                Text("play has never been easier")
+                    .font(.system(size: 20, weight: .medium))
+                    .tracking(-0.5)
+                    .foregroundColor(.primary)
+                    .multilineTextAlignment(.center)
+
+                // Decorative card pair
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        // Left card (partially off-screen)
+                        OnboardingSignUpCard(
+                            day: "Saturday",
+                            title: "The Garage Sale",
+                            location: "Fullerton, CA",
+                            detail: "$12.50 Tickets",
+                            topColors: [Color(red: 0.62, green: 0.50, blue: 0.38), Color(red: 0.44, green: 0.35, blue: 0.27)],
+                            cardBackground: Color(red: 248/255, green: 246/255, blue: 240/255)
+                        )
+                        .frame(width: 280)
+                        .offset(x: -geo.size.width * 0.27)
+
+                        // Right card (visible)
+                        OnboardingSignUpCard(
+                            day: "Sunday",
+                            title: "Do Coffee",
+                            location: "Yorba Linda, CA",
+                            detail: "Open · Closes at 4 PM",
+                            topColors: [Color(red: 0.30, green: 0.22, blue: 0.18), Color(red: 0.18, green: 0.14, blue: 0.12)],
+                            cardBackground: Color(red: 248/255, green: 246/255, blue: 242/255)
+                        )
+                        .frame(width: 280)
+                        .offset(x: geo.size.width * 0.5 + 10)
+                    }
+                }
+                .frame(height: 260)
+                .padding(.horizontal, -48)
+                .clipped()
+
+                Spacer()
+
+                VStack(spacing: 12) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.35)) { continueButtonTapped() }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "apple.logo")
+                                .font(.system(size: 18, weight: .medium))
+                            Text("continue with Apple")
+                                .font(.system(size: 20, weight: .medium))
+                                .tracking(-0.5)
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 56)
+                        .background(Color.black)
+                        .clipShape(RoundedRectangle(cornerRadius: 24))
+                    }
+
+                    Text("By continuing, you agree to kindling's \(Text("Terms & Conditions").underline()) and acknowledge the \(Text("Privacy Policy").underline()).")
+                        .font(.system(size: 12))
+                        .foregroundColor(Color(red: 142/255, green: 142/255, blue: 147/255))
+                        .multilineTextAlignment(.center)
+                        .tracking(-0.12)
+                }
+                .padding(.bottom, 16)
+            }
+            .padding(.horizontal, 48)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .ignoresSafeArea()
     }
+
     func continueButtonTapped() {
         Task {
             isLoading = true
@@ -116,14 +120,12 @@ struct SignUpView: View {
                     password: "example-password"
                 )
                 result = .success(())
-
                 await InitializeCollection(items: cards)
             } catch let authError as Auth.AuthError {
                 if case .api(_, let errorCode, _, _) = authError {
                     if errorCode.rawValue == "user_already_exists" {
-                        // try signin
                         print("user already exists, trying user sign in")
-                        try await supabase.auth.signIn(
+                        try? await supabase.auth.signIn(
                             email: "example@email.com",
                             password: "example-password"
                         )
@@ -132,12 +134,51 @@ struct SignUpView: View {
                 }
             } catch {
                 result = .failure(error)
-
             }
         }
     }
 }
 
-//#Preview {
-//    SignUpView()
-//}
+private struct OnboardingSignUpCard: View {
+    let day: String
+    let title: String
+    let location: String
+    let detail: String
+    let topColors: [Color]
+    let cardBackground: Color
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Color block top
+            LinearGradient(colors: topColors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                .frame(height: 150)
+                .clipShape(UnevenRoundedRectangle(topLeadingRadius: 20, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 20))
+
+            // Content
+            VStack(alignment: .leading, spacing: 6) {
+                Text(day)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.secondary)
+                Text(title)
+                    .font(.system(size: 20, weight: .medium))
+                    .tracking(-0.5)
+                    .foregroundColor(.primary)
+                Text(location)
+                    .font(.system(size: 14))
+                    .tracking(-0.35)
+                    .foregroundColor(.primary)
+                Text(detail)
+                    .font(.system(size: 14))
+                    .tracking(-0.35)
+                    .foregroundColor(.secondary)
+                    .opacity(0.5)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(cardBackground)
+            .clipShape(UnevenRoundedRectangle(topLeadingRadius: 0, bottomLeadingRadius: 20, bottomTrailingRadius: 20, topTrailingRadius: 0))
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .shadow(color: .black.opacity(0.12), radius: 8, x: 0, y: 2)
+    }
+}

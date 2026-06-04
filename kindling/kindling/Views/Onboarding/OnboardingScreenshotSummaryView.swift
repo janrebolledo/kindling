@@ -11,16 +11,23 @@ struct OnboardingScreenshotSummaryView: View {
     let totalCount: Int
     let totalSizeGB: Double
     @Binding var isProcessing: Bool
-
+    
     @Environment(\.colorScheme) private var colorScheme
     @State private var spinAngle: Double = 0
 
+    private var sizeText: String {
+        if totalSizeGB < 1 {
+            return "\(String(format: "%.0f", totalSizeGB * 1024)) mbs"
+        }
+        return "\(String(format: "%.1f", totalSizeGB)) gbs"
+    }
+    
     private struct PolaroidItem {
         let rotation: Double
         let offsetX: CGFloat
         let offsetY: CGFloat
     }
-
+    
     private let polaroidLayouts: [PolaroidItem] = [
         PolaroidItem(rotation:  9.57, offsetX:  118, offsetY: -138),
         PolaroidItem(rotation:  8.33, offsetX:  -13, offsetY: -196),
@@ -28,11 +35,11 @@ struct OnboardingScreenshotSummaryView: View {
         PolaroidItem(rotation:-13.99, offsetX: -115, offsetY: -134),
         PolaroidItem(rotation:  7.86, offsetX:  -48, offsetY:  -64),
     ]
-
+    
     var body: some View {
         ZStack(alignment: .top) {
             Color(.systemBackground).ignoresSafeArea()
-
+            
             Image(colorScheme == .dark ? "gradient dark" : "gradient light")
                 .resizable()
                 .scaledToFill()
@@ -40,8 +47,8 @@ struct OnboardingScreenshotSummaryView: View {
                 .frame(height: 400)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .ignoresSafeArea()
-
-            VStack(spacing: 0) {
+            
+            VStack(spacing: 24) {
                 GeometryReader { geo in
                     let scale = geo.size.width / 402
                     ZStack {
@@ -57,31 +64,30 @@ struct OnboardingScreenshotSummaryView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .frame(height: 320)
-                .padding(.top, 16)
-
+//                .frame(height: 320)
+                .padding(.top, 200)
+                
                 VStack(spacing: 8) {
                     Text("we looked at your \(totalCount) recent screenshots")
                         .font(.system(size: 36, weight: .medium))
                         .tracking(-0.9)
                         .foregroundColor(.primary)
                         .multilineTextAlignment(.center)
-
-                    Text("you have \(totalCount) screenshots taking up ~\(String(format: "%.1f", totalSizeGB)) gbs 🫥")
+                    
+                    Text("you have \(totalCount) screenshots taking up ~\(sizeText) 🫥")
                         .font(.system(size: 20, weight: .medium))
                         .tracking(-0.5)
                         .foregroundColor(.primary)
                         .multilineTextAlignment(.center)
                         .opacity(0.7)
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 32)
-
+//                .padding(.top, 32)
+                
                 Spacer()
-
+                
                 VStack(spacing: 12) {
                     Button {
-                        step = 4
+                        withAnimation(.easeInOut(duration: 0.35)) { step = 4 }
                     } label: {
                         HStack(spacing: 10) {
                             if isProcessing {
@@ -100,40 +106,40 @@ struct OnboardingScreenshotSummaryView: View {
                         .clipShape(Capsule())
                     }
                     .disabled(isProcessing)
-                    .padding(.horizontal, 20)
                     .animation(.easeInOut(duration: 0.3), value: isProcessing)
-
+                    
                     Text("kindling cannot view your photos, everything is stored on device :)")
                         .font(.system(size: 12))
                         .foregroundColor(Color(red: 142/255, green: 142/255, blue: 147/255))
                         .multilineTextAlignment(.center)
-                        .padding(.horizontal, 20)
                 }
                 .padding(.bottom, 16)
             }
+            .padding(.horizontal, 48)
         }
         .onAppear {
-            withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
+            withAnimation(.linear(duration: 3.2).repeatForever(autoreverses: false)) {
                 spinAngle = 360
             }
         }
-}
-
-private struct UserPhotoPolaroid: View {
-    let image: UIImage
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 110, height: 110)
-                .clipped()
-            Color.clear.frame(height: 28)
+    }
+    
+    private struct UserPhotoPolaroid: View {
+        let image: UIImage
+        
+        var body: some View {
+            VStack(spacing: 0) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 110, height: 110)
+                    .clipped()
+                Color.clear.frame(height: 28)
+            }
+            .frame(width: 130, height: 148)
+            .background(Color.white)
+            .shadow(color: .black.opacity(0.15), radius: 6, x: 0, y: 3)
         }
-        .frame(width: 130, height: 148)
-        .background(Color.white)
-        .shadow(color: .black.opacity(0.15), radius: 6, x: 0, y: 3)
     }
 }
 

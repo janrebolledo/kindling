@@ -12,7 +12,7 @@ import Photos
 import Supabase
 import SwiftUI
 
-private let pillBackground = Color(red: 251 / 255, green: 251 / 255, blue: 249 / 255)
+private let pillBackground = Color("raisedSurface")
 private let destructiveRed = Color(red: 1.0, green: 56 / 255, blue: 60 / 255)
 
 struct IdeaView: View {
@@ -127,37 +127,6 @@ struct IdeaView: View {
                 .padding(.bottom, 32)
             }
 
-            // Hours card
-            if let hours = card.ideas?.open_hours, !hours.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("hours")
-                        .font(.system(size: 14, weight: .medium))
-                        .tracking(-0.35)
-                        .foregroundStyle(.secondary)
-                    ForEach(hours, id: \.self) { entry in
-                        let parts = entry.split(separator: ":", maxSplits: 1).map(String.init)
-                        HStack(alignment: .top) {
-                            Text(parts.first ?? entry)
-                                .font(.system(size: 14, weight: .medium))
-                                .tracking(-0.35)
-                                .foregroundStyle(.primary)
-                                .frame(width: 100, alignment: .leading)
-                            Text(parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : "")
-                                .font(.system(size: 14))
-                                .tracking(-0.35)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 10)
-                .background(pillBackground)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .padding(.horizontal, 16)
-                .padding(.bottom, 32)
-            }
-
             // Location + ETA row
             HStack {
                 Text(locationText)
@@ -184,6 +153,33 @@ struct IdeaView: View {
             mapSection
                 .padding(.horizontal, 13)
                 .padding(.bottom, 48)
+
+            // Hours
+            if let hours = card.ideas?.open_hours, !hours.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("hours")
+                        .font(.system(size: 14, weight: .medium))
+                        .tracking(-0.35)
+                        .foregroundStyle(.secondary)
+                    ForEach(hours, id: \.self) { entry in
+                        let parts = entry.split(separator: ":", maxSplits: 1).map(String.init)
+                        HStack(alignment: .top) {
+                            Text(parts.first ?? entry)
+                                .font(.system(size: 14, weight: .medium))
+                                .tracking(-0.35)
+                                .foregroundStyle(.primary)
+                                .frame(width: 100, alignment: .leading)
+                            Text(parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : "")
+                                .font(.system(size: 14))
+                                .tracking(-0.35)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 32)
+            }
 
             // Polaroid + saved info + actions
             savedSection
@@ -374,6 +370,9 @@ struct IdeaView: View {
             .clipShape(RoundedRectangle(cornerRadius: 2))
             .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 4)
             .rotationEffect(.degrees(Double.random(in: -6...6)))
+            .onTapGesture {
+                if localImage != nil { showQuickLook = true }
+            }
 
             // Saved on label
             VStack(spacing: 6) {

@@ -172,7 +172,7 @@ struct OnboardingPermissionsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .ignoresSafeArea()
 
-            VStack(spacing: 0) {
+            VStack(spacing: 24) {
                 // Card carousel
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
@@ -180,10 +180,11 @@ struct OnboardingPermissionsView: View {
                             SampleEventCard(card: card)
                         }
                     }
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, 48)
                 }
                 .frame(height: 271)
                 .padding(.top, 16)
+                .padding(.horizontal, -48)
 
                 if let error = errorMessage {
                     errorSection(error: error)
@@ -194,9 +195,9 @@ struct OnboardingPermissionsView: View {
                 Spacer()
 
                 legalText
-                    .padding(.horizontal, 20)
                     .padding(.bottom, 16)
             }
+            .padding(.horizontal, 48)
         }
         .onAppear {
             withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
@@ -209,7 +210,7 @@ struct OnboardingPermissionsView: View {
     // MARK: - Subviews
 
     private var mainContent: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 24) {
             // Title: "add your gallery / to start kindling"
             VStack(spacing: 2) {
                 Text("add your gallery")
@@ -229,7 +230,6 @@ struct OnboardingPermissionsView: View {
                 }
             }
             .multilineTextAlignment(.center)
-            .padding(.top, 32)
 
             // Permission rows
             VStack(spacing: 20) {
@@ -237,7 +237,6 @@ struct OnboardingPermissionsView: View {
                 permissionRow(label: "Network", status: networkStatus)
                 permissionRow(label: "Location", status: locationStatus)
             }
-            .padding(.top, 32)
         }
     }
 
@@ -351,7 +350,7 @@ struct OnboardingPermissionsView: View {
                     totalSizeGB = Double(totalCount) * 3.5 / 1024
                     cards = []
                     isProcessing = true
-                    step = 3
+                    withAnimation(.easeInOut(duration: 0.35)) { step = 3 }
                 }
 
                 for try await item in uploadImagesStreaming(images: images) {
