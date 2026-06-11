@@ -23,13 +23,18 @@ protocol CardData {
     var ideas: Item? { get }
 }
 
-struct ItemWrapper: Decodable, Identifiable, CardData {
+struct ItemWrapper: Codable, Identifiable, CardData {
     let id: Int
     let local_id: String
+    let idea_id: Int
+    let highlights: String?
+    let highlights_sources: [String]?
     let ideas: Item?
 }
 
-private let ideasURL = URL(string: "http://localhost:3000/ideas")!
+let backendBaseURL = URL(string: "http://172.20.10.2:3000")!
+
+private let ideasURL = backendBaseURL.appendingPathComponent("ideas")
 
 /// Builds the OCR entries and shared request for POST /ideas. Caller sets body and uses for streaming or single response.
 private func makeEntriesAndRequest(entries: [Upload]) throws -> (

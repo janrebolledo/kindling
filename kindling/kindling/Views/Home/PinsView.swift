@@ -75,15 +75,21 @@ struct PinsView: View {
         .scrollIndicators(.hidden)
         .background((colorScheme == .dark ? Color.black : Color.white).ignoresSafeArea())
         .task {
-            do {
-                collections =
-                    try await supabase
-                    .from("collections")
-                    .select("*, collection_items(*, ideas(*))").execute()
-                    .value
-            } catch {
-                dump(error)
-            }
+            await loadCollections()
+            await scanForNewScreenshots()
+            await loadCollections()
+        }
+    }
+
+    private func loadCollections() async {
+        do {
+            collections =
+                try await supabase
+                .from("collections")
+                .select("*, collection_items(*, ideas(*))").execute()
+                .value
+        } catch {
+            dump(error)
         }
     }
 

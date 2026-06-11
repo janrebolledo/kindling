@@ -11,9 +11,14 @@ import Supabase
 let supabase = SupabaseClient(
     supabaseURL: URL(string: "https://bfbaqyhyxergcpsyhzcc.supabase.co")!,
     supabaseKey: "sb_publishable_Q3wc-o2JVqIYPQVw47306w_zpKAE0VI",
+    options: SupabaseClientOptions(
+        auth: SupabaseClientOptions.AuthOptions(
+            emitLocalSessionAsInitialSession: true
+        )
+    )
 )
 
-struct Item: Decodable, Identifiable {
+struct Item: Codable, Identifiable {
     let id: Int
     let name: String?
     let type: String?
@@ -28,8 +33,6 @@ struct Item: Decodable, Identifiable {
     let time: String?
     let venue: String?
     let created_at: String?
-    let highlights: String?
-    let highlights_sources: [String]?
     let open_hours: [String]?
 }
 

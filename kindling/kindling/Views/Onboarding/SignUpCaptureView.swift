@@ -60,7 +60,7 @@ struct SignUpCaptureView: View {
                     }
                 }
                 .frame(height: 320)
-                .clipped()
+                // .clipped()
 
                 Spacer()
 

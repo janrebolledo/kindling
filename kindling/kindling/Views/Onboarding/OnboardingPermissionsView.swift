@@ -359,6 +359,19 @@ struct OnboardingPermissionsView: View {
                     }
                 }
 
+                // Mark every screenshot we ran through OCR/parse as parsed so it
+                // isn't processed again. Syncing to Supabase happens later in
+                // InitializeCollection once the user is signed in.
+                parsedScreenshotsService.markAsParsed(
+                    screenshots.map { $0.localIdentifier }
+                )
+
+                // Cache the enriched drafts locally so the user's items are ready
+                // on next launch if they close the app before signing up.
+                await MainActor.run {
+                    OnboardingDraftCache.save(cards)
+                }
+
                 await MainActor.run {
                     isProcessing = false
                     isLoading = false

@@ -6,7 +6,6 @@ import { GoogleGenAI } from '@google/genai';
 import { createClient } from '@supabase/supabase-js';
 import { parseScreenshot } from './utils/parseScreenshot';
 import { mapPriceLevelToInt } from './utils/mapPriceLevelToInt';
-import { generateUniqueId } from './utils/generateUniqueId';
 
 const supabase = createClient(
   'https://bfbaqyhyxergcpsyhzcc.supabase.co',
@@ -70,17 +69,24 @@ app.use('*', async (c, next) => {
   console.log(`${c.req.method} ${c.req.path} ${ms}ms`);
 });
 
-type IdeaResult = {
+// The enriched, user-agnostic shape of a collection_item. The client caches
+// these during onboarding and POSTs them back to /finalize at signup, where
+// user_id and collection_id are attached server-side. `ideas` carries the full
+// idea row for display; highlights/highlights_sources are per-screenshot
+// enrichment that belongs on the user's collection_item.
+type DraftCollectionItem = {
   id: number;
   local_id: string;
+  idea_id: number;
+  highlights: string | null;
+  highlights_sources: string[] | null;
   ideas: Record<string, unknown>;
-  error?: unknown;
 };
 
 async function processEntry(entry: {
   id: string;
   data: unknown;
-}): Promise<IdeaResult | undefined> {
+}): Promise<DraftCollectionItem | undefined> {
   const { id, data } = entry;
   if (
     data == null ||
@@ -105,7 +111,7 @@ async function processEntry(entry: {
     getLocationDetails(query),
   ]);
 
-  const { data: matches, error } = supabaseResult;
+  const { data: matches } = supabaseResult;
   if (matches && matches.length > 0) {
     const existing = matches[0] as Record<string, unknown>;
     // Backfill open_hours on cached records that predate the column
@@ -119,10 +125,12 @@ async function processEntry(entry: {
       }
     }
     return {
-      id: matches[0].id,
+      id: matches[0].id as number,
       local_id: id,
+      idea_id: matches[0].id as number,
+      highlights: (item.highlights as string | null) ?? null,
+      highlights_sources: (item.highlights_sources as string[] | null) ?? null,
       ideas: existing,
-      error,
     };
   }
 
@@ -152,7 +160,6 @@ async function processEntry(entry: {
   const state = stateComp?.longText ?? '';
 
   const newIdea = {
-    id: generateUniqueId(),
     name: (item.name as string | null) ?? null,
     type: (item.tag as string | null) ?? null,
     description:
@@ -170,17 +177,31 @@ async function processEntry(entry: {
     date: (item.date as string | null) ?? null,
     time: (item.time as string | null) ?? null,
     venue: mapsLocationData.displayName?.text ?? (item.venue as string) ?? null,
-    highlights: (item.highlights as string | null) ?? null,
-    highlights_sources: (item.highlights_sources as string[] | null) ?? null,
     open_hours: mapsLocationData.currentOpeningHours?.weekdayDescriptions ?? null,
   };
 
-  const { error: uploadError } = await supabase.from('ideas').insert([newIdea]);
+  // `ideas.id` is a Postgres identity column, so let the database generate it
+  // and return the inserted row. Never stream an idea we failed to persist,
+  // otherwise the client's collection_items insert violates the idea_id
+  // foreign key.
+  const { data: inserted, error: uploadError } = await supabase
+    .from('ideas')
+    .insert([newIdea])
+    .select()
+    .single();
+
+  if (uploadError || inserted == null) {
+    console.error('idea insert failed', uploadError);
+    return undefined;
+  }
+
   return {
-    id: generateUniqueId(),
+    id: inserted.id as number,
     local_id: id,
-    ideas: newIdea as Record<string, unknown>,
-    error: uploadError,
+    idea_id: inserted.id as number,
+    highlights: (item.highlights as string | null) ?? null,
+    highlights_sources: (item.highlights_sources as string[] | null) ?? null,
+    ideas: inserted as Record<string, unknown>,
   };
 }
 

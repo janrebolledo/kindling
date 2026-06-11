@@ -41,7 +41,11 @@ struct AppEntry: App {
                     if [.initialSession, .signedIn, .signedOut].contains(
                         state.event
                     ) {
-                        authenticated = state.session != nil
+                        if let session = state.session {
+                            authenticated = !session.isExpired
+                        } else {
+                            authenticated = false
+                        }
                     }
                 }
             }

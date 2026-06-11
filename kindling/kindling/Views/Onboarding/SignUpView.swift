@@ -3,12 +3,14 @@ import Supabase
 //  SignUpView.swift
 //  kindling
 //
+import AuthenticationServices
 import SwiftUI
 
 struct SignUpView: View {
     @Binding var cards: [ItemWrapper]
     @State private var isLoading: Bool = false
     @State var result: Result<Void, Error>?
+    @State private var appleSignIn = AppleSignInManager()
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -115,24 +117,15 @@ struct SignUpView: View {
             isLoading = true
             defer { isLoading = false }
             do {
-                try await supabase.auth.signUp(
-                    email: "example@email.com",
-                    password: "example-password"
-                )
+                try await appleSignIn.signIn()
                 result = .success(())
                 await InitializeCollection(items: cards)
-            } catch let authError as Auth.AuthError {
-                if case .api(_, let errorCode, _, _) = authError {
-                    if errorCode.rawValue == "user_already_exists" {
-                        print("user already exists, trying user sign in")
-                        try? await supabase.auth.signIn(
-                            email: "example@email.com",
-                            password: "example-password"
-                        )
-                        result = .success(())
-                    }
-                }
             } catch {
+                if let authError = error as? ASAuthorizationError,
+                   authError.code == .canceled {
+                    return
+                }
+                print("Sign in with Apple failed: \(error.localizedDescription)")
                 result = .failure(error)
             }
         }

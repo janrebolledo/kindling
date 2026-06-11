@@ -8,77 +8,86 @@
 import Foundation
 import Supabase
 
-func InitializeCollection(items: [ItemWrapper]) async {
-    do {
-        let userId = supabase.auth.currentUser?.id
+// Insert payloads omit `id` so Supabase generates the identity primary key,
+// avoiding the PK collisions the old Int.random ids caused.
 
-        let newCollection: collection = collection(
-            id: Int.random(in: 0...100_000_000),
-            name: "My List",
-            emoji: "📁",
-            user_id: userId ?? nil
-        )
-
-        try await supabase.from("collections").insert(newCollection).execute()
-
-        var collectionItems = [collection_item]()
-
-        for item in items {
-            collectionItems.append(
-                collection_item(
-                    id: Int.random(in: 0...100_000_000),
-                    created_at: nil,
-                    local_id: item.local_id,
-                    idea_id: (item.ideas?.id)!,
-                    user_id: userId!,
-                    collection_id: newCollection.id
-                )
-            )
-        }
-
-        try await supabase.from("collection_items").insert(collectionItems)
-            .execute()
-
-        if let userID = supabase.auth.currentUser?.id {
-            let service = ParsedScreenshotsService()
-            try? await service.syncToSupabase(userID: userID)
-        }
-
-    } catch {
-        print(error)
-    }
-
+private struct CollectionInsert: Encodable {
+    let name: String
+    let emoji: String
+    let user_id: UUID
 }
 
-func InitializeCollectionItems(items: [ItemWrapper]) async {
+private struct CollectionItemInsert: Encodable {
+    let local_id: String
+    let idea_id: Int
+    let user_id: UUID
+    let collection_id: Int
+    let highlights: String?
+    let highlights_sources: [String]?
+}
+
+private struct CollectionRow: Decodable {
+    let id: Int
+}
+
+/// Finds the user's "My List" collection, creating it if needed, and returns its id.
+private func myListCollectionID(for userID: UUID) async throws -> Int {
+    let existing: [CollectionRow] =
+        try await supabase
+        .from("collections")
+        .select("id")
+        .eq("user_id", value: userID)
+        .eq("name", value: "My List")
+        .limit(1)
+        .execute()
+        .value
+    if let row = existing.first { return row.id }
+
+    let created: CollectionRow =
+        try await supabase
+        .from("collections")
+        .insert(CollectionInsert(name: "My List", emoji: "📁", user_id: userID))
+        .select("id")
+        .single()
+        .execute()
+        .value
+    return created.id
+}
+
+/// Persists the given draft items into the signed-in user's "My List" collection.
+/// Runs client-side: by this point the Supabase session is authenticated, so the
+/// real user_id is attached and RLS enforces ownership. Ids are DB-generated.
+func finalizeItems(_ items: [ItemWrapper]) async throws {
+    guard !items.isEmpty else { return }
+    guard let userID = supabase.auth.currentUser?.id else { return }
+
+    let collectionID = try await myListCollectionID(for: userID)
+
+    let rows: [CollectionItemInsert] = items.map { item in
+        CollectionItemInsert(
+            local_id: item.local_id,
+            idea_id: item.idea_id,
+            user_id: userID,
+            collection_id: collectionID,
+            highlights: item.highlights,
+            highlights_sources: item.highlights_sources
+        )
+    }
+    try await supabase.from("collection_items").insert(rows).execute()
+}
+
+/// Called at sign-up completion. Loads the cached onboarding drafts into the
+/// user's collection, clears the draft cache, and syncs parsed IDs to Supabase.
+func InitializeCollection(items: [ItemWrapper]) async {
     do {
-        let userId = supabase.auth.currentUser?.id
-
-        var collectionItems = [collection_item]()
-
-        for item in items {
-            collectionItems.append(
-                collection_item(
-                    id: Int.random(in: 0...100_000_000),
-                    created_at: nil,
-                    local_id: item.local_id,
-                    idea_id: (item.ideas?.id)!,
-                    user_id: userId!,
-                    collection_id: nil
-                )
-            )
-        }
-
-        try await supabase.from("collection_items").insert(collectionItems)
-            .execute()
+        try await finalizeItems(items)
+        OnboardingDraftCache.clear()
 
         if let userID = supabase.auth.currentUser?.id {
             let service = ParsedScreenshotsService()
             try? await service.syncToSupabase(userID: userID)
         }
-
     } catch {
         print(error)
     }
-
 }

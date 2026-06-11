@@ -22,6 +22,18 @@ struct OnboardingView: View {
                     OnboardingProgressHeader(currentStep: step - 1)
                 }
             }
+            .onAppear {
+                // Resume onboarding: if we parsed items in a previous session but
+                // the user closed the app before signing up, restore them and jump
+                // straight to the sign-up capture step.
+                if cards.isEmpty {
+                    let drafts = OnboardingDraftCache.load()
+                    if !drafts.isEmpty {
+                        cards = drafts
+                        if step < 4 { step = 4 }
+                    }
+                }
+            }
     }
 
     @ViewBuilder
