@@ -32,7 +32,16 @@ struct ItemWrapper: Codable, Identifiable, CardData {
     let ideas: Item?
 }
 
-let backendBaseURL = URL(string: "http://172.20.10.2:3000")!
+enum ScreenshotUploadEvent {
+    case idea(ItemWrapper)
+    case processed(String)
+}
+
+private struct ProcessedScreenshotEvent: Decodable {
+    let id: String
+}
+
+let backendBaseURL = URL(string: "http://localhost:3000")!
 
 private let ideasURL = backendBaseURL.appendingPathComponent("ideas")
 
@@ -51,7 +60,7 @@ private func makeEntriesAndRequest(entries: [Upload]) throws -> (
 /// Streams ideas from POST /ideas (SSE) and yields each `ItemWrapper` as it arrives. Finishes when the server sends the "done" event.
 func uploadImagesStreaming(
     images: [(String, UIImage?)]
-) -> AsyncThrowingStream<ItemWrapper, Error> {
+) -> AsyncThrowingStream<ScreenshotUploadEvent, Error> {
     AsyncThrowingStream { continuation in
         Task {
             do {
@@ -148,7 +157,17 @@ func uploadImagesStreaming(
                                     from: data
                                 )
                             {
-                                continuation.yield(wrapper)
+                                continuation.yield(.idea(wrapper))
+                            }
+                        }
+                        if eventType.event == "processed", !eventType.data.isEmpty {
+                            if let data = eventType.data.data(using: .utf8),
+                                let processed = try? decoder.decode(
+                                    ProcessedScreenshotEvent.self,
+                                    from: data
+                                )
+                            {
+                                continuation.yield(.processed(processed.id))
                             }
                         }
                     }
@@ -163,8 +182,10 @@ func uploadImagesStreaming(
 
 func uploadImages(images: [(String, UIImage?)]) async throws -> [ItemWrapper] {
     var items: [ItemWrapper] = []
-    for try await item in uploadImagesStreaming(images: images) {
-        items.append(item)
+    for try await event in uploadImagesStreaming(images: images) {
+        if case .idea(let item) = event {
+            items.append(item)
+        }
     }
     print(items)
     return items

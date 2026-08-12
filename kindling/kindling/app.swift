@@ -24,6 +24,7 @@ extension EnvironmentValues {
 struct AppEntry: App {
     @State private var onboardingCompleted = false
     @State private var authenticated = false
+    @State private var userSettings = UserSettings()
 
     var body: some Scene {
 
@@ -35,6 +36,7 @@ struct AppEntry: App {
                     ContentView()
                 }
             }
+            .environment(userSettings)
             .environment(\.isAuthenticated, authenticated)
             .task {
                 for await state in supabase.auth.authStateChanges {
@@ -43,6 +45,7 @@ struct AppEntry: App {
                     ) {
                         if let session = state.session {
                             authenticated = !session.isExpired
+                            Task { await userSettings.load() }
                         } else {
                             authenticated = false
                         }

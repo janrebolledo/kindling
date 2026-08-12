@@ -18,6 +18,10 @@ struct PinsView: View {
     @State private var showAccount = false
     var isLoading: Bool = false
 
+    private var displayName: String {
+        supabase.auth.currentUser?.displayName ?? "you"
+    }
+
     // MARK: - Derived data
 
     private var query: String {
@@ -116,7 +120,7 @@ struct PinsView: View {
                 profilePill
             }
 
-            Text("what's up, leo?")
+            Text("what's up, \(displayName)?")
                 .font(.system(size: 24, weight: .medium))
                 .tracking(-0.6)
                 .foregroundStyle(.primary)
@@ -142,7 +146,7 @@ struct PinsView: View {
             HStack(spacing: 6) {
                 Image(systemName: "person.fill")
                     .font(.system(size: 13))
-                Text("jan")
+                Text(displayName)
                     .font(.system(size: 16))
                     .tracking(-0.4)
             }
@@ -152,6 +156,7 @@ struct PinsView: View {
         .tint(.primary)
         .sheet(isPresented: $showAccount) {
             AccountView()
+                .presentationDragIndicator(.visible)
         }
     }
 

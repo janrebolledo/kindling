@@ -14,9 +14,13 @@ struct Card: View {
     @State private var mapItem: MKMapItem?
     @State private var etaString: String?
     @State private var locationManager = CardLocationManager()
+    @Environment(UserSettings.self) private var userSettings
 
     var function: ((ItemWrapper?) async -> Void)?
     var card: CardData
+    var loadsMapData = true
+    var allowsDetailPresentation = true
+    var allowsDeletion = true
 
     private var address: String {
         (card.ideas?.address ?? card.ideas?.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -50,21 +54,37 @@ struct Card: View {
         }
         .contentShape(RoundedRectangle(cornerRadius: 20))
         .onAppear {
-            locationManager.requestLocation()
+            if loadsMapData {
+                locationManager.requestLocation()
+            }
             Task {
-                image = try await loadImage(from: card.local_id)
-                await fetchMapData()
+                if card.ideas?.media_url == nil, !card.local_id.isEmpty {
+                    image = try await loadImage(from: card.local_id)
+                }
+                if loadsMapData {
+                    await fetchMapData()
+                }
             }
         }
-        .onChange(of: locationManager.location) { _, _ in Task { await fetchETA() } }
-        .onChange(of: mapItem) { _, _ in Task { await fetchETA() } }
-        .onTapGesture { sheetPresented = true }
+        .onChange(of: locationManager.location) { _, _ in
+            if loadsMapData { Task { await fetchETA() } }
+        }
+        .onChange(of: mapItem) { _, _ in
+            if loadsMapData { Task { await fetchETA() } }
+        }
+        .onTapGesture {
+            if allowsDetailPresentation {
+                sheetPresented = true
+            }
+        }
         .sheet(isPresented: $sheetPresented) {
             IdeaView(
                 card: card,
                 mapItem: mapItem,
                 etaString: etaString,
-                function: function ?? { _ in }
+                transportType: userSettings.transportType,
+                function: function ?? { _ in },
+                allowsDeletion: allowsDeletion
             )
             .presentationDragIndicator(.visible)
             .scrollBounceBehavior(.automatic)
@@ -75,9 +95,11 @@ struct Card: View {
 
     private var eventCard: some View {
         ZStack(alignment: .bottomLeading) {
-            cardImage
+            Color.clear
                 .frame(maxWidth: .infinity)
                 .frame(height: 250)
+                .background { cardImage }
+                .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: 20))
 
             // Warm cream gradient from bottom
@@ -153,9 +175,11 @@ struct Card: View {
 
     private var locationCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            cardImage
+            Color.clear
                 .frame(maxWidth: .infinity)
                 .frame(height: 150)
+                .background { cardImage }
+                .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: 20))
 
             VStack(alignment: .leading, spacing: 8) {
@@ -201,8 +225,10 @@ struct Card: View {
         if let mediaUrl = card.ideas?.media_url, let url = URL(string: mediaUrl) {
             AsyncImage(url: url) { phase in
                 switch phase {
-                case .success(let img): img.resizable().scaledToFill()
-                default: Color.gray.opacity(0.15)
+                case .success(let img):
+                    img.resizable().scaledToFill()
+                default:
+                    Color.gray.opacity(0.15)
                 }
             }
         } else if let image {
@@ -218,7 +244,7 @@ struct Card: View {
             Text(card.ideas?.location ?? "—")
             if let eta = etaString {
                 Text("•")
-                Image(systemName: "car.fill")
+                Image(systemName: userSettings.transportType.icon)
                 Text(eta)
             }
         }
@@ -248,7 +274,7 @@ struct Card: View {
         let request = MKDirections.Request()
         request.source = MKMapItem.forCurrentLocation()
         request.destination = destination
-        request.transportType = .automobile
+        request.transportType = userSettings.transportType.mkTransportType
         do {
             let response = try await MKDirections(request: request).calculate()
             guard let route = response.routes.first else { return }

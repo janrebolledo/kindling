@@ -70,10 +70,10 @@ app.use('*', async (c, next) => {
 });
 
 // The enriched, user-agnostic shape of a collection_item. The client caches
-// these during onboarding and POSTs them back to /finalize at signup, where
-// user_id and collection_id are attached server-side. `ideas` carries the full
-// idea row for display; highlights/highlights_sources are per-screenshot
-// enrichment that belongs on the user's collection_item.
+// these locally during onboarding and inserts them client-side at signup, where
+// user_id and collection_id are attached. `ideas` carries the full idea row for
+// display; highlights/highlights_sources are per-screenshot enrichment that
+// belongs on the user's collection_item.
 type DraftCollectionItem = {
   id: number;
   local_id: string;
@@ -216,11 +216,24 @@ app.post('/ideas', async (c) => {
     await Promise.all(
       aiLocationData.map(async (entry) => {
         try {
+          const status = (entry.data as { status?: string } | null)?.status;
+          if (status === 'skipped' || status === 'sensitive') {
+            await stream.writeSSE({
+              data: JSON.stringify({ id: entry.id }),
+              event: 'processed',
+            });
+            return;
+          }
+
           const result = await processEntry(entry);
           if (result != null) {
             await stream.writeSSE({
               data: JSON.stringify(result),
               event: 'idea',
+            });
+            await stream.writeSSE({
+              data: JSON.stringify({ id: entry.id }),
+              event: 'processed',
             });
           }
         } catch (err) {

@@ -19,7 +19,9 @@ struct IdeaView: View {
     var card: CardData
     var mapItem: MKMapItem?
     var etaString: String?
+    var transportType: TransportType = .driving
     var function: (ItemWrapper?) async -> Void
+    var allowsDeletion = true
 
     @Environment(\.dismiss) private var dismiss
     @State private var localImage: UIImage?
@@ -137,7 +139,7 @@ struct IdeaView: View {
                 Spacer()
 
                 HStack(spacing: 4) {
-                    Image(systemName: "car.fill")
+                    Image(systemName: transportType.icon)
                     Text(etaString ?? "—")
                 }
                 .font(.system(size: 16))
@@ -202,25 +204,27 @@ struct IdeaView: View {
                 .background(pillBackground)
                 .clipShape(Capsule())
 
-                Button {
-                    guard !isDeletingFromCollection else { return }
-                    isDeletingFromCollection = true
-                    Task {
-                        await deleteFromCollection(deleteFromDevice: false)
-                        isDeletingFromCollection = false
+                if allowsDeletion {
+                    Button {
+                        guard !isDeletingFromCollection else { return }
+                        isDeletingFromCollection = true
+                        Task {
+                            await deleteFromCollection(deleteFromDevice: false)
+                            isDeletingFromCollection = false
+                        }
+                    } label: {
+                        Label("Delete from kindling", systemImage: "trash")
+                            .font(.system(size: 16, weight: .medium))
+                            .tracking(-0.4)
+                            .foregroundStyle(isDeletingFromCollection ? .secondary : destructiveRed)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 42)
                     }
-                } label: {
-                    Label("Delete from kindling", systemImage: "trash")
-                        .font(.system(size: 16, weight: .medium))
-                        .tracking(-0.4)
-                        .foregroundStyle(isDeletingFromCollection ? .secondary : destructiveRed)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 42)
+                    .buttonStyle(.plain)
+                    .background(pillBackground)
+                    .clipShape(Capsule())
+                    .disabled(isDeletingFromCollection)
                 }
-                .buttonStyle(.plain)
-                .background(pillBackground)
-                .clipShape(Capsule())
-                .disabled(isDeletingFromCollection)
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 72)
@@ -410,25 +414,27 @@ struct IdeaView: View {
                     }
                 }
 
-                Button {
-                    guard !isDeletingFromDevice else { return }
-                    isDeletingFromDevice = true
-                    Task {
-                        await deleteFromCollection(deleteFromDevice: true)
-                        isDeletingFromDevice = false
+                if allowsDeletion {
+                    Button {
+                        guard !isDeletingFromDevice else { return }
+                        isDeletingFromDevice = true
+                        Task {
+                            await deleteFromCollection(deleteFromDevice: true)
+                            isDeletingFromDevice = false
+                        }
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                            .font(.system(size: 16, weight: .medium))
+                            .tracking(-0.4)
+                            .foregroundStyle(isDeletingFromDevice ? .secondary : destructiveRed)
+                            .padding(.horizontal, 16)
+                            .frame(height: 42)
                     }
-                } label: {
-                    Label("Delete", systemImage: "trash")
-                        .font(.system(size: 16, weight: .medium))
-                        .tracking(-0.4)
-                        .foregroundStyle(isDeletingFromDevice ? .secondary : destructiveRed)
-                        .padding(.horizontal, 16)
-                        .frame(height: 42)
+                    .buttonStyle(.plain)
+                    .background(pillBackground)
+                    .clipShape(Capsule())
+                    .disabled(isDeletingFromDevice)
                 }
-                .buttonStyle(.plain)
-                .background(pillBackground)
-                .clipShape(Capsule())
-                .disabled(isDeletingFromDevice)
             }
         }
     }

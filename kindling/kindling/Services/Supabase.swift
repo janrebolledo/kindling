@@ -18,6 +18,23 @@ let supabase = SupabaseClient(
     )
 )
 
+extension User {
+    /// The user's display name, derived from auth metadata
+    /// (`display_name`, then `full_name`, then `name`), falling back to the
+    /// capitalized email prefix.
+    var displayName: String {
+        for key in ["display_name", "full_name", "name"] {
+            if let value = userMetadata[key]?.stringValue,
+                !value.isEmpty
+            {
+                return value
+            }
+        }
+        let prefix = email?.split(separator: "@").first.map(String.init) ?? "you"
+        return prefix.prefix(1).uppercased() + prefix.dropFirst()
+    }
+}
+
 struct Item: Codable, Identifiable {
     let id: Int
     let name: String?
@@ -58,4 +75,5 @@ struct UserData: Decodable {
     let parsed_screenshot_ids: [String]
     let created_at: String?
     let preferred_transport_type: String?
+    let username: String?
 }

@@ -84,7 +84,8 @@ func InitializeCollection(items: [ItemWrapper]) async {
         OnboardingDraftCache.clear()
 
         if let userID = supabase.auth.currentUser?.id {
-            let service = ParsedScreenshotsService()
+            ParsedScreenshotsService.claimOnboardingIDs(for: userID)
+            let service = ParsedScreenshotsService(userID: userID)
             try? await service.syncToSupabase(userID: userID)
         }
     } catch {

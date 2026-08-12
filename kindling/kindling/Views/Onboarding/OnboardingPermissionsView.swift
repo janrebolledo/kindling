@@ -7,6 +7,7 @@
 
 import CoreLocation
 import Photos
+import Supabase
 import SwiftUI
 
 private enum PermissionStatus {
@@ -47,97 +48,6 @@ private class LocationDelegate: NSObject, CLLocationManagerDelegate {
     }
 }
 
-// MARK: - Sample card model
-
-private struct SampleCard: Identifiable {
-    let id = UUID()
-    let day: String
-    let title: String
-    let subtitle: String
-    let detail: String
-    let topColors: [Color]
-    let cardBackground: Color
-}
-
-private let sampleCards: [SampleCard] = [
-    SampleCard(
-        day: "Saturday",
-        title: "The Garage Sale",
-        subtitle: "Fullerton, CA  •  🚗 15 min",
-        detail: "$12.50 Tickets",
-        topColors: [Color(red: 0.62, green: 0.50, blue: 0.38), Color(red: 0.44, green: 0.35, blue: 0.27)],
-        cardBackground: Color(red: 248/255, green: 246/255, blue: 240/255)
-    ),
-    SampleCard(
-        day: "Thursday",
-        title: "Bolero Night",
-        subtitle: "Café Tondo, Los Angeles, CA",
-        detail: "See details",
-        topColors: [Color(red: 0.58, green: 0.40, blue: 0.32), Color(red: 0.40, green: 0.28, blue: 0.22)],
-        cardBackground: Color(red: 248/255, green: 245/255, blue: 242/255)
-    ),
-    SampleCard(
-        day: "Thursday",
-        title: "Jazz Trio",
-        subtitle: "The Night Owl, Fullerton, CA",
-        detail: "Free",
-        topColors: [Color(red: 0.45, green: 0.50, blue: 0.62), Color(red: 0.32, green: 0.36, blue: 0.48)],
-        cardBackground: Color(red: 247/255, green: 244/255, blue: 243/255)
-    ),
-]
-
-// MARK: - Event card
-
-private struct SampleEventCard: View {
-    let card: SampleCard
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Photo area
-            ZStack(alignment: .topLeading) {
-                LinearGradient(colors: card.topColors, startPoint: .topLeading, endPoint: .bottomTrailing)
-                    .frame(height: 150)
-
-                // Day pill
-                Text(card.day)
-                    .font(.system(size: 14, weight: .medium))
-                    .tracking(-0.35)
-                    .foregroundColor(.black)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(.ultraThinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.25), lineWidth: 1))
-                    .padding(10)
-            }
-
-            // Text content
-            VStack(alignment: .leading, spacing: 8) {
-                Text(card.title)
-                    .font(.system(size: 24, weight: .medium))
-                    .tracking(-0.6)
-                    .foregroundColor(.black)
-
-                Text(card.subtitle)
-                    .font(.system(size: 14))
-                    .tracking(-0.35)
-                    .foregroundColor(.black)
-
-                Text(card.detail)
-                    .font(.system(size: 14))
-                    .tracking(-0.35)
-                    .foregroundColor(.black)
-                    .opacity(0.5)
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(card.cardBackground)
-        }
-        .frame(width: 300)
-        .clipShape(RoundedRectangle(cornerRadius: 20))
-    }
-}
-
 // MARK: - Main view
 
 struct OnboardingPermissionsView: View {
@@ -156,6 +66,7 @@ struct OnboardingPermissionsView: View {
     @State private var photosStatus: PermissionStatus = .pending
     @State private var locationStatus: PermissionStatus = .pending
     @State private var spinAngle: Double = 0
+    @State private var showcaseCards: [ItemWrapper] = []
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -173,15 +84,7 @@ struct OnboardingPermissionsView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 24) {
-                // Card carousel
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(sampleCards) { card in
-                            SampleEventCard(card: card)
-                        }
-                    }
-                    .padding(.horizontal, 48)
-                }
+                OnboardingCardCarousel(cards: showcaseCards)
                 .frame(height: 271)
                 .padding(.top, 16)
                 .padding(.horizontal, -48)
@@ -203,6 +106,7 @@ struct OnboardingPermissionsView: View {
             withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
                 spinAngle = 360
             }
+            Task { await loadShowcaseCards() }
             startUpload()
         }
     }
@@ -301,6 +205,35 @@ struct OnboardingPermissionsView: View {
 
     // MARK: - Logic (unchanged)
 
+    private func loadShowcaseCards() async {
+        do {
+            let ideas: [Item] =
+                try await supabase
+                .from("ideas")
+                .select()
+                .limit(50)
+                .execute()
+                .value
+
+            let candidates = ideas.filter {
+                $0.media_url != nil && $0.venue != nil
+            }
+            let selected = Array(candidates.shuffled().prefix(8))
+            showcaseCards = selected.map { idea in
+                ItemWrapper(
+                    id: idea.id,
+                    local_id: "",
+                    idea_id: idea.id,
+                    highlights: nil,
+                    highlights_sources: nil,
+                    ideas: idea
+                )
+            }
+        } catch {
+            print("Unable to load onboarding showcase cards: \(error)")
+        }
+    }
+
     private func startUpload() {
         isLoading = true
         Task {
@@ -353,24 +286,26 @@ struct OnboardingPermissionsView: View {
                     withAnimation(.easeInOut(duration: 0.35)) { step = 3 }
                 }
 
-                for try await item in uploadImagesStreaming(images: images) {
-                    await MainActor.run {
-                        cards.append(item)
+                var processedIDs = Set<String>()
+                for try await event in uploadImagesStreaming(images: images) {
+                    switch event {
+                    case .idea(let item):
+                        await MainActor.run {
+                            cards.append(item)
+                        }
+                    case .processed(let id):
+                        processedIDs.insert(id)
                     }
                 }
-
-                // Mark every screenshot we ran through OCR/parse as parsed so it
-                // isn't processed again. Syncing to Supabase happens later in
-                // InitializeCollection once the user is signed in.
-                parsedScreenshotsService.markAsParsed(
-                    screenshots.map { $0.localIdentifier }
-                )
 
                 // Cache the enriched drafts locally so the user's items are ready
                 // on next launch if they close the app before signing up.
                 await MainActor.run {
                     OnboardingDraftCache.save(cards)
                 }
+
+                // Only retire screenshots explicitly acknowledged by the backend.
+                parsedScreenshotsService.markAsParsed(Array(processedIDs))
 
                 await MainActor.run {
                     isProcessing = false
@@ -396,4 +331,3 @@ struct OnboardingPermissionsView: View {
         isProcessing: .constant(false)
     )
 }
-

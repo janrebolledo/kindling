@@ -137,8 +137,16 @@ struct OnboardingScreenshotSummaryView: View {
                 Color.clear.frame(height: 28)
             }
             .frame(width: 130, height: 148)
-            .background(Color.white)
-            .shadow(color: .black.opacity(0.15), radius: 6, x: 0, y: 3)
+            .background {
+                Rectangle()
+                    .fill(Color.white)
+                    .shadow(
+                        color: .black.opacity(0.15),
+                        radius: 6,
+                        x: 0,
+                        y: 3
+                    )
+            }
         }
     }
 }

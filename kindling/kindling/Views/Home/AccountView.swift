@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import MapKit
 import Photos
 import PhotosUI
 import Supabase
@@ -37,48 +38,108 @@ enum TransportType: String, CaseIterable, Identifiable {
         case .transit: return "tram.fill"
         }
     }
+
+    var mkTransportType: MKDirectionsTransportType {
+        switch self {
+        case .driving: return .automobile
+        case .cycling: return .walking
+        case .transit: return .transit
+        }
+    }
 }
 
-private struct TransportPreferencePayload: Encodable {
+struct TransportPreferencePayload: Encodable {
     let user_id: UUID
     let preferred_transport_type: String
 }
 
+private struct UsernamePayload: Encodable {
+    let user_id: UUID
+    let username: String
+}
+
 struct AccountView: View {
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
+    @Environment(\.dismiss) private var dismiss
+    @Environment(UserSettings.self) private var userSettings
 
-    @State private var transportType: TransportType = .driving
     @State private var isLoaded = false
     @State private var showDeleteConfirm = false
+    @State private var showDiscardDialog = false
+
+    @State private var processedScreenshotCount = 0
+    @State private var totalScreenshotCount = 0
+    @State private var isProcessingScreenshots = false
+
+    @State private var displayName = ""
+    @State private var isEditingName = false
+    @State private var draftName = ""
+    @State private var isSavingName = false
+    @FocusState private var nameFieldFocused: Bool
+
+    @State private var username = ""
+    @State private var isEditingUsername = false
+    @State private var draftUsername = ""
+    @State private var isSavingUsername = false
+    @State private var usernameError: String?
+    @FocusState private var usernameFieldFocused: Bool
+
+    private var isEditing: Bool { isEditingName || isEditingUsername }
+
+    private var hasUnsavedChanges: Bool {
+        if isEditingName,
+            draftName.trimmingCharacters(in: .whitespacesAndNewlines) != displayName
+        {
+            return true
+        }
+        if isEditingUsername,
+            normalizedUsername(draftUsername) != username
+        {
+            return true
+        }
+        return false
+    }
 
     private var email: String {
         supabase.auth.currentUser?.email ?? ""
     }
 
-    private var name: String {
-        let prefix = email.split(separator: "@").first.map(String.init) ?? "you"
-        return prefix.prefix(1).uppercased() + prefix.dropFirst()
-    }
-
     var body: some View {
-        ScrollView {
+        ZStack(alignment: .topTrailing) {
+            ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                homePill
+                HStack {
+                    Text("account")
+                        .font(.system(size: 32, weight: .bold))
+                        .tracking(-0.6)
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    if isEditing {
+                        saveButton
+                    }
+                }
+                .padding(.top, 8)
 
-                Text("account")
-                    .font(.system(size: 32, weight: .bold))
-                    .tracking(-0.6)
-                    .foregroundStyle(.primary)
-                    .padding(.top, 28)
+                screenshotIndexingView
+                    .padding(.top, 14)
 
                 VStack(alignment: .leading, spacing: 28) {
                     infoRow(label: "name") {
-                        Text(name)
-                            .font(.system(size: 16, weight: .semibold))
-                            .tracking(-0.4)
-                            .foregroundStyle(.primary)
+                        nameValue
+                    }
+
+                    VStack(alignment: .trailing, spacing: 6) {
+                        infoRow(label: "username") {
+                            usernameValue
+                        }
+                        if let usernameError {
+                            Text(usernameError)
+                                .font(.system(size: 13))
+                                .tracking(-0.2)
+                                .foregroundStyle(accountRed)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                        }
                     }
 
                     infoRow(label: "email") {
@@ -137,16 +198,41 @@ struct AccountView: View {
                     .padding(.top, 24)
             }
             .padding(.horizontal, 24)
-            .padding(.top, 24)
+            .padding(.top, 200)
             .padding(.bottom, 48)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollIndicators(.hidden)
         .background((colorScheme == .dark ? Color.black : Color.white).ignoresSafeArea())
-        .task { await loadPreference() }
-        .onChange(of: transportType) { _, newValue in
+        // Tapping anywhere outside the text fields ends editing.
+        .overlay {
+            if isEditing {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .ignoresSafeArea()
+                    .onTapGesture { endEditing() }
+            }
+        }
+        .background(
+            InteractiveDismissGuard(blocking: hasUnsavedChanges) {
+                showDiscardDialog = true
+            }
+        )
+        .task {
+            displayName = supabase.auth.currentUser?.displayName ?? ""
+            async let preference: Void = loadPreference()
+            async let screenshotProgress: Void = refreshScreenshotProgress()
+            _ = await (preference, screenshotProgress)
+        }
+        .onChange(of: userSettings.transportType) { _, newValue in
             guard isLoaded else { return }
-            Task { await savePreference(newValue) }
+            Task { await userSettings.persistTransportType() }
+        }
+        .onChange(of: nameFieldFocused) { _, focused in
+            if !focused, isEditingName { Task { await saveName() } }
+        }
+        .onChange(of: usernameFieldFocused) { _, focused in
+            if !focused, isEditingUsername { Task { await saveUsername() } }
         }
         .alert("Delete account?", isPresented: $showDeleteConfirm) {
             Button("Cancel", role: .cancel) {}
@@ -156,25 +242,202 @@ struct AccountView: View {
         } message: {
             Text("This permanently removes your account and saved data.")
         }
+        .alert("Discard changes?", isPresented: $showDiscardDialog) {
+            Button("Keep editing", role: .cancel) {}
+            Button("Discard", role: .destructive) { discardAndDismiss() }
+        } message: {
+            Text("Your unsaved changes will be lost.")
+        }
+        }
+    }
+
+    private var saveButton: some View {
+        Button {
+            Task { await commitEditing() }
+        } label: {
+            Text("Save")
+                .font(.system(size: 16, weight: .semibold))
+                .tracking(-0.4)
+        }
+        .buttonStyle(.glass)
+        .tint(.primary)
+        .disabled(isSavingName || isSavingUsername)
+    }
+
+    private func endEditing() {
+        nameFieldFocused = false
+        usernameFieldFocused = false
+    }
+
+    private func commitEditing() async {
+        if isEditingName { await saveName() }
+        if isEditingUsername { await saveUsername() }
+        endEditing()
+    }
+
+    private func discardAndDismiss() {
+        draftName = displayName
+        draftUsername = username
+        usernameError = nil
+        isEditingName = false
+        isEditingUsername = false
+        endEditing()
+        dismiss()
     }
 
     // MARK: - Components
 
-    private var homePill: some View {
-        Button {
-            dismiss()
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 13, weight: .semibold))
-                Text("home")
-                    .font(.system(size: 16))
+    private var screenshotIndexingView: some View {
+        VStack(spacing: 20) {
+            VStack(alignment: .leading, spacing: 17) {
+                HStack {
+                    Text("Screenshots Processed")
+                        .font(.system(size: 16, weight: .medium))
+                        .tracking(-0.4)
+                        .foregroundStyle(.primary)
+
+                    Spacer()
+
+                    Text("\(processedScreenshotCount)/\(totalScreenshotCount)")
+                        .font(.system(size: 16, weight: .medium))
+                        .tracking(-0.4)
+                        .foregroundStyle(figmaGray)
+                        .contentTransition(.numericText())
+                }
+
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(Color(red: 217 / 255, green: 217 / 255, blue: 217 / 255))
+
+                        Capsule()
+                            .fill(.primary)
+                            .frame(width: proxy.size.width * screenshotProgress)
+                    }
+                }
+                .frame(height: 6)
+                .animation(.easeInOut(duration: 0.25), value: screenshotProgress)
+            }
+            .padding(14)
+
+            HStack(spacing: 16) {
+                screenshotActionButton(
+                    title: isProcessingScreenshots ? "Processing" : "Process More",
+                    systemName: isProcessingScreenshots ? "rays" : "plus",
+                    isDisabled: isProcessingScreenshots,
+                    action: processMoreScreenshots
+                )
+
+                screenshotActionButton(
+                    title: "Upload Photos",
+                    systemName: "photo",
+                    action: editGalleryAccess
+                )
+            }
+
+            Text("kindling cannot view your photos :)")
+                .font(.system(size: 12))
+                .tracking(-0.12)
+                .foregroundStyle(figmaGray)
+                .frame(maxWidth: .infinity)
+        }
+    }
+
+    private var screenshotProgress: CGFloat {
+        guard totalScreenshotCount > 0 else { return 0 }
+        return min(CGFloat(processedScreenshotCount) / CGFloat(totalScreenshotCount), 1)
+    }
+
+    private func screenshotActionButton(
+        title: String,
+        systemName: String,
+        isDisabled: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: systemName)
+                    .font(.system(size: 16, weight: .medium))
+                Text(title)
+                    .font(.system(size: 16, weight: .medium))
                     .tracking(-0.4)
             }
             .foregroundStyle(.primary)
+            .opacity(isDisabled ? 0.5 : 1)
+            .frame(maxWidth: .infinity)
+            .frame(height: 42)
+            .background(Color("raisedSurface"), in: Capsule())
         }
-        .buttonStyle(.glass)
-        .tint(.primary)
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
+    }
+
+    @ViewBuilder
+    private var nameValue: some View {
+        if isEditingName {
+            TextField("name", text: $draftName)
+                .font(.system(size: 16, weight: .semibold))
+                .tracking(-0.4)
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.trailing)
+                .textInputAutocapitalization(.words)
+                .submitLabel(.done)
+                .focused($nameFieldFocused)
+                .onSubmit { Task { await saveName() } }
+                .disabled(isSavingName)
+        } else {
+            Button {
+                draftName = displayName
+                isEditingName = true
+                nameFieldFocused = true
+            } label: {
+                HStack(spacing: 8) {
+                    Text(displayName)
+                        .font(.system(size: 16, weight: .semibold))
+                        .tracking(-0.4)
+                        .foregroundStyle(.primary)
+                    Image(systemName: "pencil")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(figmaGray)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    @ViewBuilder
+    private var usernameValue: some View {
+        if isEditingUsername {
+            TextField("username", text: $draftUsername)
+                .font(.system(size: 16, weight: .semibold))
+                .tracking(-0.4)
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.trailing)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.done)
+                .focused($usernameFieldFocused)
+                .onSubmit { Task { await saveUsername() } }
+                .disabled(isSavingUsername)
+        } else {
+            Button {
+                draftUsername = username
+                usernameError = nil
+                isEditingUsername = true
+                usernameFieldFocused = true
+            } label: {
+                HStack(spacing: 8) {
+                    Text(username.isEmpty ? "set username" : "@\(username)")
+                        .font(.system(size: 16, weight: .semibold))
+                        .tracking(-0.4)
+                        .foregroundStyle(username.isEmpty ? figmaGray : .primary)
+                    Image(systemName: "pencil")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(figmaGray)
+                }
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     private func infoRow<Value: View>(
@@ -189,20 +452,22 @@ struct AccountView: View {
             Spacer(minLength: 12)
             value()
         }
+        .frame(minHeight: 28)
     }
 
     private var transportPicker: some View {
-        Menu {
-            Picker("preferred transport type", selection: $transportType) {
+        @Bindable var settings = userSettings
+        return Menu {
+            Picker("preferred transport type", selection: $settings.transportType) {
                 ForEach(TransportType.allCases) { type in
                     Label(type.label, systemImage: type.icon).tag(type)
                 }
             }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: transportType.icon)
+                Image(systemName: userSettings.transportType.icon)
                     .font(.system(size: 14))
-                Text(transportType.label)
+                Text(userSettings.transportType.label)
                     .font(.system(size: 16))
                     .tracking(-0.4)
                 Image(systemName: "chevron.down")
@@ -239,6 +504,33 @@ struct AccountView: View {
     }
 
     // MARK: - Actions
+
+    private func refreshScreenshotProgress() async {
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        guard status == .authorized || status == .limited else {
+            processedScreenshotCount = ParsedScreenshotsService().loadLocalParsedIDs().count
+            totalScreenshotCount = 0
+            return
+        }
+
+        let screenshots = ScreenshotManager().fetchScreenshots()
+        let screenshotIDs = Set(screenshots.map(\.localIdentifier))
+        let parsedIDs = ParsedScreenshotsService().loadLocalParsedIDs()
+
+        totalScreenshotCount = screenshots.count
+        processedScreenshotCount = parsedIDs.intersection(screenshotIDs).count
+    }
+
+    private func processMoreScreenshots() {
+        guard !isProcessingScreenshots else { return }
+        isProcessingScreenshots = true
+
+        Task {
+            await scanForNewScreenshots()
+            await refreshScreenshotProgress()
+            isProcessingScreenshots = false
+        }
+    }
 
     private func openSettings() {
         if let url = URL(string: UIApplication.openSettingsURLString) {
@@ -307,7 +599,12 @@ struct AccountView: View {
             if let raw = rows.first?.preferred_transport_type,
                 let parsed = TransportType(rawValue: raw)
             {
-                transportType = parsed
+                userSettings.transportType = parsed
+            }
+            if let savedUsername = rows.first?.username,
+                !savedUsername.isEmpty
+            {
+                username = savedUsername
             }
         } catch {
             dump(error)
@@ -315,19 +612,195 @@ struct AccountView: View {
         isLoaded = true
     }
 
-    private func savePreference(_ type: TransportType) async {
+    /// Returns whether `candidate` is free, using a SECURITY DEFINER RPC so no
+    /// other user's row data is exposed to the client.
+    private func isUsernameAvailable(_ candidate: String) async throws -> Bool {
+        try await supabase
+            .rpc("is_username_available", params: ["candidate": candidate])
+            .execute()
+            .value
+    }
+
+    private func saveName() async {
+        let trimmed = draftName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            isEditingName = false
+            return
+        }
+        guard trimmed != displayName else {
+            isEditingName = false
+            return
+        }
+        isSavingName = true
+        defer { isSavingName = false }
+        do {
+            try await supabase.auth.update(
+                user: UserAttributes(
+                    data: ["display_name": .string(trimmed)]
+                )
+            )
+            displayName = trimmed
+            isEditingName = false
+        } catch {
+            dump(error)
+        }
+    }
+
+    private func normalizedUsername(_ raw: String) -> String {
+        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.hasPrefix("@") { value.removeFirst() }
+        return value.lowercased()
+    }
+
+    private func saveUsername() async {
         guard let userID = supabase.auth.currentUser?.id else { return }
-        let payload = TransportPreferencePayload(
-            user_id: userID,
-            preferred_transport_type: type.rawValue
-        )
+
+        let normalized = normalizedUsername(draftUsername)
+
+        guard !normalized.isEmpty else {
+            isEditingUsername = false
+            usernameError = nil
+            return
+        }
+        guard normalized != username else {
+            isEditingUsername = false
+            usernameError = nil
+            return
+        }
+
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789_.")
+        guard normalized.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
+            usernameError = "Use only letters, numbers, periods, and underscores."
+            return
+        }
+        guard normalized.count >= 3, normalized.count <= 20 else {
+            usernameError = "Username must be 3–20 characters."
+            return
+        }
+
+        isSavingUsername = true
+        defer { isSavingUsername = false }
+        usernameError = nil
+
+        // Pre-check availability so we can show a friendly message before writing.
+        do {
+            if try await !isUsernameAvailable(normalized) {
+                usernameError = "That username is already taken."
+                return
+            }
+        } catch {
+            usernameError = "Couldn't check username. Try again."
+            dump(error)
+            return
+        }
+
+        let payload = UsernamePayload(user_id: userID, username: normalized)
         do {
             try await supabase
                 .from("user_data")
                 .upsert(payload, onConflict: "user_id")
                 .execute()
+            username = normalized
+            isEditingUsername = false
+        } catch let error as PostgrestError where error.code == "23505" {
+            // Unique constraint caught a race between the pre-check and the write.
+            usernameError = "That username is already taken."
         } catch {
+            usernameError = "Couldn't save username. Try again."
             dump(error)
+        }
+    }
+}
+
+/// Bridges SwiftUI sheets to UIKit so we can intercept an interactive (swipe)
+/// dismissal and prompt the user before discarding unsaved edits.
+private struct InteractiveDismissGuard: UIViewControllerRepresentable {
+    var blocking: Bool
+    var onAttemptToDismiss: () -> Void
+
+    func makeUIViewController(context: Context) -> GuardController {
+        let controller = GuardController()
+        controller.onAttemptToDismiss = onAttemptToDismiss
+        controller.blocking = blocking
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: GuardController, context: Context) {
+        uiViewController.onAttemptToDismiss = onAttemptToDismiss
+        uiViewController.blocking = blocking
+        DispatchQueue.main.async { uiViewController.sync() }
+    }
+
+    final class GuardController: UIViewController, UIAdaptivePresentationControllerDelegate {
+        var onAttemptToDismiss: (() -> Void)?
+        var blocking = false
+
+        /// SwiftUI installs its own delegate to keep the `isPresented` binding in
+        /// sync. We capture it so we can forward the calls we don't handle.
+        private weak var originalDelegate: UIAdaptivePresentationControllerDelegate?
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            sync()
+        }
+
+        override func didMove(toParent parent: UIViewController?) {
+            super.didMove(toParent: parent)
+            sync()
+        }
+
+        func sync() {
+            guard let presented = presentedHost(),
+                let presentationController = presented.presentationController
+            else { return }
+
+            if presentationController.delegate !== self {
+                originalDelegate = presentationController.delegate
+                presentationController.delegate = self
+            }
+            presented.isModalInPresentation = blocking
+        }
+
+        /// Walks up to the root of this controller's containment hierarchy. A
+        /// presented sheet's host controller has no `parent`, so the topmost
+        /// ancestor is the controller actually presented in the sheet.
+        ///
+        /// Note: `presentingViewController` cannot be used to find it because it
+        /// auto-traverses and returns non-nil even for child controllers.
+        private func presentedHost() -> UIViewController? {
+            var controller: UIViewController = self
+            while let parent = controller.parent {
+                controller = parent
+            }
+            return controller.presentingViewController != nil ? controller : nil
+        }
+
+        // MARK: UIAdaptivePresentationControllerDelegate
+
+        func presentationControllerDidAttemptToDismiss(
+            _ presentationController: UIPresentationController
+        ) {
+            onAttemptToDismiss?()
+        }
+
+        func presentationControllerShouldDismiss(
+            _ presentationController: UIPresentationController
+        ) -> Bool {
+            if blocking { return false }
+            return originalDelegate?.presentationControllerShouldDismiss?(presentationController)
+                ?? true
+        }
+
+        func presentationControllerWillDismiss(
+            _ presentationController: UIPresentationController
+        ) {
+            originalDelegate?.presentationControllerWillDismiss?(presentationController)
+        }
+
+        func presentationControllerDidDismiss(
+            _ presentationController: UIPresentationController
+        ) {
+            originalDelegate?.presentationControllerDidDismiss?(presentationController)
         }
     }
 }
