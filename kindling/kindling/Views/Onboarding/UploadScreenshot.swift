@@ -41,7 +41,7 @@ private struct ProcessedScreenshotEvent: Decodable {
     let id: String
 }
 
-let backendBaseURL = URL(string: "http://localhost:3000")!
+let backendBaseURL = URL(string: "http://192.168.50.40:3000")!
 
 private let ideasURL = backendBaseURL.appendingPathComponent("ideas")
 

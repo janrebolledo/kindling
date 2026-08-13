@@ -137,14 +137,34 @@ struct OnboardingScreenshotSummaryView: View {
                 Color.clear.frame(height: 28)
             }
             .frame(width: 130, height: 148)
+            .clipShape(
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+            )
             .background {
-                Rectangle()
-                    .fill(Color.white)
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 217 / 255, green: 217 / 255, blue: 217 / 255),
+                                Color(red: 115 / 255, green: 115 / 255, blue: 115 / 255),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                            .fill(Color.white.opacity(0.91))
+                    }
                     .shadow(
-                        color: .black.opacity(0.15),
-                        radius: 6,
+                        color: Color(
+                            red: 116 / 255,
+                            green: 116 / 255,
+                            blue: 78 / 255
+                        ).opacity(0.25),
+                        radius: 4.5,
                         x: 0,
-                        y: 3
+                        y: 2
                     )
             }
         }

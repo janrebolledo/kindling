@@ -15,6 +15,7 @@ struct SignUpCaptureView: View {
     @State private var dragOffset: CGSize = .zero
     @State private var isDismissingCard = false
     @State private var promotionProgress: CGFloat = 0
+    @State private var frontRevealProgress: CGFloat = 1
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -93,13 +94,16 @@ struct SignUpCaptureView: View {
                     Card(
                         function: nil,
                         card: cards[index],
-                        allowsDeletion: false
+                        allowsDeletion: false,
+                        animatesImageLoading: true
                     )
                         .frame(width: 260, height: 293, alignment: .top)
-                        .background(
-                            Color.white,
-                            in: RoundedRectangle(cornerRadius: 20)
-                        )
+                        .background {
+                            if cards[index].ideas?.type?.lowercased() != "event" {
+                                RoundedRectangle(cornerRadius: 20)
+                                    .fill(Color.white)
+                            }
+                        }
                         .clipShape(RoundedRectangle(cornerRadius: 20))
                         .scaleEffect(scale(for: depth))
                         .blur(radius: blur(for: depth))
@@ -182,7 +186,14 @@ struct SignUpCaptureView: View {
 
     private func scale(for depth: Int) -> CGFloat {
         if depth == 0 {
-            return reduceMotion ? 1 : 1 - swipeProgress * 0.12
+            guard !reduceMotion else { return 1 }
+            let dismissalScale = 1 - swipeProgress * 0.04
+            let revealScale = interpolate(
+                0.97,
+                1,
+                progress: frontRevealProgress
+            )
+            return dismissalScale * revealScale
         }
 
         switch depth {
@@ -196,13 +207,23 @@ struct SignUpCaptureView: View {
     }
 
     private func blur(for depth: Int) -> CGFloat {
-        guard depth == 0, !reduceMotion else { return 0 }
-        return swipeProgress * 8
+        guard !reduceMotion else { return 0 }
+        if depth == 0 {
+            return swipeProgress * 3 + (1 - frontRevealProgress) * 6
+        }
+        return 0
     }
 
     private func opacity(for depth: Int) -> Double {
-        if depth == 0 { return Double(1 - swipeProgress) }
-        if depth == 3 { return Double(effectivePromotionProgress) }
+        if depth == 0 {
+            let dismissalOpacity = 1 - Double(swipeProgress) * 0.3
+            let revealOpacity = interpolate(
+                0.7,
+                1,
+                progress: frontRevealProgress
+            )
+            return dismissalOpacity * revealOpacity
+        }
         return 1
     }
 
@@ -265,7 +286,13 @@ struct SignUpCaptureView: View {
                         activeCardIndex = (activeCardIndex + 1) % cards.count
                         dragOffset = .zero
                         promotionProgress = 0
+                        frontRevealProgress = reduceMotion ? 1 : 0
                         isDismissingCard = false
+                    }
+                    if !reduceMotion {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            frontRevealProgress = 1
+                        }
                     }
                 }
             }

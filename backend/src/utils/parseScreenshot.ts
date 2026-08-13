@@ -30,7 +30,7 @@ export async function parseScreenshot(text: string) {
   console.log('req started');
 
   const response = await generateWithRetry({
-    model: 'gemini-3.1-flash-lite',
+    model: 'gemini-3.5-flash-lite',
     contents: parseScreenshotPrompt + text,
   });
 
