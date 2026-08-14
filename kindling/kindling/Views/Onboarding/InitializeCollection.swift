@@ -28,40 +28,84 @@ private struct CollectionItemInsert: Encodable {
 
 private struct CollectionRow: Decodable {
     let id: Int
+    let name: String?
 }
 
-/// Finds the user's "My List" collection, creating it if needed, and returns its id.
-private func myListCollectionID(for userID: UUID) async throws -> Int {
+private struct CollectionNameUpdate: Encodable {
+    let name: String
+}
+
+let defaultCollectionName = "nomnomnom"
+private let legacyDefaultCollectionName = "My List"
+
+/// Finds the user's default collection, creating it if needed, and returns its id.
+/// Renames a leftover "My List" row to `nomnomnom` so existing accounts pick up the new name.
+func defaultCollectionID(for userID: UUID) async throws -> Int {
     let existing: [CollectionRow] =
         try await supabase
         .from("collections")
-        .select("id")
+        .select("id, name")
         .eq("user_id", value: userID)
-        .eq("name", value: "My List")
-        .limit(1)
         .execute()
         .value
-    if let row = existing.first { return row.id }
+
+    if let row = existing.first(where: { $0.name == defaultCollectionName }) {
+        return row.id
+    }
+
+    if let row = existing.first(where: { $0.name == legacyDefaultCollectionName }) {
+        try await supabase
+            .from("collections")
+            .update(CollectionNameUpdate(name: defaultCollectionName))
+            .eq("id", value: row.id)
+            .execute()
+        return row.id
+    }
 
     let created: CollectionRow =
         try await supabase
         .from("collections")
-        .insert(CollectionInsert(name: "My List", emoji: "📁", user_id: userID))
-        .select("id")
+        .insert(CollectionInsert(name: defaultCollectionName, emoji: "📁", user_id: userID))
+        .select("id, name")
         .single()
         .execute()
         .value
     return created.id
 }
 
-/// Persists the given draft items into the signed-in user's "My List" collection.
+/// Renames a leftover "My List" collection to `nomnomnom` if one still exists.
+func migrateLegacyDefaultCollectionName() async {
+    guard let userID = supabase.auth.currentUser?.id else { return }
+    do {
+        let legacy: [CollectionRow] =
+            try await supabase
+            .from("collections")
+            .select("id, name")
+            .eq("user_id", value: userID)
+            .eq("name", value: legacyDefaultCollectionName)
+            .execute()
+            .value
+
+        for row in legacy {
+            try await supabase
+                .from("collections")
+                .update(CollectionNameUpdate(name: defaultCollectionName))
+                .eq("id", value: row.id)
+                .execute()
+        }
+    } catch {
+        dump(error)
+    }
+}
+
+/// Persists the given draft items into the signed-in user's default collection.
 /// Runs client-side: by this point the Supabase session is authenticated, so the
 /// real user_id is attached and RLS enforces ownership. Ids are DB-generated.
 func finalizeItems(_ items: [ItemWrapper]) async throws {
     guard !items.isEmpty else { return }
     guard let userID = supabase.auth.currentUser?.id else { return }
 
-    let collectionID = try await myListCollectionID(for: userID)
+    let collectionID = try await defaultCollectionID(for: userID)
 
     let rows: [CollectionItemInsert] = items.map { item in
         CollectionItemInsert(

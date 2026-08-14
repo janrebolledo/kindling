@@ -12,14 +12,16 @@ private let figmaGray = Color(red: 142 / 255, green: 142 / 255, blue: 147 / 255)
 
 struct PinsView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(UserSettings.self) private var userSettings
 
     @State var collections: [CollectionWrapper] = []
     @State private var searchText: String = ""
     @State private var showAccount = false
+    @State private var destination: HomeDestination?
     var isLoading: Bool = false
 
     private var displayName: String {
-        supabase.auth.currentUser?.displayName ?? "you"
+        userSettings.displayName
     }
 
     // MARK: - Derived data
@@ -38,15 +40,24 @@ struct PinsView: View {
         item.ideas?.type?.lowercased() == "event"
     }
 
-    private func locationItems(for collection: CollectionWrapper) -> [CollectionItemWrapper] {
-        (collection.collection_items ?? []).filter { !isEvent($0) && matches($0) }
+    private func locationItems(
+        for collection: CollectionWrapper,
+        applyingSearch: Bool = true
+    ) -> [CollectionItemWrapper] {
+        (collection.collection_items ?? []).filter {
+            !isEvent($0) && (!applyingSearch || matches($0))
+        }
     }
 
     private var eventItems: [CollectionItemWrapper] {
+        eventItems(applyingSearch: true)
+    }
+
+    private func eventItems(applyingSearch: Bool) -> [CollectionItemWrapper] {
         var seen = Set<Int>()
         var result: [CollectionItemWrapper] = []
         for item in collections.flatMap({ $0.collection_items ?? [] })
-        where isEvent(item) && matches(item) {
+        where isEvent(item) && (!applyingSearch || matches(item)) {
             let key = item.ideas?.id ?? item.idea_id
             if seen.insert(key).inserted { result.append(item) }
         }
@@ -56,28 +67,46 @@ struct PinsView: View {
     // MARK: - Body
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                headerContent
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 28) {
+                    headerContent
 
-                ForEach(collections) { collection in
-                    let items = locationItems(for: collection)
-                    if !items.isEmpty {
-                        section(title: "#\(collection.name)", items: items)
+                    ForEach(collections) { collection in
+                        let items = locationItems(for: collection)
+                        if !items.isEmpty {
+                            section(
+                                title: "#\(collection.name)",
+                                items: items,
+                                destination: .collection(collection.id)
+                            )
+                        }
+                    }
+
+                    if !eventItems.isEmpty {
+                        section(
+                            title: "events this week",
+                            items: eventItems,
+                            destination: .events
+                        )
                     }
                 }
-
-                if !eventItems.isEmpty {
-                    section(title: "events this week", items: eventItems)
-                }
+                .padding(.top, 16)
+                .padding(.bottom, 120)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(alignment: .top) { gradient }
             }
-            .padding(.top, 16)
-            .padding(.bottom, 120)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(alignment: .top) { gradient }
+            .scrollIndicators(.hidden)
+            .background((colorScheme == .dark ? Color.black : Color.white).ignoresSafeArea())
+            .toolbarVisibility(.hidden, for: .navigationBar)
+            .navigationDestination(item: $destination) { dest in
+                SectionDetailView(
+                    title: title(for: dest),
+                    subtitle: subtitle(for: dest),
+                    items: items(for: dest)
+                )
+            }
         }
-        .scrollIndicators(.hidden)
-        .background((colorScheme == .dark ? Color.black : Color.white).ignoresSafeArea())
         .task {
             await loadCollections()
             await scanForNewScreenshots()
@@ -86,6 +115,7 @@ struct PinsView: View {
     }
 
     private func loadCollections() async {
+        await migrateLegacyDefaultCollectionName()
         do {
             collections =
                 try await supabase
@@ -181,18 +211,30 @@ struct PinsView: View {
 
     // MARK: - Section
 
-    private func section(title: String, items: [CollectionItemWrapper]) -> some View {
+    private func section(
+        title: String,
+        items: [CollectionItemWrapper],
+        destination: HomeDestination
+    ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 6) {
-                Text(title)
-                    .font(.system(size: 20, weight: .medium))
-                    .tracking(-0.5)
-                    .foregroundStyle(.primary)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(figmaGray)
+            Button {
+                self.destination = destination
+            } label: {
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(.system(size: 20, weight: .medium))
+                        .tracking(-0.5)
+                        .foregroundStyle(.primary)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(figmaGray)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
             .padding(.horizontal, 24)
+            .accessibilityHint("View all")
 
             ScrollView(.horizontal) {
                 LazyHStack(spacing: 16) {
@@ -204,6 +246,42 @@ struct PinsView: View {
                 .padding(.horizontal, 24)
             }
             .scrollIndicators(.hidden)
+        }
+    }
+
+    private func title(for destination: HomeDestination) -> String {
+        switch destination {
+        case .collection(let id):
+            if let name = collections.first(where: { $0.id == id })?.name {
+                return "#\(name)"
+            }
+            return "#collection"
+        case .events:
+            return "events this week"
+        }
+    }
+
+    private func subtitle(for destination: HomeDestination) -> String {
+        switch destination {
+        case .events:
+            return "happening this week."
+        case .collection:
+            let types = items(for: destination).compactMap { $0.ideas?.type?.lowercased() }
+            let foodCount = types.filter { $0 == "food" }.count
+            if !types.isEmpty && foodCount * 2 >= types.count {
+                return "tasty things you saved."
+            }
+            return "things you saved."
+        }
+    }
+
+    private func items(for destination: HomeDestination) -> [CollectionItemWrapper] {
+        switch destination {
+        case .collection(let id):
+            guard let collection = collections.first(where: { $0.id == id }) else { return [] }
+            return locationItems(for: collection, applyingSearch: false)
+        case .events:
+            return eventItems(applyingSearch: false)
         }
     }
 }

@@ -3,7 +3,7 @@
 //  kindling
 //
 //  Searches the photo library for screenshots that haven't been parsed yet,
-//  parses a small batch, saves the resulting ideas to the user's "My List"
+//  parses a small batch, saves the resulting ideas to the user's default list
 //  collection, and records them as parsed both locally and in Supabase.
 //
 
