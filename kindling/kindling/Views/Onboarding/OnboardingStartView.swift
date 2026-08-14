@@ -132,17 +132,11 @@ struct OnboardingStartView: View {
     }
 
     var legalText: some View {
-        (
-            Text("By continuing, you agree to kindling's ")
-            + Text("Terms & Conditions").underline()
-            + Text(" and acknowledge the ")
-            + Text("Privacy Policy").underline()
-            + Text(".")
-        )
-        .font(.system(size: 12))
-        .foregroundColor(Color(red: 142/255, green: 142/255, blue: 147/255))
-        .multilineTextAlignment(.center)
-        .tracking(-0.12)
+        Text("By continuing, you agree to kindling's \(Text("Terms & Conditions").underline()) and acknowledge the \(Text("Privacy Policy").underline()).")
+            .font(.system(size: 12))
+            .foregroundColor(Color(red: 142/255, green: 142/255, blue: 147/255))
+            .multilineTextAlignment(.center)
+            .tracking(-0.12)
     }
 }
 

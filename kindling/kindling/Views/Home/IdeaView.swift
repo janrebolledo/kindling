@@ -596,6 +596,7 @@ struct ImagePreviewSheet: View {
     @State private var lastScale: CGFloat = 1
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
+    @State private var allowsPan = false
 
     var body: some View {
         NavigationStack {
@@ -606,28 +607,9 @@ struct ImagePreviewSheet: View {
                     .frame(width: geo.size.width, height: geo.size.height)
                     .scaleEffect(scale)
                     .offset(offset)
-                    .gesture(
-                        MagnificationGesture()
-                            .onChanged { v in scale = max(1, lastScale * v) }
-                            .onEnded { _ in lastScale = scale }
-                            .simultaneously(with:
-                                DragGesture()
-                                    .onChanged { v in
-                                        guard scale > 1 else { return }
-                                        offset = CGSize(
-                                            width: lastOffset.width + v.translation.width,
-                                            height: lastOffset.height + v.translation.height
-                                        )
-                                    }
-                                    .onEnded { _ in lastOffset = offset }
-                            )
-                    )
-                    .onTapGesture(count: 2) {
-                        withAnimation(.spring) {
-                            scale = 1; lastScale = 1
-                            offset = .zero; lastOffset = .zero
-                        }
-                    }
+                    .gesture(magnificationGesture)
+                    .simultaneousGesture(panGesture, including: allowsPan ? .all : .none)
+                    .onTapGesture(count: 2, perform: resetZoom)
                     .animation(.interactiveSpring, value: scale)
             }
             .ignoresSafeArea()
@@ -637,9 +619,51 @@ struct ImagePreviewSheet: View {
                         .fontWeight(.medium)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    ShareLink(item: Image(uiImage: image), preview: SharePreview("Screenshot", image: Image(uiImage: image)))
+                    ShareLink(
+                        item: Image(uiImage: image),
+                        preview: SharePreview("Screenshot", image: Image(uiImage: image))
+                    )
                 }
             }
+        }
+        .interactiveDismissDisabled(allowsPan)
+    }
+
+    private var magnificationGesture: some Gesture {
+        MagnificationGesture()
+            .onChanged { value in
+                scale = max(1, lastScale * value)
+            }
+            .onEnded { _ in
+                lastScale = scale
+                allowsPan = scale > 1
+                if !allowsPan {
+                    offset = .zero
+                    lastOffset = .zero
+                }
+            }
+    }
+
+    private var panGesture: some Gesture {
+        DragGesture()
+            .onChanged { value in
+                offset = CGSize(
+                    width: lastOffset.width + value.translation.width,
+                    height: lastOffset.height + value.translation.height
+                )
+            }
+            .onEnded { _ in
+                lastOffset = offset
+            }
+    }
+
+    private func resetZoom() {
+        withAnimation(.spring) {
+            scale = 1
+            lastScale = 1
+            offset = .zero
+            lastOffset = .zero
+            allowsPan = false
         }
     }
 }

@@ -62,6 +62,7 @@ struct AccountView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(UserSettings.self) private var userSettings
 
     @State private var isLoaded = false
@@ -333,6 +334,7 @@ struct AccountView: View {
                     title: isProcessingScreenshots ? "Processing" : "Process More",
                     systemName: isProcessingScreenshots ? "rays" : "plus",
                     isDisabled: isProcessingScreenshots,
+                    isSpinning: isProcessingScreenshots,
                     action: processMoreScreenshots
                 )
 
@@ -360,12 +362,19 @@ struct AccountView: View {
         title: String,
         systemName: String,
         isDisabled: Bool = false,
+        isSpinning: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Image(systemName: systemName)
-                    .font(.system(size: 16, weight: .medium))
+                Group {
+                    if isSpinning {
+                        SpinningRaysIcon(reduceMotion: reduceMotion)
+                    } else {
+                        Image(systemName: systemName)
+                    }
+                }
+                .font(.system(size: 16, weight: .medium))
                 Text(title)
                     .font(.system(size: 16, weight: .medium))
                     .tracking(-0.4)
@@ -822,6 +831,22 @@ private struct InteractiveDismissGuard: UIViewControllerRepresentable {
         ) {
             originalDelegate?.presentationControllerDidDismiss?(presentationController)
         }
+    }
+}
+
+private struct SpinningRaysIcon: View {
+    let reduceMotion: Bool
+    @State private var spinAngle: Double = 0
+
+    var body: some View {
+        Image(systemName: "rays")
+            .rotationEffect(.degrees(reduceMotion ? 0 : spinAngle))
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
+                    spinAngle = 360
+                }
+            }
     }
 }
 
