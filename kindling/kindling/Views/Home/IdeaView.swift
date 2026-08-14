@@ -29,6 +29,7 @@ struct IdeaView: View {
     @State private var showQuickLook = false
     @State private var isDeletingFromCollection = false
     @State private var isDeletingFromDevice = false
+    @State private var polaroidRotation = Double.random(in: -6...6)
 
     private var venueTitle: String {
         card.ideas?.venue ?? "Untitled"
@@ -377,7 +378,7 @@ struct IdeaView: View {
             .background(.white)
             .clipShape(RoundedRectangle(cornerRadius: 2))
             .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 4)
-            .rotationEffect(.degrees(Double.random(in: -6...6)))
+            .rotationEffect(.degrees(polaroidRotation))
             .onTapGesture {
                 if localImage != nil { showQuickLook = true }
             }

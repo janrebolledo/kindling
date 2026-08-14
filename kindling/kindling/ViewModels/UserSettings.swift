@@ -11,30 +11,45 @@ import Supabase
 @Observable
 class UserSettings {
     var transportType: TransportType = .driving
+    var displayName: String = "you"
 
     func reset() {
         transportType = .driving
+        displayName = "you"
+    }
+
+    func refreshDisplayName() {
+        displayName = supabase.auth.currentUser?.displayName ?? "you"
     }
 
     func load() async {
-        guard let userID = supabase.auth.currentUser?.id else {
+        guard let user = supabase.auth.currentUser else {
             await MainActor.run { reset() }
             return
         }
+        let name = user.displayName
         do {
             let rows: [UserData] = try await supabase
                 .from("user_data")
                 .select()
-                .eq("user_id", value: userID)
+                .eq("user_id", value: user.id)
                 .execute()
                 .value
             if let raw = rows.first?.preferred_transport_type,
                let parsed = TransportType(rawValue: raw) {
-                await MainActor.run { transportType = parsed }
+                await MainActor.run {
+                    transportType = parsed
+                    displayName = name
+                }
             } else {
-                await MainActor.run { reset() }
+                await MainActor.run {
+                    transportType = .driving
+                    displayName = name
+                }
             }
-        } catch {}
+        } catch {
+            await MainActor.run { displayName = name }
+        }
     }
 
     func persistTransportType() async {

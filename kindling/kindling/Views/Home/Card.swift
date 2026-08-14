@@ -14,7 +14,11 @@ struct Card: View {
     @State private var mapItem: MKMapItem?
     @State private var etaString: String?
     @State private var locationManager = CardLocationManager()
+    @State private var isNearViewport = false
     @Environment(UserSettings.self) private var userSettings
+    @Environment(DirectionsCache.self) private var directionsCache
+
+    private let directionsPreloadCount = 2
 
     var function: ((ItemWrapper?) async -> Void)?
     var card: CardData
@@ -54,10 +58,13 @@ struct Card: View {
             if isEvent { eventCard } else { locationCard }
         }
         .contentShape(RoundedRectangle(cornerRadius: 20))
+        .onGeometryChange(for: CGRect.self) { proxy in
+            proxy.frame(in: .global)
+        } action: { frame in
+            updateViewportProximity(frame)
+        }
         .onAppear {
-            if loadsMapData {
-                locationManager.requestLocation()
-            }
+            applyCachedDirections()
             Task {
                 if card.ideas?.media_url == nil, !card.local_id.isEmpty {
                     let loadedImage = try await loadImage(from: card.local_id)
@@ -69,16 +76,25 @@ struct Card: View {
                         image = loadedImage
                     }
                 }
-                if loadsMapData {
-                    await fetchMapData()
-                }
             }
         }
+        .task(id: directionsTaskID) {
+            guard shouldFetchDirections else { return }
+            applyCachedDirections()
+            if mapItem != nil, etaString != nil { return }
+            locationManager.requestLocation()
+            await fetchMapData()
+            await fetchETA()
+        }
         .onChange(of: locationManager.location) { _, _ in
-            if loadsMapData { Task { await fetchETA() } }
+            if shouldFetchDirections { Task { await fetchETA() } }
         }
         .onChange(of: mapItem) { _, _ in
-            if loadsMapData { Task { await fetchETA() } }
+            if shouldFetchDirections { Task { await fetchETA() } }
+        }
+        .onChange(of: userSettings.transportType) { _, _ in
+            etaString = nil
+            applyCachedDirections()
         }
         .onTapGesture {
             if allowsDetailPresentation {
@@ -271,40 +287,95 @@ struct Card: View {
         .lineLimit(1)
     }
 
-    // MARK: - Fetch
+    // MARK: - Directions
+
+    private var ideaID: Int {
+        card.ideas?.id ?? card.id
+    }
+
+    private var shouldFetchDirections: Bool {
+        loadsMapData && isNearViewport
+    }
+
+    private var directionsTaskID: String {
+        "\(shouldFetchDirections)-\(userSettings.transportType.rawValue)"
+    }
+
+    private func applyCachedDirections() {
+        if mapItem == nil, let cached = directionsCache.mapItem(for: ideaID) {
+            mapItem = cached
+        }
+        if etaString == nil, let cached = directionsCache.eta(for: ideaID, transport: userSettings.transportType) {
+            etaString = cached
+        }
+    }
+
+    private func updateViewportProximity(_ frame: CGRect) {
+        guard loadsMapData, frame.width > 1, frame.height > 1 else {
+            if isNearViewport { isNearViewport = false }
+            return
+        }
+        let padX = (frame.width + 16) * CGFloat(directionsPreloadCount)
+        let padY = (frame.height + 20) * CGFloat(directionsPreloadCount)
+        let near = viewportBounds.insetBy(dx: -padX, dy: -padY).intersects(frame)
+        if near != isNearViewport {
+            isNearViewport = near
+        }
+    }
+
+    private var viewportBounds: CGRect {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let scene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first
+        return scene?.keyWindow?.bounds ?? scene?.windows.first?.bounds ?? .zero
+    }
 
     private func fetchMapData() async {
+        if mapItem != nil { return }
         guard !address.isEmpty else { return }
         let request = MKLocalSearch.Request()
         request.naturalLanguageQuery = address
         do {
+            try Task.checkCancellation()
             let response = try await MKLocalSearch(request: request).start()
+            try Task.checkCancellation()
             guard let item = response.mapItems.first else { return }
-            await MainActor.run { mapItem = item }
+            mapItem = item
+            directionsCache.store(mapItem: item, for: ideaID)
+        } catch is CancellationError {
+            return
         } catch {
             print("MapKit search error: \(error)")
         }
     }
 
     private func fetchETA() async {
+        guard etaString == nil else { return }
         guard let destination = mapItem, locationManager.location != nil else { return }
         let request = MKDirections.Request()
         request.source = MKMapItem.forCurrentLocation()
         request.destination = destination
         request.transportType = userSettings.transportType.mkTransportType
         do {
+            try Task.checkCancellation()
             let response = try await MKDirections(request: request).calculate()
+            try Task.checkCancellation()
             guard let route = response.routes.first else { return }
             let interval = route.expectedTravelTime
             let h = Int(interval) / 3600
             let m = (Int(interval) % 3600) / 60
-            await MainActor.run { etaString = h > 0 ? "\(h)h \(m)m" : "\(m)m" }
+            etaString = h > 0 ? "\(h)h \(m)m" : "\(m)m"
+            if let etaString {
+                directionsCache.store(eta: etaString, for: ideaID, transport: userSettings.transportType)
+            }
+        } catch is CancellationError {
+            return
         } catch {
-            await MainActor.run { etaString = nil }
+            etaString = nil
         }
     }
 }
 
+@Observable
 private final class CardLocationManager: NSObject, CLLocationManagerDelegate {
     var location: CLLocation?
     private let manager = CLLocationManager()

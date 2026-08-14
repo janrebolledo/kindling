@@ -25,6 +25,7 @@ struct AppEntry: App {
     @State private var onboardingCompleted = false
     @State private var authenticated = false
     @State private var userSettings = UserSettings()
+    @State private var directionsCache = DirectionsCache()
 
     var body: some Scene {
 
@@ -37,10 +38,13 @@ struct AppEntry: App {
                 }
             }
             .environment(userSettings)
+            .environment(directionsCache)
             .environment(\.isAuthenticated, authenticated)
             .task {
                 for await state in supabase.auth.authStateChanges {
-                    if [.initialSession, .signedIn, .signedOut].contains(
+                    if state.event == .userUpdated {
+                        userSettings.refreshDisplayName()
+                    } else if [.initialSession, .signedIn, .signedOut].contains(
                         state.event
                     ) {
                         if let session = state.session {

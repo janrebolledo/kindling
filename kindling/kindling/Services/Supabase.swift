@@ -21,17 +21,17 @@ let supabase = SupabaseClient(
 extension User {
     /// The user's display name, derived from auth metadata
     /// (`display_name`, then `full_name`, then `name`), falling back to the
-    /// capitalized email prefix.
+    /// email prefix. Always lowercase to match the rest of the UI.
     var displayName: String {
         for key in ["display_name", "full_name", "name"] {
             if let value = userMetadata[key]?.stringValue,
                 !value.isEmpty
             {
-                return value
+                return value.lowercased()
             }
         }
         let prefix = email?.split(separator: "@").first.map(String.init) ?? "you"
-        return prefix.prefix(1).uppercased() + prefix.dropFirst()
+        return prefix.lowercased()
     }
 }
 

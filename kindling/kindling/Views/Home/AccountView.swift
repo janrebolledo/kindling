@@ -75,7 +75,6 @@ struct AccountView: View {
     @State private var totalScreenshotCount = 0
     @State private var isProcessingScreenshots = false
 
-    @State private var displayName = ""
     @State private var isEditingName = false
     @State private var draftName = ""
     @State private var isSavingName = false
@@ -92,7 +91,7 @@ struct AccountView: View {
 
     private var hasUnsavedChanges: Bool {
         if isEditingName,
-            draftName.trimmingCharacters(in: .whitespacesAndNewlines) != displayName
+            draftName.trimmingCharacters(in: .whitespacesAndNewlines) != userSettings.displayName
         {
             return true
         }
@@ -106,6 +105,13 @@ struct AccountView: View {
 
     private var email: String {
         supabase.auth.currentUser?.email ?? ""
+    }
+
+    private var lowercaseUsernameBinding: Binding<String> {
+        Binding(
+            get: { draftUsername },
+            set: { draftUsername = $0.lowercased() }
+        )
     }
 
     var body: some View {
@@ -223,7 +229,6 @@ struct AccountView: View {
             }
         )
         .task {
-            displayName = supabase.auth.currentUser?.displayName ?? ""
             async let preference: Void = loadPreference()
             async let screenshotProgress: Void = refreshScreenshotProgress()
             _ = await (preference, screenshotProgress)
@@ -285,7 +290,7 @@ struct AccountView: View {
     }
 
     private func discardAndDismiss() {
-        draftName = displayName
+        draftName = userSettings.displayName
         draftUsername = username
         usernameError = nil
         isEditingName = false
@@ -397,19 +402,20 @@ struct AccountView: View {
                 .tracking(-0.4)
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.trailing)
-                .textInputAutocapitalization(.words)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
                 .submitLabel(.done)
                 .focused($nameFieldFocused)
                 .onSubmit { Task { await saveName() } }
                 .disabled(isSavingName)
         } else {
             Button {
-                draftName = displayName
+                draftName = userSettings.displayName
                 isEditingName = true
                 nameFieldFocused = true
             } label: {
                 HStack(spacing: 8) {
-                    Text(displayName)
+                    Text(userSettings.displayName)
                         .font(.system(size: 16, weight: .semibold))
                         .tracking(-0.4)
                         .foregroundStyle(.primary)
@@ -425,16 +431,22 @@ struct AccountView: View {
     @ViewBuilder
     private var usernameValue: some View {
         if isEditingUsername {
-            TextField("username", text: $draftUsername)
+            TextField("username", text: lowercaseUsernameBinding)
                 .font(.system(size: 16, weight: .semibold))
                 .tracking(-0.4)
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.trailing)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+                .textContentType(nil)
+                .keyboardType(.asciiCapable)
                 .submitLabel(.done)
                 .focused($usernameFieldFocused)
                 .onSubmit { Task { await saveUsername() } }
+                .onChange(of: draftUsername) { _, newValue in
+                    let lowered = newValue.lowercased()
+                    if newValue != lowered { draftUsername = lowered }
+                }
                 .disabled(isSavingUsername)
         } else {
             Button {
@@ -633,7 +645,7 @@ struct AccountView: View {
             if let savedUsername = rows.first?.username,
                 !savedUsername.isEmpty
             {
-                username = savedUsername
+                username = savedUsername.lowercased()
             }
         } catch {
             dump(error)
@@ -651,12 +663,14 @@ struct AccountView: View {
     }
 
     private func saveName() async {
-        let trimmed = draftName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = draftName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
         guard !trimmed.isEmpty else {
             isEditingName = false
             return
         }
-        guard trimmed != displayName else {
+        guard trimmed != userSettings.displayName else {
             isEditingName = false
             return
         }
@@ -668,7 +682,7 @@ struct AccountView: View {
                     data: ["display_name": .string(trimmed)]
                 )
             )
-            displayName = trimmed
+            userSettings.displayName = trimmed
             isEditingName = false
         } catch {
             dump(error)

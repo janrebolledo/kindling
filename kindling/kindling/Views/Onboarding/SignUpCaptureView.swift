@@ -165,7 +165,7 @@ struct SignUpCaptureView: View {
 
     private func verticalOffset(for depth: Int) -> CGFloat {
         if depth == 0 {
-            let entranceOffset = reduceMotion
+            let entranceOffset: CGFloat = reduceMotion
                 ? 0
                 : interpolate(12, 0, progress: frontSlideProgress)
             return dragOffset.height * 0.12 + entranceOffset

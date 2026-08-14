@@ -44,16 +44,20 @@ final class AppleSignInManager: NSObject, ASAuthorizationControllerDelegate, ASA
             if let familyName = fullName.familyName { nameParts.append(familyName) }
 
             if !nameParts.isEmpty {
-                let fullNameString = nameParts.joined(separator: " ")
-                try? await supabase.auth.update(
-                    user: UserAttributes(
-                        data: [
-                            "full_name": .string(fullNameString),
-                            "given_name": .string(fullName.givenName ?? ""),
-                            "family_name": .string(fullName.familyName ?? ""),
-                        ]
+                let fullNameString = nameParts.joined(separator: " ").lowercased()
+                do {
+                    try await supabase.auth.update(
+                        user: UserAttributes(
+                            data: [
+                                "full_name": .string(fullNameString),
+                                "given_name": .string((fullName.givenName ?? "").lowercased()),
+                                "family_name": .string((fullName.familyName ?? "").lowercased()),
+                            ]
+                        )
                     )
-                )
+                } catch {
+                    dump(error)
+                }
             }
         }
 
@@ -167,10 +171,12 @@ final class AppleSignInManager: NSObject, ASAuthorizationControllerDelegate, ASA
     // MARK: - ASAuthorizationControllerPresentationContextProviding
 
     func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
-        let scene = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first { $0.activationState == .foregroundActive }
-        return scene?.keyWindow ?? ASPresentationAnchor()
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+        guard let scene else {
+            fatalError("Sign in with Apple requires a connected window scene.")
+        }
+        return scene.keyWindow ?? ASPresentationAnchor(windowScene: scene)
     }
 
     // MARK: - Nonce helpers
