@@ -5,8 +5,10 @@
 //  Created by Jan Rebolledo on 1/26/26.
 //
 
+import Auth
 import Foundation
 import Photos
+import Supabase
 import UIKit
 import Vision
 
@@ -53,6 +55,9 @@ private func makeEntriesAndRequest(entries: [Upload]) throws -> (
     urlRequest.httpMethod = "POST"
     urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
     urlRequest.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+    if let userID = supabase.auth.currentUser?.id {
+        urlRequest.setValue(userID.uuidString, forHTTPHeaderField: "X-User-Id")
+    }
     urlRequest.httpBody = try JSONEncoder().encode(entries)
     return (urlRequest, entries)
 }

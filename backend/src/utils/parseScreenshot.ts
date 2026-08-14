@@ -1,5 +1,8 @@
-import { ai } from '../';
+import { ai } from '../clients';
 import { parseScreenshotPrompt } from '../prompts';
+import type { Screenshot } from '../types';
+
+const MODEL = 'gemini-3.5-flash-lite';
 
 async function generateWithRetry(
   params: Parameters<typeof ai.models.generateContent>[0],
@@ -9,13 +12,14 @@ async function generateWithRetry(
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await ai.models.generateContent(params);
-    } catch (err: any) {
+    } catch (err: unknown) {
       const status =
-        err?.status ?? err?.httpError?.status ?? err?.response?.status;
+        err && typeof err === 'object'
+          ? ((err as { status?: number }).status ??
+            (err as { httpError?: { status?: number } }).httpError?.status ??
+            (err as { response?: { status?: number } }).response?.status)
+          : undefined;
       if (status === 503 && attempt < maxRetries) {
-        console.warn(
-          `Gemini 503, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`,
-        );
         await new Promise((res) => setTimeout(res, delay));
         delay *= 2;
         continue;
@@ -26,16 +30,13 @@ async function generateWithRetry(
   throw new Error('Unreachable');
 }
 
-export async function parseScreenshot(text: string) {
-  console.log('req started');
-
+export async function parseScreenshot(screenshots: Screenshot[]) {
   const response = await generateWithRetry({
-    model: 'gemini-3.1-flash-lite',
-    contents: parseScreenshotPrompt + text,
+    model: MODEL,
+    contents: parseScreenshotPrompt + JSON.stringify(screenshots),
   });
 
-  const data = JSON.parse(response.text || '[]') as [ExtractionResult];
-  return data;
+  return JSON.parse(response.text || '[]') as ExtractionResult[];
 }
 
 type ExtractionStatus = 'success' | 'skipped' | 'sensitive';
