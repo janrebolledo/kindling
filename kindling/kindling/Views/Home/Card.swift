@@ -243,7 +243,7 @@ struct Card: View {
                     img
                         .resizable()
                         .scaledToFill()
-                        .transition(.blurFade)
+                        .transition(.opacity)
                 default:
                     Color.gray.opacity(0.15)
                 }
@@ -302,26 +302,6 @@ struct Card: View {
         } catch {
             await MainActor.run { etaString = nil }
         }
-    }
-}
-
-private struct BlurFadeModifier: ViewModifier {
-    let radius: CGFloat
-    let opacity: Double
-
-    func body(content: Content) -> some View {
-        content
-            .blur(radius: radius)
-            .opacity(opacity)
-    }
-}
-
-private extension AnyTransition {
-    static var blurFade: AnyTransition {
-        .modifier(
-            active: BlurFadeModifier(radius: 8, opacity: 0),
-            identity: BlurFadeModifier(radius: 0, opacity: 1)
-        )
     }
 }
 
