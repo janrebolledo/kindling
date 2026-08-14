@@ -45,6 +45,19 @@ class ParsedScreenshotsService {
         UserDefaults.standard.set(Array(ids), forKey: defaultsKey)
     }
 
+    func clearLocal() {
+        UserDefaults.standard.removeObject(forKey: defaultsKey)
+    }
+
+    /// Drops on-device parse history and onboarding drafts for this user so a
+    /// later sign-in with the same Apple ID cannot reuse them.
+    static func clearAllLocal(for userID: UUID) {
+        ParsedScreenshotsService(userID: userID).clearLocal()
+        UserDefaults.standard.removeObject(forKey: onboardingDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: legacyDefaultsKey)
+        OnboardingDraftCache.clear()
+    }
+
     func markAsParsed(_ newIDs: [String]) {
         var existing = loadLocalParsedIDs()
         existing.formUnion(newIDs)

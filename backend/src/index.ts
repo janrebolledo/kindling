@@ -2,6 +2,8 @@ import 'bun';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { cors } from 'hono/cors';
+import { supabase } from './clients';
+import { userFromBearerToken, wipeAccount } from './deleteAccount';
 import { processEntry } from './ideas';
 import { log, logError } from './log';
 import type { Screenshot } from './types';
@@ -20,6 +22,24 @@ type ItemLog = {
 const app = new Hono();
 
 app.use('*', cors());
+
+app.delete('/account', async (c) => {
+  const user = await userFromBearerToken(
+    supabase,
+    c.req.header('Authorization'),
+  );
+  if (user == null) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const result = await wipeAccount(supabase, user.id);
+  if (!result.ok) {
+    logError('account.delete_failed', result.message, { user_id: user.id });
+    return c.json({ error: 'Failed to delete account' }, 500);
+  }
+
+  return c.json({ ok: true });
+});
 
 app.post('/ideas', async (c) => {
   const started = Date.now();

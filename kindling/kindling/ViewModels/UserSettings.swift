@@ -12,8 +12,15 @@ import Supabase
 class UserSettings {
     var transportType: TransportType = .driving
 
+    func reset() {
+        transportType = .driving
+    }
+
     func load() async {
-        guard let userID = supabase.auth.currentUser?.id else { return }
+        guard let userID = supabase.auth.currentUser?.id else {
+            await MainActor.run { reset() }
+            return
+        }
         do {
             let rows: [UserData] = try await supabase
                 .from("user_data")
@@ -24,6 +31,8 @@ class UserSettings {
             if let raw = rows.first?.preferred_transport_type,
                let parsed = TransportType(rawValue: raw) {
                 await MainActor.run { transportType = parsed }
+            } else {
+                await MainActor.run { reset() }
             }
         } catch {}
     }

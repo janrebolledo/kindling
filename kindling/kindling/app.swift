@@ -48,6 +48,7 @@ struct AppEntry: App {
                             Task { await userSettings.load() }
                         } else {
                             authenticated = false
+                            userSettings.reset()
                         }
                     }
                 }
