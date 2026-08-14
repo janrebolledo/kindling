@@ -49,6 +49,7 @@ struct Item: Codable, Identifiable {
     let date: String?
     let time: String?
     let venue: String?
+    let place_id: String?
     let created_at: String?
     let open_hours: [String]?
 }

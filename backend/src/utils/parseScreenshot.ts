@@ -42,26 +42,25 @@ type ExtractionStatus = 'success' | 'skipped' | 'sensitive';
 
 type ExtractionTag = 'activity' | 'event' | 'food';
 
+export type ExtractedItem = {
+  name: string | null;
+  venue: string | null;
+  location: string | null;
+  address: string | null;
+  date: string | null;
+  time: string | null;
+  tag: ExtractionTag;
+  activity_type: string | null;
+  description: string | null;
+  highlights: string | null;
+  highlights_sources: string[] | null;
+};
+
 export type ExtractionResult = {
   id: string;
   data: {
     status: ExtractionStatus;
-    // explanation if skipped/sensitive, null if success
     reason: string | null;
-    item: {
-      name: string | null;
-      venue: string | null;
-      location: string | null;
-      address: string | null;
-      // formatted as "YYYY-MM-DD" or null
-      date: string | null;
-      // formatted as "HH:MM AM/PM" or null
-      time: string | null;
-      tag: ExtractionTag;
-      activity_type: string | null;
-      description: string | null;
-      highlights: string | null;
-      highlights_sources: string[] | null;
-    };
+    item: ExtractedItem | null;
   };
 };

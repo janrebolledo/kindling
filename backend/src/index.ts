@@ -4,7 +4,11 @@ import { streamSSE } from 'hono/streaming';
 import { cors } from 'hono/cors';
 import { GoogleGenAI } from '@google/genai';
 import { createClient } from '@supabase/supabase-js';
-import { parseScreenshot } from './utils/parseScreenshot';
+import {
+  parseScreenshot,
+  type ExtractedItem,
+  type ExtractionResult,
+} from './utils/parseScreenshot';
 import { mapPriceLevelToInt } from './utils/mapPriceLevelToInt';
 
 const supabase = createClient(
@@ -74,110 +78,118 @@ app.use('*', async (c, next) => {
 // user_id and collection_id are attached. `ideas` carries the full idea row for
 // display; highlights/highlights_sources are per-screenshot enrichment that
 // belongs on the user's collection_item.
+type Idea = {
+  id: number;
+  created_at: string;
+  name: string | null;
+  type: string | null;
+  description: string | null;
+  media_url: string | null;
+  address: string | null;
+  location: string | null;
+  location_type: string | null;
+  duration: string | null;
+  pricing: number | null;
+  date: string | null;
+  time: string | null;
+  venue: string | null;
+  place_id: string | null;
+  open_hours: string[] | null;
+};
+
 type DraftCollectionItem = {
   id: number;
   local_id: string;
   idea_id: number;
   highlights: string | null;
   highlights_sources: string[] | null;
-  ideas: Record<string, unknown>;
+  ideas: Idea;
 };
 
-async function processEntry(entry: {
-  id: string;
-  data: unknown;
-}): Promise<DraftCollectionItem | undefined> {
-  const { id, data } = entry;
-  if (
-    data == null ||
-    (data as { status?: string }).status != 'success' ||
-    (data as { item?: { venue?: string } }).item == null ||
-    (data as { item?: { venue?: string } }).item!.venue == null
-  ) {
-    return undefined;
-  }
-  const item = (data as { item: Record<string, unknown> }).item;
-  const venue = (item.venue ?? '') as string;
-  const location = (item.location ?? '') as string;
-  const address = (item.address ?? '') as string;
-  const query = `${venue} ${location} ${address}`.trim();
+type MapsPlace = {
+  id?: string;
+  addressComponents: Array<{
+    longText: string;
+    types: string[];
+  }>;
+  generativeSummary?: { overview?: { text?: string } };
+  formattedAddress?: string;
+  priceLevel?: string;
+  displayName?: { text?: string };
+  currentOpeningHours?: { weekdayDescriptions?: string[] };
+};
 
-  // Database/API racing: run Supabase and Maps in parallel
-  const [supabaseResult, mapsData] = await Promise.all([
-    supabase
-      .from('ideas')
-      .select()
-      .textSearch('venue', venue, { type: 'websearch' }),
-    getLocationDetails(query),
-  ]);
-
-  const { data: matches } = supabaseResult;
-  if (matches && matches.length > 0) {
-    const existing = matches[0] as Record<string, unknown>;
-    // Backfill open_hours on cached records that predate the column
-    if (existing.open_hours == null && mapsData?.data?.places?.[0]) {
-      const hours =
-        (mapsData.data.places[0] as { currentOpeningHours?: { weekdayDescriptions?: string[] } })
-          .currentOpeningHours?.weekdayDescriptions ?? null;
-      if (hours) {
-        await supabase.from('ideas').update({ open_hours: hours }).eq('id', existing.id);
-        existing.open_hours = hours;
-      }
-    }
-    return {
-      id: matches[0].id as number,
-      local_id: id,
-      idea_id: matches[0].id as number,
-      highlights: (item.highlights as string | null) ?? null,
-      highlights_sources: (item.highlights_sources as string[] | null) ?? null,
-      ideas: existing,
-    };
-  }
-
-  if (!mapsData?.data?.places?.[0]) {
-    return undefined;
-  }
-  const mapsLocationData = mapsData.data.places[0] as {
-    addressComponents: Array<{
-      longText: string;
-      types: string[];
-    }>;
-    generativeSummary?: { overview?: { text?: string } };
-    formattedAddress?: string;
-    priceLevel?: string;
-    displayName?: { text?: string };
-    currentOpeningHours?: { weekdayDescriptions?: string[] };
+function toDraft(
+  idea: Idea,
+  localId: string,
+  item: ExtractedItem,
+): DraftCollectionItem {
+  return {
+    id: idea.id,
+    local_id: localId,
+    idea_id: idea.id,
+    highlights: item.highlights,
+    highlights_sources: item.highlights_sources,
+    ideas: idea,
   };
-  const cityComp = mapsLocationData.addressComponents?.find(
-    (i) => i.types?.includes('locality') && i.types?.includes('political'),
-  );
-  const stateComp = mapsLocationData.addressComponents?.find(
-    (i) =>
-      i.types?.includes('administrative_area_level_1') &&
-      i.types?.includes('political'),
-  );
-  const city = cityComp?.longText ?? '';
-  const state = stateComp?.longText ?? '';
+}
+
+function locationLabel(place: MapsPlace): string | null {
+  const city =
+    place.addressComponents?.find(
+      (i) => i.types?.includes('locality') && i.types?.includes('political'),
+    )?.longText ?? '';
+  const state =
+    place.addressComponents?.find(
+      (i) =>
+        i.types?.includes('administrative_area_level_1') &&
+        i.types?.includes('political'),
+    )?.longText ?? '';
+  return `${city}${city && state ? ', ' : ''}${state}`.trim() || null;
+}
+
+async function findIdeaByPlaceId(placeId: string): Promise<Idea | null> {
+  const { data, error } = await supabase
+    .from('ideas')
+    .select()
+    .eq('place_id', placeId)
+    .maybeSingle();
+  if (error) {
+    console.error('place_id lookup failed', error);
+    return null;
+  }
+  return data;
+}
+
+async function getOrCreateIdeaForPlace(
+  place: MapsPlace,
+  image: string | null,
+  item: ExtractedItem,
+): Promise<Idea | null> {
+  const placeId = place.id!;
+  const existing = await findIdeaByPlaceId(placeId);
+  if (existing) return existing;
+
+  const location = locationLabel(place);
+  const venue = place.displayName?.text ?? item.venue;
+  const address = place.formattedAddress ?? null;
 
   const newIdea = {
-    name: (item.name as string | null) ?? null,
-    type: (item.tag as string | null) ?? null,
+    name: item.name,
+    type: item.tag,
     description:
-      mapsLocationData.generativeSummary?.overview?.text ??
-      (item.description as string | null) ??
-      null,
-    media_url: mapsData?.image ?? null,
-    address: mapsLocationData.formattedAddress ?? null,
-    location: `${city}${city && state ? ', ' : ''}${state}`.trim() || null,
-    location_type: (item.activity_type as string | null) ?? null,
+      place.generativeSummary?.overview?.text ?? item.description ?? null,
+    media_url: image,
+    address,
+    location,
+    location_type: item.activity_type,
     duration: null,
-    pricing: mapPriceLevelToInt(
-      mapsLocationData.priceLevel ?? 'PRICE_LEVEL_UNSPECIFIED',
-    ),
-    date: (item.date as string | null) ?? null,
-    time: (item.time as string | null) ?? null,
-    venue: mapsLocationData.displayName?.text ?? (item.venue as string) ?? null,
-    open_hours: mapsLocationData.currentOpeningHours?.weekdayDescriptions ?? null,
+    pricing: mapPriceLevelToInt(place.priceLevel ?? 'PRICE_LEVEL_UNSPECIFIED'),
+    date: item.date,
+    time: item.time,
+    venue,
+    open_hours: place.currentOpeningHours?.weekdayDescriptions ?? null,
+    place_id: placeId,
   };
 
   // `ideas.id` is a Postgres identity column, so let the database generate it
@@ -190,19 +202,58 @@ async function processEntry(entry: {
     .select()
     .single();
 
+  if (uploadError?.code === '23505') {
+    return findIdeaByPlaceId(placeId);
+  }
   if (uploadError || inserted == null) {
     console.error('idea insert failed', uploadError);
+    return null;
+  }
+  return inserted;
+}
+
+async function processEntry(
+  entry: ExtractionResult,
+): Promise<DraftCollectionItem | undefined> {
+  const { id, data } = entry;
+  if (data.status != 'success' || data.item?.venue == null) {
     return undefined;
   }
+  const item = data.item;
+  const venue = item.venue;
+  const location = item.location ?? '';
+  const address = item.address ?? '';
+  const query = `${venue} ${location} ${address}`.trim();
 
-  return {
-    id: inserted.id as number,
-    local_id: id,
-    idea_id: inserted.id as number,
-    highlights: (item.highlights as string | null) ?? null,
-    highlights_sources: (item.highlights_sources as string[] | null) ?? null,
-    ideas: inserted as Record<string, unknown>,
-  };
+  // Places is the identity; FTS is only a fallback when Places misses.
+  const [supabaseResult, mapsData] = await Promise.all([
+    supabase
+      .from('ideas')
+      .select()
+      .textSearch('venue', venue, { type: 'websearch' }),
+    getLocationDetails(query),
+  ]);
+
+  const place = mapsData?.data?.places?.[0] as MapsPlace | undefined;
+  if (place?.id) {
+    const idea = await getOrCreateIdeaForPlace(
+      place,
+      mapsData?.image ?? null,
+      item,
+    );
+    if (idea == null) return undefined;
+    return toDraft(idea, id, item);
+  }
+
+  const { data: matches, error } = supabaseResult;
+  if (error) {
+    console.error('venue textSearch failed', error);
+  }
+  if (matches && matches.length > 0) {
+    return toDraft(matches[0], id, item);
+  }
+
+  return undefined;
 }
 
 // TODO: rename this endpoint to something better lol
@@ -216,7 +267,7 @@ app.post('/ideas', async (c) => {
     await Promise.all(
       aiLocationData.map(async (entry) => {
         try {
-          const status = (entry.data as { status?: string } | null)?.status;
+          const status = entry.data.status;
           if (status === 'skipped' || status === 'sensitive') {
             await stream.writeSSE({
               data: JSON.stringify({ id: entry.id }),
