@@ -21,6 +21,7 @@ struct Card: View {
     var loadsMapData = true
     var allowsDetailPresentation = true
     var allowsDeletion = true
+    var animatesImageLoading = false
 
     private var address: String {
         (card.ideas?.address ?? card.ideas?.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -59,7 +60,14 @@ struct Card: View {
             }
             Task {
                 if card.ideas?.media_url == nil, !card.local_id.isEmpty {
-                    image = try await loadImage(from: card.local_id)
+                    let loadedImage = try await loadImage(from: card.local_id)
+                    if animatesImageLoading {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            image = loadedImage
+                        }
+                    } else {
+                        image = loadedImage
+                    }
                 }
                 if loadsMapData {
                     await fetchMapData()
@@ -87,7 +95,7 @@ struct Card: View {
                 allowsDeletion: allowsDeletion
             )
             .presentationDragIndicator(.visible)
-            .scrollBounceBehavior(.automatic)
+            .presentationContentInteraction(.scrolls)
         }
     }
 
@@ -223,10 +231,19 @@ struct Card: View {
     @ViewBuilder
     private var cardImage: some View {
         if let mediaUrl = card.ideas?.media_url, let url = URL(string: mediaUrl) {
-            AsyncImage(url: url) { phase in
+            let transaction = Transaction(
+                animation: animatesImageLoading
+                    ? .easeOut(duration: 0.2)
+                    : nil
+            )
+
+            AsyncImage(url: url, transaction: transaction) { phase in
                 switch phase {
                 case .success(let img):
-                    img.resizable().scaledToFill()
+                    img
+                        .resizable()
+                        .scaledToFill()
+                        .transition(.opacity)
                 default:
                     Color.gray.opacity(0.15)
                 }

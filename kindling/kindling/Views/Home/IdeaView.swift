@@ -44,6 +44,7 @@ struct IdeaView: View {
         ScrollView {
             // Hero image with gradient fade
             heroSection
+                .background { SheetScrollOwnership() }
 
             // Title + share + status + highlights
             VStack(alignment: .leading, spacing: 0) {
@@ -155,6 +156,7 @@ struct IdeaView: View {
             mapSection
                 .padding(.horizontal, 13)
                 .padding(.bottom, 48)
+                .background { SheetScrollOwnership() }
 
             // Hours
             if let hours = card.ideas?.open_hours, !hours.isEmpty {
@@ -292,9 +294,11 @@ struct IdeaView: View {
     private var mapSection: some View {
         ZStack(alignment: .bottom) {
             if let coordinate = mapItem?.location.coordinate {
-                Map {
+                Map(interactionModes: []) {
                     Marker(venueTitle, coordinate: coordinate)
                 }
+                .mapControlVisibility(.hidden)
+                .allowsHitTesting(false)
                 .frame(height: 203)
                 .clipShape(RoundedRectangle(cornerRadius: 24))
 
@@ -480,6 +484,107 @@ struct IdeaView: View {
             return formatter.string(from: date)
         }
         return "unknown"
+    }
+}
+
+/// Keeps sheet dismiss attached to the idea scroller. MapKit (and any other
+/// nested scroller) would otherwise steal the pan, so pulling down at the top
+/// rubber-bands instead of dragging the sheet away.
+private struct SheetScrollOwnership: UIViewRepresentable {
+    func makeUIView(context: Context) -> SentinelView {
+        SentinelView()
+    }
+
+    func updateUIView(_ uiView: SentinelView, context: Context) {}
+
+    final class SentinelView: UIView {
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            isUserInteractionEnabled = false
+            backgroundColor = .clear
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            DispatchQueue.main.async { self.claimPrimaryScroller() }
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            claimPrimaryScroller()
+        }
+
+        private func claimPrimaryScroller() {
+            guard let primary = enclosingScrollView() else { return }
+            let root = presentedHostView() ?? primary
+
+            disableMapScrolling(in: root)
+
+            for scrollView in allScrollViews(in: root) where scrollView !== primary {
+                if primary.isDescendant(of: scrollView) { continue }
+                scrollView.isScrollEnabled = false
+                scrollView.bounces = false
+                scrollView.alwaysBounceVertical = false
+            }
+        }
+
+        /// The sheet's host view — not the window — so we don't disable
+        /// the presenting screen's scroll view.
+        private func presentedHostView() -> UIView? {
+            var responder: UIResponder? = self
+            var controller: UIViewController?
+            while let current = responder {
+                if let viewController = current as? UIViewController {
+                    controller = viewController
+                    break
+                }
+                responder = current.next
+            }
+            guard var host = controller else { return nil }
+            while let parent = host.parent {
+                host = parent
+            }
+            return host.presentingViewController != nil ? host.view : nil
+        }
+
+        private func enclosingScrollView() -> UIScrollView? {
+            var view: UIView? = self
+            while let current = view {
+                if let scrollView = current as? UIScrollView {
+                    return scrollView
+                }
+                view = current.superview
+            }
+            return nil
+        }
+
+        private func disableMapScrolling(in view: UIView) {
+            if let mapView = view as? MKMapView {
+                mapView.isScrollEnabled = false
+                mapView.isZoomEnabled = false
+                mapView.isRotateEnabled = false
+                mapView.isPitchEnabled = false
+                return
+            }
+            for subview in view.subviews {
+                disableMapScrolling(in: subview)
+            }
+        }
+
+        private func allScrollViews(in view: UIView) -> [UIScrollView] {
+            var result: [UIScrollView] = []
+            if let scrollView = view as? UIScrollView {
+                result.append(scrollView)
+            }
+            for subview in view.subviews {
+                result.append(contentsOf: allScrollViews(in: subview))
+            }
+            return result
+        }
     }
 }
 
