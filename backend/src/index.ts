@@ -6,6 +6,7 @@ import { GoogleGenAI } from '@google/genai';
 import { createClient } from '@supabase/supabase-js';
 import { parseScreenshot } from './utils/parseScreenshot';
 import { mapPriceLevelToInt } from './utils/mapPriceLevelToInt';
+import { userFromBearerToken, wipeAccount } from './deleteAccount';
 
 const supabase = createClient(
   'https://bfbaqyhyxergcpsyhzcc.supabase.co',
@@ -204,6 +205,26 @@ async function processEntry(entry: {
     ideas: inserted as Record<string, unknown>,
   };
 }
+
+// Permanently deletes the signed-in user's rows and auth record so a later
+// Sign in with Apple creates a new account instead of restoring the old one.
+app.delete('/account', async (c) => {
+  const user = await userFromBearerToken(
+    supabase,
+    c.req.header('Authorization'),
+  );
+  if (user == null) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const result = await wipeAccount(supabase, user.id);
+  if (!result.ok) {
+    console.error('account delete failed', result.message);
+    return c.json({ error: 'Failed to delete account' }, 500);
+  }
+
+  return c.json({ ok: true });
+});
 
 // TODO: rename this endpoint to something better lol
 app.post('/ideas', async (c) => {

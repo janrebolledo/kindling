@@ -66,6 +66,8 @@ struct AccountView: View {
 
     @State private var isLoaded = false
     @State private var showDeleteConfirm = false
+    @State private var showDeleteError = false
+    @State private var isDeletingAccount = false
     @State private var showDiscardDialog = false
 
     @State private var processedScreenshotCount = 0
@@ -177,11 +179,12 @@ struct AccountView: View {
                     )
 
                     pillButton(
-                        title: "Delete account",
+                        title: isDeletingAccount ? "Deleting…" : "Delete account",
                         systemName: "trash",
                         tint: accountRed,
                         action: { showDeleteConfirm = true }
                     )
+                    .disabled(isDeletingAccount)
                 }
                 .padding(.top, 44)
 
@@ -237,10 +240,15 @@ struct AccountView: View {
         .alert("Delete account?", isPresented: $showDeleteConfirm) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
-                Task { try? await supabase.auth.signOut() }
+                Task { await deleteAccount() }
             }
         } message: {
             Text("This permanently removes your account and saved data.")
+        }
+        .alert("Couldn't delete account", isPresented: $showDeleteError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Your account is still active. Check your connection and try again.")
         }
         .alert("Discard changes?", isPresented: $showDiscardDialog) {
             Button("Keep editing", role: .cancel) {}
@@ -569,6 +577,18 @@ struct AccountView: View {
             top = presented
         }
         return top
+    }
+
+    private func deleteAccount() async {
+        guard !isDeletingAccount else { return }
+        isDeletingAccount = true
+        defer { isDeletingAccount = false }
+        do {
+            try await AccountDeletion.deleteCurrentAccount()
+        } catch {
+            dump(error)
+            showDeleteError = true
+        }
     }
 
     private func giveFeedback() {
