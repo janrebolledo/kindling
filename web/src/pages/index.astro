@@ -1,0 +1,62 @@
+---
+export const prerender = true;
+
+import { Image } from 'astro:assets';
+import Layout from '../layouts/Layout.astro';
+import Polaroid from '../components/Polaroid.astro';
+import DownloadButton from '../components/DownloadButton.astro';
+import Footer from '../components/Footer.astro';
+import Logo from '../components/Logo.astro';
+import appIcon from '../assets/app-icon.png';
+import polaroid1 from '../assets/polaroid-1.png';
+import polaroid2 from '../assets/polaroid-2.png';
+---
+
+<Layout>
+  <div class="flex min-h-dvh flex-col bg-white px-6">
+    <header class="flex justify-center pt-[8vh]">
+      <Logo />
+    </header>
+
+    <main class="flex flex-1 flex-col items-center justify-center py-16">
+      <h1
+        class="max-w-[926px] text-center text-[36px] font-medium leading-[1.1] tracking-[-0.9px] text-black sm:text-[48px] sm:tracking-[-1.2px] md:text-[64px] md:tracking-[-1.6px]"
+      >
+        <span class="block">i cannot be trusted</span>
+        <span class="flex flex-wrap items-center justify-center gap-x-3">
+          with my
+          <span class="mx-[0.12em] inline-flex h-[1.2em] w-[1.9em] items-center justify-center align-middle">
+            <span class="relative h-[1.48em] w-[1.21em]">
+              <span class="absolute inset-0 z-0 origin-center translate-x-[0.28em] rotate-[9.57deg]">
+                <Polaroid src={polaroid1} objectPosition="top" />
+              </span>
+              <span class="absolute inset-0 z-10 origin-center -translate-x-[0.28em] rotate-[-13.99deg]">
+                <Polaroid src={polaroid2} objectPosition="center 28%" />
+              </span>
+            </span>
+          </span>
+          screenshots folder.
+        </span>
+        <span class="flex flex-wrap items-center justify-center gap-x-3">
+          i built an
+          <Image
+            src={appIcon}
+            alt=""
+            class="size-12 rounded-[14px] shadow-[0px_2px_9px_0px_rgba(116,116,78,0.25)] md:size-16 md:rounded-[18px]"
+            width={128}
+            height={128}
+          />
+          app to help.
+        </span>
+      </h1>
+
+      <div class="mt-10">
+        <DownloadButton />
+      </div>
+    </main>
+
+    <div class="flex justify-center pb-10">
+      <Footer />
+    </div>
+  </div>
+</Layout>

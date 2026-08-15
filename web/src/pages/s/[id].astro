@@ -1,0 +1,135 @@
+---
+export const prerender = false;
+
+import { Image } from 'astro:assets';
+import Layout from '../../layouts/Layout.astro';
+import DownloadButton from '../../components/DownloadButton.astro';
+import Footer from '../../components/Footer.astro';
+import { fetchSharedIdea } from '../../lib/api';
+import { formatSavedOn, mapsQuery, resolveOpenStatus } from '../../lib/openStatus';
+
+const id = Astro.params.id ?? '';
+const idea = await fetchSharedIdea(Astro.url, id);
+
+if (!idea) {
+  Astro.response.status = 404;
+}
+
+const venue = idea?.venue ?? 'Untitled';
+const location = idea?.location || idea?.address || null;
+const status =
+  idea?.open_hours && idea.open_hours.length > 0
+    ? resolveOpenStatus(idea.open_hours)
+    : null;
+const query = mapsQuery(idea?.venue ?? null, idea?.location ?? null, idea?.address ?? null);
+const appleMaps = query ? `https://maps.apple.com/?q=${encodeURIComponent(query)}` : null;
+const embed = query
+  ? `https://maps.google.com/maps?q=${encodeURIComponent(query)}&z=15&output=embed`
+  : null;
+const title = idea ? `${venue} · kindling` : 'kindling';
+const description = idea?.name || idea?.description || 'saved with kindling.';
+---
+
+<Layout title={title} description={description} image={idea?.media_url}>
+  {
+    !idea ? (
+      <div class="flex min-h-dvh flex-col items-center justify-center px-6 text-center">
+        <p class="text-[32px] font-medium tracking-[-0.8px]">this one’s gone.</p>
+        <p class="mt-2 text-[16px] tracking-[-0.4px] text-muted">
+          the link may be old, or the place was never saved.
+        </p>
+        <div class="mt-8">
+          <DownloadButton label={'download kindling on \uF8FF iPhone'} />
+        </div>
+        <div class="mt-16 w-full">
+          <Footer variant="share" />
+        </div>
+      </div>
+    ) : (
+      <div class="mx-auto flex min-h-dvh w-full max-w-[402px] flex-col bg-white">
+        <div class="relative h-[487px] w-full overflow-hidden">
+          {idea.media_url ? (
+            <Image
+              src={idea.media_url}
+              alt=""
+              width={804}
+              height={974}
+              class="absolute inset-0 size-full object-cover"
+            />
+          ) : (
+            <div class="absolute inset-0 bg-linear-to-b from-[#f4e6d4] to-white" />
+          )}
+          <div
+            class="pointer-events-none absolute inset-0"
+            style="background-image: linear-gradient(to right, #fff 0%, transparent 20%, transparent 80%, #fff 100%), linear-gradient(to top, #fff 0%, transparent 52%);"
+          />
+        </div>
+
+        <div class="flex flex-col gap-2 overflow-hidden px-2 py-2">
+          <h1 class="text-[32px] font-medium tracking-[-0.8px] text-black">{venue}</h1>
+          {(status || idea.location_type || idea.duration) && (
+            <div class="flex items-center gap-2 text-[16px] tracking-[-0.4px] text-muted">
+              {status ? (
+                <>
+                  <span class="font-medium">{status.isOpen ? 'Open' : 'Closed'}</span>
+                  <span>{status.detail}</span>
+                </>
+              ) : (
+                <>
+                  {idea.location_type && <span class="font-medium">{idea.location_type}</span>}
+                  {idea.duration && <span>{idea.duration}</span>}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {(idea.name || idea.description) && (
+          <div class="mx-4 mt-2 flex flex-col gap-2.5 rounded-xl bg-surface px-2 py-2.5">
+            <p class="text-[14px] font-medium tracking-[-0.35px] text-muted">highlights</p>
+            {idea.name && (
+              <p class="text-[16px] font-medium tracking-[-0.4px] text-black">{idea.name}</p>
+            )}
+            {idea.description && (
+              <p class="text-[14px] font-medium tracking-[-0.35px] text-muted">{idea.description}</p>
+            )}
+          </div>
+        )}
+
+        {location && (
+          <p class="mt-8 px-6 text-[16px] tracking-[-0.4px] text-black">{location}</p>
+        )}
+
+        {embed && appleMaps && (
+          <a
+            href={appleMaps}
+            class="relative mx-[13px] mt-6 block h-[203px] overflow-hidden rounded-[24px]"
+          >
+            <iframe
+              title={`Map of ${venue}`}
+              src={embed}
+              class="pointer-events-none absolute -inset-[20%] h-[140%] w-[140%] border-0 grayscale"
+              loading="lazy"
+            />
+            <span class="absolute top-[19px] right-[19px] rounded-3xl bg-black/25 px-3 py-2.5 text-[16px] text-white">
+              open in Maps ↗
+            </span>
+          </a>
+        )}
+
+        <div class="mt-8 flex flex-col items-center gap-1.5 px-4 text-center text-[16px] tracking-[-0.4px]">
+          <p class="text-muted">Saved on</p>
+          <p class="font-medium text-black">{formatSavedOn(idea.created_at)}</p>
+        </div>
+
+        <div class="mt-8 flex justify-center">
+          <DownloadButton label={'download kindling on \uF8FF iPhone'} />
+        </div>
+
+        <div class="mt-auto px-4 pt-16 pb-10">
+          <Footer variant="share" />
+        </div>
+      </div>
+    )
+  }
+</Layout>

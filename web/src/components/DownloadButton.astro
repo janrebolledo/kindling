@@ -1,0 +1,15 @@
+---
+interface Props {
+  label?: string;
+}
+
+const appStoreUrl = (import.meta.env.PUBLIC_APP_STORE_URL as string | undefined) || 'https://apps.apple.com';
+const { label = 'download on \uF8FF iPhone' } = Astro.props;
+---
+
+<a
+  href={appStoreUrl}
+  class="inline-flex items-center justify-center rounded-xl bg-black px-4 py-2.5 text-[20px] font-medium tracking-[-0.5px] text-white"
+>
+  {label}
+</a>

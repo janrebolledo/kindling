@@ -1,0 +1,41 @@
+---
+export const prerender = true;
+
+import Layout from '../layouts/Layout.astro';
+import Footer from '../components/Footer.astro';
+import Logo from '../components/Logo.astro';
+---
+
+<Layout title="terms · kindling" description="kindling terms & conditions">
+  <div class="mx-auto flex min-h-dvh max-w-[640px] flex-col px-6 py-16">
+    <a href="/" class="mb-12">
+      <Logo />
+    </a>
+    <h1 class="text-[32px] font-medium tracking-[-0.8px]">terms & conditions</h1>
+    <p class="mt-2 text-[16px] tracking-[-0.4px] text-muted">last updated Aug 15, 2026</p>
+    <div class="mt-8 space-y-4 text-[16px] leading-relaxed tracking-[-0.4px] text-black/80">
+      <p>
+        kindling is provided as-is for personal use. venue details come from google maps / places
+        and from text in your screenshots, so they can be wrong or out of date. double-check hours
+        and booking info before you go. use of that maps content is subject to the
+        <a
+          class="underline decoration-solid underline-offset-2"
+          href="https://maps.google.com/help/terms_maps/">google maps terms</a
+        >
+        and
+        <a
+          class="underline decoration-solid underline-offset-2"
+          href="https://policies.google.com/privacy">google’s privacy policy</a
+        >.
+      </p>
+      <p>
+        don’t use kindling to store or share anyone else’s private information. we may remove
+        accounts that abuse the service. you have to be 18 or older to use kindling.
+      </p>
+      <p>the app is currently available on iphone.</p>
+    </div>
+    <div class="mt-auto pt-16">
+      <Footer />
+    </div>
+  </div>
+</Layout>

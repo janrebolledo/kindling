@@ -1,0 +1,51 @@
+---
+import { Image } from 'astro:assets';
+import type { ImageMetadata } from 'astro';
+import frame from '../assets/polaroid-frame.svg';
+import grain from '../assets/polaroid-grain.png';
+
+interface Props {
+  src: ImageMetadata;
+  objectPosition?: string;
+}
+
+const { src, objectPosition = 'top' } = Astro.props;
+---
+
+{/* Frame is Figma 691:24 — 77.42×94.76, photo window 69.61×69.61. */}
+<span
+  class="relative block"
+  style="width: 1.21em; height: 1.48em; filter: drop-shadow(0px 2px 4.5px rgba(116, 116, 78, 0.25));"
+>
+  <Image
+    src={frame}
+    alt=""
+    class="absolute inset-0 size-full"
+    width={77}
+    height={95}
+  />
+  <span
+    class="absolute overflow-hidden rounded-[2px]"
+    style="top: 4.13%; left: 5.05%; width: 89.9%; height: 73.46%;"
+  >
+    <Image
+      src={src}
+      alt=""
+      class="absolute inset-0 size-full object-cover"
+      style={`object-position: ${objectPosition};`}
+      width={140}
+      height={140}
+    />
+    <span
+      class="pointer-events-none absolute inset-0 rounded-[2px]"
+      style="background: radial-gradient(circle at center, transparent 0%, rgb(0 0 0 / 0.07) 100%);"
+    ></span>
+    <Image
+      src={grain}
+      alt=""
+      class="pointer-events-none absolute inset-0 size-full rounded-[2px] object-cover mix-blend-plus-lighter"
+      width={140}
+      height={140}
+    />
+  </span>
+</span>

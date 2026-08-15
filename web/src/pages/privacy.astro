@@ -1,0 +1,113 @@
+---
+export const prerender = true;
+
+import Layout from '../layouts/Layout.astro';
+import Footer from '../components/Footer.astro';
+import Logo from '../components/Logo.astro';
+---
+
+<Layout title="privacy · kindling" description="kindling privacy policy">
+  <div class="mx-auto flex min-h-dvh max-w-[640px] flex-col px-6 py-16">
+    <a href="/" class="mb-12">
+      <Logo />
+    </a>
+    <h1 class="text-[32px] font-medium tracking-[-0.8px]">privacy</h1>
+    <p class="mt-2 text-[16px] tracking-[-0.4px] text-muted">last updated Aug 15, 2026</p>
+    <div class="mt-8 space-y-4 text-[16px] leading-relaxed tracking-[-0.4px] text-black/80">
+      <p>
+        kindling is made by jan rebolledo. this page is the whole policy: what the app uses,
+        why, and who else sees it. we don’t sell your data, we don’t run ads, and we don’t want
+        your screenshots sitting on our servers.
+      </p>
+
+      <h2 class="pt-4 text-[20px] font-medium tracking-[-0.5px] text-black">screenshots</h2>
+      <p>
+        when you scan screenshots, kindling reads the text on your iphone. the photos stay on
+        your phone. we never upload them.
+      </p>
+      <p>
+        that text is sent to google’s gemini so it can find places and events, and pull out
+        details like tips. we keep those bits on your saved places. we don’t keep the full
+        screenshot text. google may use that text to improve gemini and their other products,
+        per their
+        <a
+          class="underline decoration-solid underline-offset-2"
+          href="https://ai.google.dev/gemini-api/terms">gemini terms</a
+        >.
+      </p>
+
+      <h2 class="pt-4 text-[20px] font-medium tracking-[-0.5px] text-black">photo identifiers</h2>
+      <p>
+        to show your original screenshot next to a saved place, we store an id for that photo
+        on your account — the id your phone uses, not the image. that’s the only reason we keep
+        it.
+      </p>
+
+      <h2 class="pt-4 text-[20px] font-medium tracking-[-0.5px] text-black">account</h2>
+      <p>
+        you sign in with apple. we store your name, the email apple shares (if any), and a
+        username so you can use the app, plus a couple of preferences like how you like to get
+        directions. account data lives in supabase.
+      </p>
+
+      <h2 class="pt-4 text-[20px] font-medium tracking-[-0.5px] text-black">saved places</h2>
+      <p>
+        places you save — name, address, hours, and a photo of the venue — live with your
+        account. that’s your list, not a copy of your screenshots.
+      </p>
+
+      <h2 class="pt-4 text-[20px] font-medium tracking-[-0.5px] text-black">location</h2>
+      <p>
+        if you allow it, kindling uses your location on your phone to estimate travel time. we
+        don’t send your live location to our servers.
+      </p>
+      <p>
+        you can turn off photo or location access anytime in ios settings → kindling.
+      </p>
+
+      <h2 class="pt-4 text-[20px] font-medium tracking-[-0.5px] text-black">sharing</h2>
+      <p>
+        if you share a place from the app, we publish the saved venue (name, photo, location,
+        highlights) at a public link. your screenshot is not included.
+      </p>
+
+      <h2 class="pt-4 text-[20px] font-medium tracking-[-0.5px] text-black">who else sees data</h2>
+      <p>
+        apple (sign in), supabase (account and saved places), google gemini (screenshot text,
+        to find places), and cloudflare (hosts the app). supabase, gemini, and cloudflare are
+        required under their terms to protect this data. we keep logs for up to 7 days to debug
+        the app. they don’t contain screenshot images or the full screenshot text — just
+        technical info like error messages, and sometimes venue names. we don’t use analytics
+        or ad trackers.
+      </p>
+
+      <h2 class="pt-4 text-[20px] font-medium tracking-[-0.5px] text-black">deletion</h2>
+      <p>
+        you can delete your account from the app at any time, or
+        <a
+          class="underline decoration-solid underline-offset-2"
+          href="mailto:contact@janrebolledo.com">email us</a
+        >
+        and we’ll do it. that wipes everything tied to you.
+      </p>
+
+      <h2 class="pt-4 text-[20px] font-medium tracking-[-0.5px] text-black">kids</h2>
+      <p>kindling isn’t for anyone under 18, and we don’t knowingly collect their data.</p>
+
+      <h2 class="pt-4 text-[20px] font-medium tracking-[-0.5px] text-black">changes</h2>
+      <p>if this policy changes, we’ll update this page with a new date.</p>
+
+      <h2 class="pt-4 text-[20px] font-medium tracking-[-0.5px] text-black">contact</h2>
+      <p>
+        questions:
+        <a
+          class="underline decoration-solid underline-offset-2"
+          href="mailto:contact@janrebolledo.com">contact@janrebolledo.com</a
+        >
+      </p>
+    </div>
+    <div class="mt-auto pt-16">
+      <Footer />
+    </div>
+  </div>
+</Layout>

@@ -1,0 +1,30 @@
+---
+interface Props {
+  variant?: 'landing' | 'share';
+}
+
+const { variant = 'landing' } = Astro.props;
+---
+
+{
+  variant === 'landing' ? (
+    <footer class="flex flex-wrap items-center justify-center gap-x-10 gap-y-2 font-medium text-[14px] leading-none text-muted">
+      <p>© 2026 <a class="underline decoration-solid underline-offset-2" href="https://janrebolledo.com">jan rebolledo</a>.</p>
+      <a class="underline decoration-solid underline-offset-2" href="/privacy">
+        privacy
+      </a>
+      <a class="underline decoration-solid underline-offset-2" href="/terms">
+        terms & conditions
+      </a>
+    </footer>
+  ) : (
+    <footer class="mx-auto flex w-full max-w-[360px] items-center justify-between font-medium text-[14px] leading-none text-muted">
+      <a class="underline decoration-solid underline-offset-2" href="/privacy">
+        privacy
+      </a>
+      <a class="underline decoration-solid underline-offset-2" href="/terms">
+        terms & conditions
+      </a>
+    </footer>
+  )
+}
