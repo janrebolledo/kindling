@@ -16,8 +16,10 @@ const FIELD_MASK = [
   'places.currentOpeningHours',
 ].join(',');
 
-export async function lookupPlace(query: string): Promise<PlacesLookup | null> {
-  const apiKey = Bun.env['GOOGLE_MAPS_API_KEY'];
+export async function lookupPlace(
+  query: string,
+  apiKey: string,
+): Promise<PlacesLookup | null> {
   let response: Response;
   try {
     response = await fetch(
@@ -28,7 +30,7 @@ export async function lookupPlace(query: string): Promise<PlacesLookup | null> {
         headers: {
           'Content-Type': 'application/json',
           'X-Goog-FieldMask': FIELD_MASK,
-          'X-Goog-Api-Key': apiKey!,
+          'X-Goog-Api-Key': apiKey,
         },
       },
     );

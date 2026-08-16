@@ -43,7 +43,13 @@ private struct ProcessedScreenshotEvent: Decodable {
     let id: String
 }
 
-let backendBaseURL = URL(string: "http://localhost:3000")!
+#if DEBUG
+let backendBaseURL = URL(string: "http://192.168.50.40:3000")!
+let webBaseURL = URL(string: "http://192.168.50.40:4321")!
+#else
+let backendBaseURL = URL(string: "https://api.getkindl.ing")!
+let webBaseURL = URL(string: "https://kindling.app")!
+#endif
 
 private let ideasURL = backendBaseURL.appendingPathComponent("ideas")
 

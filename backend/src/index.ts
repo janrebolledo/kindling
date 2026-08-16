@@ -1,11 +1,11 @@
-import 'bun';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { cors } from 'hono/cors';
-import { supabase } from './clients';
+import { createAI, createSupabase } from './clients';
 import { userFromBearerToken, wipeAccount } from './deleteAccount';
 import { processEntry } from './ideas';
 import { log, logError } from './log';
+import { getSharedIdea } from './share';
 import type { Screenshot } from './types';
 import { parseScreenshot } from './utils/parseScreenshot';
 
@@ -19,11 +19,29 @@ type ItemLog = {
   error?: string;
 };
 
-const app = new Hono();
+const app = new Hono<{ Bindings: CloudflareBindings }>();
 
 app.use('*', cors());
 
+app.get('/health', (c) => c.json({ ok: true }));
+
+app.get('/share/:id', async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id) || id <= 0) {
+    return c.json({ error: 'Not found' }, 404);
+  }
+
+  const idea = await getSharedIdea(createSupabase(c.env), id);
+  if (idea == null) {
+    return c.json({ error: 'Not found' }, 404);
+  }
+
+  c.header('Cache-Control', 'public, max-age=60');
+  return c.json(idea);
+});
+
 app.delete('/account', async (c) => {
+  const supabase = createSupabase(c.env);
   const user = await userFromBearerToken(
     supabase,
     c.req.header('Authorization'),
@@ -63,9 +81,13 @@ app.post('/ideas', async (c) => {
     return c.json([], 200);
   }
 
+  const supabase = createSupabase(c.env);
+  const ai = createAI(c.env);
+  const mapsApiKey = c.env.GOOGLE_MAPS_API_KEY;
+
   let extracted;
   try {
-    extracted = await parseScreenshot(screenshots);
+    extracted = await parseScreenshot(screenshots, ai);
   } catch (err) {
     logError('ideas.done', err, { ...summary, ms: Date.now() - started });
     throw err;
@@ -91,7 +113,7 @@ app.post('/ideas', async (c) => {
             return;
           }
 
-          const result = await processEntry(entry);
+          const result = await processEntry(supabase, mapsApiKey, entry);
           if (result.status === 'dropped') {
             summary.dropped += 1;
             summary.items.push({

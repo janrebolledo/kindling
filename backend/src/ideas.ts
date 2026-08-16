@@ -1,4 +1,4 @@
-import { supabase } from './clients';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { lookupPlace } from './places';
 import { mapPriceLevelToInt } from './utils/mapPriceLevelToInt';
 import type { ExtractedItem, ExtractionResult } from './utils/parseScreenshot';
@@ -39,7 +39,10 @@ function locationLabel(place: MapsPlace): string | null {
   return `${city}${city && state ? ', ' : ''}${state}`.trim() || null;
 }
 
-async function findIdeaByPlaceId(placeId: string): Promise<Idea | null> {
+async function findIdeaByPlaceId(
+  supabase: SupabaseClient,
+  placeId: string,
+): Promise<Idea | null> {
   const { data, error } = await supabase
     .from('ideas')
     .select()
@@ -50,12 +53,13 @@ async function findIdeaByPlaceId(placeId: string): Promise<Idea | null> {
 }
 
 async function getOrCreateIdeaForPlace(
+  supabase: SupabaseClient,
   place: MapsPlace,
   image: string | null,
   item: ExtractedItem,
 ): Promise<{ idea: Idea; via: Exclude<LinkedVia, 'fts'> } | null> {
   const placeId = place.id!;
-  const existing = await findIdeaByPlaceId(placeId);
+  const existing = await findIdeaByPlaceId(supabase, placeId);
   if (existing) return { idea: existing, via: 'place_id' };
 
   const location = locationLabel(place);
@@ -91,7 +95,7 @@ async function getOrCreateIdeaForPlace(
     .single();
 
   if (uploadError?.code === '23505') {
-    const winner = await findIdeaByPlaceId(placeId);
+    const winner = await findIdeaByPlaceId(supabase, placeId);
     return winner ? { idea: winner, via: 'conflict' } : null;
   }
   if (uploadError || inserted == null) return null;
@@ -99,6 +103,8 @@ async function getOrCreateIdeaForPlace(
 }
 
 export async function processEntry(
+  supabase: SupabaseClient,
+  mapsApiKey: string,
   entry: ExtractionResult,
 ): Promise<ProcessResult> {
   const { id, data } = entry;
@@ -119,11 +125,12 @@ export async function processEntry(
   // Places is the identity; FTS is only a fallback when Places misses.
   const [supabaseResult, mapsData] = await Promise.all([
     supabase.from('ideas').select().textSearch('venue', venue, { type: 'websearch' }),
-    lookupPlace(query),
+    lookupPlace(query, mapsApiKey),
   ]);
 
   if (mapsData?.place.id) {
     const created = await getOrCreateIdeaForPlace(
+      supabase,
       mapsData.place,
       mapsData.image,
       item,

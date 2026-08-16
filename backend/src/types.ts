@@ -49,3 +49,21 @@ export type Screenshot = {
   id: string;
   text: string;
 };
+
+/** Public fields returned by GET /share/:id for the web funnel. */
+export type SharedIdea = Pick<
+  Idea,
+  | 'id'
+  | 'name'
+  | 'type'
+  | 'description'
+  | 'media_url'
+  | 'address'
+  | 'location'
+  | 'location_type'
+  | 'duration'
+  | 'venue'
+  | 'place_id'
+  | 'open_hours'
+  | 'created_at'
+>;

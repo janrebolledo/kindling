@@ -1,11 +1,12 @@
-import { ai } from '../clients';
+import type { GoogleGenAI } from '@google/genai';
 import { parseScreenshotPrompt } from '../prompts';
 import type { Screenshot } from '../types';
 
 const MODEL = 'gemini-3.5-flash-lite';
 
 async function generateWithRetry(
-  params: Parameters<typeof ai.models.generateContent>[0],
+  ai: GoogleGenAI,
+  params: Parameters<GoogleGenAI['models']['generateContent']>[0],
   maxRetries = 5,
 ) {
   let delay = 1000;
@@ -30,8 +31,11 @@ async function generateWithRetry(
   throw new Error('Unreachable');
 }
 
-export async function parseScreenshot(screenshots: Screenshot[]) {
-  const response = await generateWithRetry({
+export async function parseScreenshot(
+  screenshots: Screenshot[],
+  ai: GoogleGenAI,
+) {
+  const response = await generateWithRetry(ai, {
     model: MODEL,
     contents: parseScreenshotPrompt + JSON.stringify(screenshots),
   });

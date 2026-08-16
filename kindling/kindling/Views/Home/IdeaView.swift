@@ -59,8 +59,11 @@ struct IdeaView: View {
                     Spacer()
 
                     ShareLink(
-                        item: venueTitle,
-                        subject: Text(venueTitle)
+                        item: webBaseURL
+                            .appendingPathComponent("s")
+                            .appendingPathComponent("\(card.ideas?.id ?? card.id)"),
+                        subject: Text(venueTitle),
+                        message: Text(venueTitle)
                     ) {
                         HStack(spacing: 6) {
                             Image(systemName: "square.and.arrow.up")

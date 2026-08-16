@@ -8,7 +8,7 @@ const { variant = 'landing' } = Astro.props;
 
 {
   variant === 'landing' ? (
-    <footer class="flex flex-wrap items-center justify-center gap-x-10 gap-y-2 font-medium text-[14px] leading-none text-muted">
+    <footer class="flex flex-col items-center justify-center gap-2 font-medium text-[14px] leading-none text-muted sm:flex-row sm:gap-x-10 sm:gap-y-2">
       <p>© 2026 <a class="underline decoration-solid underline-offset-2" href="https://janrebolledo.com">jan rebolledo</a>.</p>
       <a class="underline decoration-solid underline-offset-2" href="/privacy">
         privacy

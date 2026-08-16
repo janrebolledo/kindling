@@ -9,7 +9,7 @@ import { fetchSharedIdea } from '../../lib/api';
 import { formatSavedOn, mapsQuery, resolveOpenStatus } from '../../lib/openStatus';
 
 const id = Astro.params.id ?? '';
-const idea = await fetchSharedIdea(Astro.url, id);
+const idea = await fetchSharedIdea(id);
 
 if (!idea) {
   Astro.response.status = 404;
