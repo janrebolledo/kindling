@@ -16,7 +16,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		ACC4DFB52F1887F20067658A /* kindling.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = kindling.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		ACC4DFB52F1887F20067658A /* kindling - screenshot gallery.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "kindling - screenshot gallery.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -68,7 +68,7 @@
 		ACC4DFB62F1887F20067658A /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				ACC4DFB52F1887F20067658A /* kindling.app */,
+				ACC4DFB52F1887F20067658A /* kindling - screenshot gallery.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -101,7 +101,7 @@
 				ACC4E07A2F189B350067658A /* Supabase */,
 			);
 			productName = kindling;
-			productReference = ACC4DFB52F1887F20067658A /* kindling.app */;
+			productReference = ACC4DFB52F1887F20067658A /* kindling - screenshot gallery.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -307,7 +307,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = janrebolledo.kindling;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "kindling - screenshot gallery";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -340,7 +340,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = janrebolledo.kindling;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "kindling - screenshot gallery";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
