@@ -11,10 +11,23 @@ struct SignUpView: View {
     @State private var isLoading: Bool = false
     @State var result: Result<Void, Error>?
     @State private var appleSignIn = AppleSignInManager()
+    @State private var emailMode: EmailAuthMode?
 
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        ZStack {
+            if let emailMode {
+                EmailAuthView(cards: $cards, mode: emailMode)
+                    .transition(.opacity)
+            } else {
+                landing
+                    .transition(.opacity)
+            }
+        }
+    }
+
+    private var landing: some View {
         ZStack(alignment: .top) {
             Color(.systemBackground).ignoresSafeArea()
 
@@ -31,7 +44,6 @@ struct SignUpView: View {
             .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Title + logo
                 VStack(spacing: 2) {
                     Text("sign up for")
                         .font(.system(size: 36, weight: .medium))
@@ -61,23 +73,39 @@ struct SignUpView: View {
                 Spacer()
 
                 VStack(spacing: 28) {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.35)) { continueButtonTapped() }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "apple.logo")
-                                .font(.system(size: 18, weight: .medium))
-                            Text("continue with Apple")
+                    VStack(spacing: 8) {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.35)) { continueButtonTapped() }
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "apple.logo")
+                                    .font(.system(size: 18, weight: .medium))
+                                Text("sign up with Apple")
+                                    .font(.system(size: 20, weight: .medium))
+                                    .tracking(-0.5)
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 56)
+                            .background(Color.black)
+                            .clipShape(RoundedRectangle(cornerRadius: 24))
+                        }
+                        .disabled(isLoading)
+
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.35)) { emailMode = .signUp }
+                        } label: {
+                            Text("sign up with email")
                                 .font(.system(size: 20, weight: .medium))
                                 .tracking(-0.5)
+                                .foregroundColor(.primary)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 56)
+                                .background(Color("raisedSurface"), in: RoundedRectangle(cornerRadius: 24))
                         }
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 56)
-                        .background(Color.black)
-                        .clipShape(RoundedRectangle(cornerRadius: 24))
+                        .buttonStyle(.plain)
+                        .disabled(isLoading)
                     }
-                    .disabled(isLoading)
                     .padding(.horizontal, -32)
 
                     Text("By continuing, you agree to kindling's \(Text("Terms & Conditions").underline()) and acknowledge the \(Text("Privacy Policy").underline()).")
