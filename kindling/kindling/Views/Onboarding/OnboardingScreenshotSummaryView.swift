@@ -6,13 +6,13 @@
 import SwiftUI
 
 struct OnboardingScreenshotSummaryView: View {
-    @Binding var step: Int
+    var onContinue: () -> Void
     let screenshotImages: [UIImage]
     let totalCount: Int
     let totalSizeGB: Double
     @Binding var isProcessing: Bool
     
-    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var spinAngle: Double = 0
 
     private var sizeText: String {
@@ -39,15 +39,8 @@ struct OnboardingScreenshotSummaryView: View {
     var body: some View {
         ZStack(alignment: .top) {
             Color(.systemBackground).ignoresSafeArea()
-            
-            Image(colorScheme == .dark ? "gradient dark" : "gradient light")
-                .resizable()
-                .scaledToFill()
-                .frame(maxWidth: .infinity)
-                .frame(height: 400)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .ignoresSafeArea()
-            
+            OnboardingWarmGradient(height: 400)
+
             VStack(spacing: 24) {
                 GeometryReader { geo in
                     let scale = geo.size.width / 402
@@ -64,60 +57,53 @@ struct OnboardingScreenshotSummaryView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-//                .frame(height: 320)
                 .padding(.top, 200)
-                
+
                 VStack(spacing: 8) {
                     Text("we looked at your \(totalCount) recent screenshots")
                         .font(.system(size: 36, weight: .medium))
                         .tracking(-0.9)
                         .foregroundColor(.primary)
                         .multilineTextAlignment(.center)
-                    
+
                     Text("you have \(totalCount) screenshots taking up ~\(sizeText) 🫥")
                         .font(.system(size: 20, weight: .medium))
                         .tracking(-0.5)
                         .foregroundColor(.primary)
                         .multilineTextAlignment(.center)
-                        .opacity(0.7)
                 }
-//                .padding(.top, 32)
                 
                 Spacer()
                 
                 VStack(spacing: 12) {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.35)) { step = 4 }
-                    } label: {
+                    if isProcessing {
                         HStack(spacing: 10) {
-                            if isProcessing {
-                                Image(systemName: "rays")
-                                    .rotationEffect(.degrees(spinAngle))
-                                Text("pondering")
-                            } else {
-                                Text("see what we found →")
-                            }
+                            Image(systemName: "rays")
+                                .rotationEffect(.degrees(reduceMotion ? 0 : spinAngle))
+                            Text("pondering")
                         }
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(isProcessing ? Color.white.opacity(0.5) : .white)
+                        .font(.system(size: 20, weight: .medium))
+                        .tracking(-0.5)
+                        .foregroundStyle(.white.opacity(0.5))
                         .frame(maxWidth: .infinity)
                         .frame(height: 56)
-                        .background(isProcessing ? Color.gray : Color.black)
-                        .clipShape(Capsule())
+                        .background(Color.gray, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    } else {
+                        OnboardingPrimaryButton(title: "see what we found →") {
+                            withAnimation(OnboardingMotion.step(reduceMotion)) {
+                                onContinue()
+                            }
+                        }
                     }
-                    .disabled(isProcessing)
-                    .animation(.easeInOut(duration: 0.3), value: isProcessing)
-                    
-                    Text("kindling cannot view your photos, everything is stored on device :)")
-                        .font(.system(size: 12))
-                        .foregroundColor(Color(red: 142/255, green: 142/255, blue: 147/255))
-                        .multilineTextAlignment(.center)
+
+                    OnboardingPrivacyNote()
                 }
                 .padding(.bottom, 16)
             }
             .padding(.horizontal, 48)
         }
         .onAppear {
+            guard !reduceMotion else { return }
             withAnimation(.linear(duration: 3.2).repeatForever(autoreverses: false)) {
                 spinAngle = 360
             }
@@ -173,7 +159,7 @@ struct OnboardingScreenshotSummaryView: View {
 
 #Preview {
     OnboardingScreenshotSummaryView(
-        step: .constant(3),
+        onContinue: {},
         screenshotImages: [],
         totalCount: 142,
         totalSizeGB: 0.5,

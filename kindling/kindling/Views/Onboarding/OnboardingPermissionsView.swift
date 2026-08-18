@@ -51,7 +51,7 @@ private class LocationDelegate: NSObject, CLLocationManagerDelegate {
 // MARK: - Main view
 
 struct OnboardingPermissionsView: View {
-    @Binding var step: Int
+    var onContinue: () -> Void
     @Binding var cards: [ItemWrapper]
     @Binding var screenshotImages: [UIImage]
     @Binding var totalScreenshotCount: Int
@@ -69,19 +69,12 @@ struct OnboardingPermissionsView: View {
     @State private var showcaseCards: [ItemWrapper] = []
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack(alignment: .top) {
             Color(.systemBackground).ignoresSafeArea()
-
-            // Warm gradient at top (extends under the safe area header)
-            Image(colorScheme == .dark ? "gradient dark" : "gradient light")
-                .resizable()
-                .scaledToFill()
-                .frame(maxWidth: .infinity)
-                .frame(height: 400)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .ignoresSafeArea()
+            OnboardingWarmGradient(height: 400)
 
             VStack(spacing: 24) {
                 OnboardingCardCarousel(cards: showcaseCards)
@@ -103,8 +96,10 @@ struct OnboardingPermissionsView: View {
             .padding(.horizontal, 48)
         }
         .onAppear {
-            withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
-                spinAngle = 360
+            if !reduceMotion {
+                withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
+                    spinAngle = 360
+                }
             }
             Task { await loadShowcaseCards() }
             startUpload()
@@ -130,7 +125,7 @@ struct OnboardingPermissionsView: View {
                     Image(colorScheme == .dark ? "kindling white" : "kindling black")
                         .resizable()
                         .scaledToFit()
-                        .frame(height: 30)
+                        .frame(height: 39)
                 }
             }
             .multilineTextAlignment(.center)
@@ -159,7 +154,7 @@ struct OnboardingPermissionsView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
 
-            StyledButton(title: "try again", systemName: "arrow.clockwise") {
+            OnboardingPrimaryButton(title: "try again", systemName: "arrow.clockwise") {
                 errorMessage = nil
                 networkStatus = .pending
                 photosStatus = .pending
@@ -192,7 +187,7 @@ struct OnboardingPermissionsView: View {
         }
         .foregroundColor(.primary)
         .opacity(status == .granted ? 0.5 : 1.0)
-        .animation(.easeInOut(duration: 0.3), value: status)
+        .animation(OnboardingMotion.step(reduceMotion), value: status)
     }
 
     // MARK: - Logic (unchanged)
@@ -275,7 +270,7 @@ struct OnboardingPermissionsView: View {
                     totalSizeGB = Double(totalCount) * 3.5 / 1024
                     cards = []
                     isProcessing = true
-                    withAnimation(.easeInOut(duration: 0.35)) { step = 3 }
+                    withAnimation(OnboardingMotion.step(reduceMotion)) { onContinue() }
                 }
 
                 var processedIDs = Set<String>()
@@ -315,7 +310,7 @@ struct OnboardingPermissionsView: View {
 
 #Preview {
     OnboardingPermissionsView(
-        step: .constant(2),
+        onContinue: {},
         cards: .constant([]),
         screenshotImages: .constant([]),
         totalScreenshotCount: .constant(0),

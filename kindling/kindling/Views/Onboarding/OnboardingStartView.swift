@@ -8,7 +8,10 @@
 import SwiftUI
 
 struct OnboardingStartView: View {
-    @Binding var step: Int
+    var onContinue: () -> Void
+    var onSignIn: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { geo in
@@ -16,35 +19,43 @@ struct OnboardingStartView: View {
                 Color.white.ignoresSafeArea()
 
                 VStack(spacing: 0) {
-                    VStack(spacing: 0) {
-                        corkBoard(geo: geo)
+                    corkBoard(geo: geo)
 
-                        VStack(spacing: 0) {
-                            Spacer()
+                    Text("reimagine your screenshot folder")
+                        .font(.system(size: 36, weight: .medium))
+                        .multilineTextAlignment(.center)
+                        .tracking(-0.9)
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 24)
 
-                            Text("finally, a way to moodboard your weekend.")
-                                .font(.system(size: 36, weight: .medium))
-                                .multilineTextAlignment(.center)
-                                .tracking(-0.9)
-                                .foregroundColor(.black)
-                                .padding(.horizontal, 20)
+                    Spacer(minLength: 16)
 
-                            Text("tap anywhere to continue")
-                                .font(.system(size: 16))
-                                .foregroundColor(.black)
-                                .tracking(-0.16)
-                                .padding(.top, 16)
-
-                            Spacer()
+                    VStack(spacing: 12) {
+                        OnboardingPrimaryButton(title: "continue →") {
+                            withAnimation(OnboardingMotion.step(reduceMotion)) {
+                                onContinue()
+                            }
                         }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .onTapGesture { withAnimation(.easeInOut(duration: 0.35)) { step = 2 } }
 
-                    OnboardingLegalText()
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 16)
+                        Button {
+                            withAnimation(OnboardingMotion.step(reduceMotion)) {
+                                onSignIn()
+                            }
+                        } label: {
+                            Text("or sign into your account")
+                                .font(.system(size: 20, weight: .medium))
+                                .tracking(-0.5)
+                                .foregroundStyle(.black.opacity(0.5))
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(OnboardingPressStyle())
+
+                        OnboardingLegalText()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 16)
                 }
             }
         }
@@ -62,7 +73,6 @@ struct OnboardingStartView: View {
                 .frame(width: boardWidth, height: boardHeight)
                 .clipped()
 
-            // Logo
             VStack {
                 Image("kindling black")
                     .resizable()
@@ -72,7 +82,6 @@ struct OnboardingStartView: View {
                 Spacer()
             }
 
-            // Upper-left polaroid
             Image("polaroid-4")
                 .resizable()
                 .aspectRatio(contentMode: .fit)
@@ -80,7 +89,6 @@ struct OnboardingStartView: View {
                 .rotationEffect(.degrees(-13.99))
                 .offset(x: -boardWidth * 0.262, y: -boardHeight * 0.185)
 
-            // Upper-right polaroid
             Image("polaroid-1")
                 .resizable()
                 .aspectRatio(contentMode: .fit)
@@ -88,7 +96,6 @@ struct OnboardingStartView: View {
                 .rotationEffect(.degrees(9.57))
                 .offset(x: boardWidth * 0.252, y: -boardHeight * 0.185)
 
-            // Center polaroid
             Image("polaroid-3")
                 .resizable()
                 .aspectRatio(contentMode: .fit)
@@ -96,7 +103,6 @@ struct OnboardingStartView: View {
                 .rotationEffect(.degrees(7.86))
                 .offset(x: boardWidth * 0.025, y: boardHeight * 0.079)
 
-            // Lower-left polaroid
             Image("polaroid-2")
                 .resizable()
                 .aspectRatio(contentMode: .fit)
@@ -104,7 +110,6 @@ struct OnboardingStartView: View {
                 .rotationEffect(.degrees(-13.95))
                 .offset(x: -boardWidth * 0.242, y: boardHeight * 0.166)
 
-            // Lower-center-right polaroid
             Image("polaroid-1")
                 .resizable()
                 .aspectRatio(contentMode: .fit)
@@ -112,15 +117,13 @@ struct OnboardingStartView: View {
                 .rotationEffect(.degrees(2.95))
                 .offset(x: boardWidth * 0.055, y: boardHeight * 0.198)
 
-            // Sticky note
             Image("sticky note")
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: boardWidth * 0.237)
                 .rotationEffect(.degrees(-0.42))
                 .offset(x: boardWidth * 0.306, y: boardHeight * 0.086)
-            
-            // Overlay
+
             Image("overlay")
                 .resizable()
                 .aspectRatio(contentMode: .fill)
@@ -128,13 +131,12 @@ struct OnboardingStartView: View {
                 .blendMode(.softLight)
         }
         .frame(width: boardWidth, height: boardHeight)
-        .clipShape(RoundedRectangle(cornerRadius: 50))
+        .clipShape(RoundedRectangle(cornerRadius: 50, style: .continuous))
         .padding(.horizontal, 16)
         .padding(.top, 20)
     }
-
 }
 
 #Preview {
-    OnboardingStartView(step: .constant(1))
+    OnboardingStartView(onContinue: {}, onSignIn: {})
 }

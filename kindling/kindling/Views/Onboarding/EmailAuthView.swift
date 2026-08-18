@@ -6,26 +6,20 @@
 import Supabase
 import SwiftUI
 
-enum EmailAuthMode {
+enum EmailAuthMode: Equatable {
     case signUp
     case signIn
 }
 
-private let kindlingMuted = Color(red: 142 / 255, green: 142 / 255, blue: 147 / 255)
-
 struct EmailAuthView: View {
     @Binding var cards: [ItemWrapper]
-    @State private var mode: EmailAuthMode
+    @Binding var mode: EmailAuthMode
 
-    init(cards: Binding<[ItemWrapper]>, mode: EmailAuthMode) {
-        self._cards = cards
-        self._mode = State(initialValue: mode)
-    }
-
-    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var email = ""
     @State private var password = ""
+    @State private var showPassword = false
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var infoMessage: String?
@@ -42,132 +36,212 @@ struct EmailAuthView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .top) {
-            Color(.systemBackground).ignoresSafeArea()
+        GeometryReader { geo in
+            ScrollView {
+                VStack(spacing: 0) {
+                    titleBlock
 
-            VStack(spacing: 0) {
-                Image(colorScheme == .dark ? "gradient dark" : "gradient light")
-                    .resizable()
-                    .scaledToFill()
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 363)
-                    .clipped()
-
-                Spacer(minLength: 0)
-            }
-            .ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                Text(mode == .signUp ? "sign up with email" : "sign in with email")
-                    .font(.system(size: 36, weight: .medium))
-                    .tracking(-0.9)
-                    .foregroundColor(.primary)
-                    .multilineTextAlignment(.center)
-                    .padding(.top, 58)
-
-                Text(mode == .signUp ? "play has never been easier" : "welcome back")
-                    .font(.system(size: 20, weight: .medium))
-                    .tracking(-0.5)
-                    .foregroundColor(.primary)
-                    .multilineTextAlignment(.center)
-                    .padding(.top, 16)
-
-                VStack(spacing: 8) {
-                    field(placeholder: "email", text: $email, isSecure: false)
-                        .focused($focusedField, equals: .email)
-                        .textContentType(.emailAddress)
-                        .keyboardType(.emailAddress)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .submitLabel(.next)
-                        .onSubmit { focusedField = .password }
-
-                    field(placeholder: "password", text: $password, isSecure: true)
-                        .focused($focusedField, equals: .password)
-                        .textContentType(mode == .signUp ? .newPassword : .password)
-                        .submitLabel(.go)
-                        .onSubmit { submit() }
+                    credentials
+                        .padding(.horizontal, 16)
+                        .padding(.top, 35)
 
                     if mode == .signIn {
                         Button(action: sendReset) {
                             Text("forgot password?")
-                                .font(.system(size: 12))
+                                .font(.system(size: 16, weight: .medium))
+                                .tracking(-0.4)
                                 .underline()
-                                .foregroundColor(kindlingMuted)
-                                .tracking(-0.12)
-                                .frame(maxWidth: .infinity, alignment: .trailing)
+                                .foregroundStyle(kindlingMuted)
+                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .trailing)
+                                .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(OnboardingPressStyle())
                         .disabled(isLoading)
-                        .padding(.top, 4)
+                        .padding(.horizontal, 16)
                     }
-                }
-                .padding(.top, 40)
 
-                if let errorMessage {
-                    Text(errorMessage)
-                        .font(.system(size: 13))
-                        .tracking(-0.2)
-                        .foregroundStyle(Color(red: 1, green: 56 / 255, blue: 60 / 255))
-                        .multilineTextAlignment(.center)
-                        .padding(.top, 16)
-                } else if let infoMessage {
-                    Text(infoMessage)
-                        .font(.system(size: 13))
-                        .tracking(-0.2)
-                        .foregroundStyle(kindlingMuted)
-                        .multilineTextAlignment(.center)
-                        .padding(.top, 16)
-                }
-
-                Spacer()
-
-                VStack(spacing: 8) {
-                    Button(action: submit) {
-                        Text(mode == .signUp ? "continue →" : "sign in →")
-                            .font(.system(size: 20, weight: .medium))
-                            .tracking(-0.5)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 56)
-                            .background(Color.black)
-                            .clipShape(RoundedRectangle(cornerRadius: 24))
-                            .opacity(canSubmit ? 1 : 0.5)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!canSubmit)
-                    .padding(.horizontal, -32)
-
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.35)) {
-                            errorMessage = nil
-                            infoMessage = nil
-                            mode = mode == .signUp ? .signIn : .signUp
-                        }
-                    } label: {
-                        switcherLabel
-                            .font(.system(size: 20, weight: .medium))
-                            .tracking(-0.5)
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .font(.system(size: 13))
+                            .tracking(-0.2)
+                            .foregroundStyle(Color(red: 222 / 255, green: 51 / 255, blue: 43 / 255))
                             .multilineTextAlignment(.center)
+                            .padding(.top, 12)
+                            .padding(.horizontal, 24)
+                    } else if let infoMessage {
+                        Text(infoMessage)
+                            .font(.system(size: 13))
+                            .tracking(-0.2)
+                            .foregroundStyle(kindlingMuted)
+                            .multilineTextAlignment(.center)
+                            .padding(.top, 12)
+                            .padding(.horizontal, 24)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(isLoading)
-                    .padding(.horizontal, -32)
-                    .frame(height: 56)
 
-                    if mode == .signUp {
-                        OnboardingLegalText()
-                            .padding(.horizontal, -24)
-                    }
+                    Spacer(minLength: 24)
+
+                    footer
                 }
-                .padding(.bottom, 24)
+                .frame(minHeight: geo.size.height)
             }
-            .padding(.horizontal, 48)
+            .scrollDismissesKeyboard(.interactively)
+            .scrollIndicators(.hidden)
+        }
+        .background {
+            ZStack(alignment: .top) {
+                Color(.systemBackground)
+                OnboardingWarmGradient()
+            }
+            .ignoresSafeArea()
         }
         .onChange(of: mode) { _, _ in
             password = ""
+            showPassword = false
+            errorMessage = nil
+            infoMessage = nil
             focusedField = .email
         }
+    }
+
+    private var titleBlock: some View {
+        VStack(spacing: 0) {
+            Text(mode == .signUp ? "sign up with\nemail" : "sign in with\nemail")
+                .font(.system(size: 36, weight: .medium))
+                .tracking(-0.9)
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.center)
+                .padding(.top, 32)
+
+            Text(mode == .signUp ? "play has never been easier" : "welcome back")
+                .font(.system(size: 20, weight: .medium))
+                .tracking(-0.5)
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.center)
+                .padding(.top, 48)
+        }
+        .padding(.horizontal, 24)
+    }
+
+    private var credentials: some View {
+        VStack(spacing: 0) {
+            labeledField(
+                label: "email",
+                text: $email,
+                isSecure: false,
+                prompt: "you@icloud.com"
+            )
+            .focused($focusedField, equals: .email)
+            .textContentType(.emailAddress)
+            .keyboardType(.emailAddress)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .submitLabel(.next)
+            .onSubmit { focusedField = .password }
+
+            Rectangle()
+                .fill(Color.primary.opacity(0.08))
+                .frame(height: 1)
+                .padding(.horizontal, 20)
+
+            labeledField(
+                label: "password",
+                text: $password,
+                isSecure: true,
+                prompt: "••••••••"
+            )
+            .focused($focusedField, equals: .password)
+            .textContentType(mode == .signUp ? .newPassword : .password)
+            .submitLabel(.go)
+            .onSubmit { submit() }
+        }
+        .background(
+            Color("raisedSurface").opacity(0.82),
+            in: RoundedRectangle(cornerRadius: 24, style: .continuous)
+        )
+    }
+
+    private func labeledField(
+        label: String,
+        text: Binding<String>,
+        isSecure: Bool,
+        prompt: String
+    ) -> some View {
+        let promptText = Text(prompt)
+            .font(.system(size: 20, weight: .medium))
+            .foregroundColor(kindlingMuted.opacity(0.55))
+
+        return HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.system(size: 13))
+                    .tracking(-0.16)
+                    .foregroundStyle(kindlingMuted)
+
+                Group {
+                    if isSecure, !showPassword {
+                        SecureField("", text: text, prompt: promptText)
+                    } else {
+                        TextField("", text: text, prompt: promptText)
+                    }
+                }
+                .font(.system(size: 20, weight: .medium))
+                .tracking(-0.5)
+                .foregroundStyle(.primary)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            }
+
+            if isSecure {
+                Button {
+                    showPassword.toggle()
+                } label: {
+                    Image(systemName: showPassword ? "eye.slash" : "eye")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(kindlingMuted)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(OnboardingPressStyle())
+                .accessibilityLabel(showPassword ? "hide password" : "show password")
+            }
+        }
+        .padding(.leading, 20)
+        .padding(.trailing, isSecure ? 4 : 20)
+        .padding(.vertical, 12)
+    }
+
+    private var footer: some View {
+        VStack(spacing: 16) {
+            OnboardingPrimaryButton(
+                title: mode == .signUp ? "continue →" : "sign in →",
+                isEnabled: canSubmit
+            ) {
+                submit()
+            }
+
+            Button {
+                withAnimation(OnboardingMotion.step(reduceMotion)) {
+                    errorMessage = nil
+                    infoMessage = nil
+                    mode = mode == .signUp ? .signIn : .signUp
+                }
+            } label: {
+                switcherLabel
+                    .font(.system(size: 20, weight: .medium))
+                    .tracking(-0.5)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(OnboardingPressStyle())
+            .disabled(isLoading)
+
+            if mode == .signUp {
+                OnboardingLegalText()
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 16)
     }
 
     private var switcherLabel: Text {
@@ -177,30 +251,6 @@ struct EmailAuthView: View {
         }
         return Text("don't have an account? ").foregroundColor(kindlingMuted)
             + Text("sign up").foregroundColor(.primary).underline()
-    }
-
-    private func field(placeholder: String, text: Binding<String>, isSecure: Bool) -> some View {
-        Group {
-            if isSecure {
-                SecureField("", text: text, prompt: prompt(placeholder))
-            } else {
-                TextField("", text: text, prompt: prompt(placeholder))
-            }
-        }
-        .font(.system(size: 20, weight: .medium))
-        .tracking(-0.5)
-        .foregroundColor(.primary)
-        .padding(.horizontal, 20)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 56)
-        .background(Color("raisedSurface"), in: RoundedRectangle(cornerRadius: 24))
-        .padding(.horizontal, -32)
-    }
-
-    private func prompt(_ placeholder: String) -> Text {
-        Text(placeholder)
-            .font(.system(size: 20, weight: .medium))
-            .foregroundColor(kindlingMuted)
     }
 
     private func submit() {
@@ -221,7 +271,10 @@ struct EmailAuthView: View {
             isLoading = true
             defer { isLoading = false }
             do {
-                try await supabase.auth.resetPasswordForEmail(trimmed)
+                try await supabase.auth.resetPasswordForEmail(
+                    trimmed,
+                    redirectTo: KindlingLegal.privacyURL.deletingLastPathComponent()
+                )
                 errorMessage = nil
                 infoMessage = "check your email for a reset link"
             } catch {
@@ -266,5 +319,5 @@ struct EmailAuthView: View {
 }
 
 #Preview {
-    EmailAuthView(cards: .constant([]), mode: .signUp)
+    EmailAuthView(cards: .constant([]), mode: .constant(.signUp))
 }

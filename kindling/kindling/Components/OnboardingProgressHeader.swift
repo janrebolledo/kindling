@@ -6,7 +6,8 @@
 import SwiftUI
 
 struct OnboardingProgressHeader: View {
-    let currentStep: Int  // 1-based, out of 4
+    /// 1-based, out of 4. `nil` shows the wordmark only (email sign-in).
+    var currentStep: Int?
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -19,12 +20,14 @@ struct OnboardingProgressHeader: View {
 
             Spacer()
 
-            HStack(spacing: 4) {
-                ForEach(1...4, id: \.self) { i in
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.primary)
-                        .opacity(i == currentStep ? 0.8 : 0.3)
-                        .frame(width: i == currentStep ? 69 : 20, height: 5)
+            if let currentStep {
+                HStack(spacing: 4) {
+                    ForEach(1...4, id: \.self) { i in
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.primary)
+                            .opacity(i == currentStep ? 0.8 : 0.3)
+                            .frame(width: i == currentStep ? 69 : 20, height: 5)
+                    }
                 }
             }
         }
@@ -38,5 +41,6 @@ struct OnboardingProgressHeader: View {
         OnboardingProgressHeader(currentStep: 1)
         OnboardingProgressHeader(currentStep: 2)
         OnboardingProgressHeader(currentStep: 3)
+        OnboardingProgressHeader(currentStep: nil)
     }
 }

@@ -1,15 +1,9 @@
-import Supabase
-//
-//  SignUpCaptureView.swift
-//  kindling
-//
 import SwiftUI
 
 struct SignUpCaptureView: View {
     @Binding var cards: [ItemWrapper]
-    @Binding var step: Int
+    var onContinue: () -> Void
 
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var activeCardIndex = 0
     @State private var dragOffset: CGSize = .zero
@@ -20,18 +14,10 @@ struct SignUpCaptureView: View {
     var body: some View {
         ZStack(alignment: .top) {
             Color(.systemBackground).ignoresSafeArea()
-
-            Image(colorScheme == .dark ? "gradient dark" : "gradient light")
-                .resizable()
-                .scaledToFill()
-                .frame(maxWidth: .infinity)
-                .frame(height: 400)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .grayscale(0.45)
-                .ignoresSafeArea()
+            OnboardingWarmGradient(height: 400, grayscale: true)
 
             VStack(spacing: 24) {
-                VStack(spacing: 16) {
+                VStack(spacing: 26) {
                     Text("here's what\nyou missed :(")
                         .font(.system(size: 36, weight: .medium))
                         .tracking(-0.9)
@@ -52,23 +38,13 @@ struct SignUpCaptureView: View {
                 Spacer()
 
                 VStack(spacing: 12) {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.35)) { step = 5 }
-                    } label: {
-                        Text("wait kindling help me →")
-                            .font(.system(size: 20, weight: .medium))
-                            .tracking(-0.5)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 56)
-                            .background(Color.black)
-                            .clipShape(RoundedRectangle(cornerRadius: 24))
+                    OnboardingPrimaryButton(title: "continue to sign up →") {
+                        withAnimation(OnboardingMotion.step(reduceMotion)) {
+                            onContinue()
+                        }
                     }
 
-                    Text("kindling cannot view your photos, everything is stored on device :)")
-                        .font(.system(size: 12))
-                        .foregroundColor(Color(red: 142/255, green: 142/255, blue: 147/255))
-                        .multilineTextAlignment(.center)
+                    OnboardingPrivacyNote()
                 }
                 .padding(.bottom, 16)
             }

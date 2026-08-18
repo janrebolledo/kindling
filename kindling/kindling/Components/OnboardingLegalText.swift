@@ -14,17 +14,17 @@ struct OnboardingLegalText: View {
     var body: some View {
         Text(attributed)
             .font(.system(size: 12))
-            .foregroundStyle(Color(red: 142 / 255, green: 142 / 255, blue: 147 / 255))
+            .foregroundStyle(kindlingMuted)
             .multilineTextAlignment(.center)
             .tracking(-0.12)
-            .tint(Color(red: 142 / 255, green: 142 / 255, blue: 147 / 255))
+            .tint(kindlingMuted)
     }
 
     private var attributed: AttributedString {
         var text = AttributedString(
             "By continuing, you agree to kindling's Terms & Conditions and acknowledge the Privacy Policy."
         )
-        let muted = Color(red: 142 / 255, green: 142 / 255, blue: 147 / 255)
+        let muted = kindlingMuted
         if let range = text.range(of: "Terms & Conditions") {
             text[range].link = KindlingLegal.termsURL
             text[range].underlineStyle = .single
