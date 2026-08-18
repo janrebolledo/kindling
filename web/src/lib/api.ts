@@ -14,24 +14,17 @@ export type SharedIdea = {
   created_at: string;
 };
 
-const DEFAULT_API_URL = 'https://api.getkindl.ing';
-
-export function apiBase(): string {
-  const fromEnv = import.meta.env.PUBLIC_API_URL as string | undefined;
-  return fromEnv && fromEnv.length > 0
-    ? fromEnv.replace(/\/$/, '')
-    : DEFAULT_API_URL;
-}
+const SHARE_URL = 'https://api.getkindl.ing/share';
 
 export async function fetchSharedIdea(
+  api: Fetcher,
   id: string,
 ): Promise<SharedIdea | null> {
   if (!/^\d+$/.test(id)) return null;
-  try {
-    const res = await fetch(`${apiBase()}/share/${id}`);
-    if (!res.ok) return null;
-    return (await res.json()) as SharedIdea;
-  } catch {
-    return null;
+  const res = await api.fetch(new Request(`${SHARE_URL}/${id}`));
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`GET /share/${id} failed (${res.status})`);
   }
+  return (await res.json()) as SharedIdea;
 }
