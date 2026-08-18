@@ -57,8 +57,6 @@ struct SectionDetailView: View {
         }
         .scrollIndicators(.hidden)
         .background((colorScheme == .dark ? Color.black : Color.white).ignoresSafeArea())
-        .toolbarVisibility(.hidden, for: .navigationBar)
-        .navigationBarBackButtonHidden(true)
     }
 
     // MARK: - Header
@@ -75,8 +73,6 @@ struct SectionDetailView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
-            backButton
-
             Text(title)
                 .font(.system(size: 24, weight: .medium))
                 .tracking(-0.6)
@@ -91,24 +87,6 @@ struct SectionDetailView: View {
         }
         .padding(.horizontal, 24)
         .padding(.top, 24)
-    }
-
-    private var backButton: some View {
-        Button {
-            dismiss()
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 13, weight: .semibold))
-                Text("home")
-                    .font(.system(size: 16))
-                    .tracking(-0.4)
-            }
-            .foregroundStyle(.primary)
-        }
-        .buttonStyle(.glass)
-        .tint(.primary)
-        .accessibilityLabel("home")
     }
 
     // MARK: - Filters

@@ -246,11 +246,11 @@ struct EmailAuthView: View {
 
     private var switcherLabel: Text {
         if mode == .signUp {
-            return Text("already have an account? ").foregroundColor(kindlingMuted)
-                + Text("sign in").foregroundColor(.primary).underline()
+            return Text("already have an account? \(Text("sign in").foregroundColor(.primary).underline())")
+                .foregroundColor(kindlingMuted)
         }
-        return Text("don't have an account? ").foregroundColor(kindlingMuted)
-            + Text("sign up").foregroundColor(.primary).underline()
+        return Text("don't have an account? \(Text("sign up").foregroundColor(.primary).underline())")
+            .foregroundColor(kindlingMuted)
     }
 
     private func submit() {

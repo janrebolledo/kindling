@@ -17,8 +17,7 @@
   "services": [
     {
       "binding": "API",
-      "service": "kindling-api",
-      "remote": true
+      "service": "kindling-api"
     }
   ],
   "observability": {
@@ -26,6 +25,6 @@
     "head_sampling_rate": 1
   },
   "kv_namespaces": [
-    { "binding": "SESSION" }
+    { "binding": "SESSION", "id": "a13cf211979b4ae4b44482ee4a3c47d9" }
   ]
 }
