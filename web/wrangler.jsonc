@@ -7,8 +7,17 @@
   "assets": {
     "binding": "ASSETS",
     "directory": "./dist",
-    "not_found_handling": "404-page"
+    "not_found_handling": "404-page",
+    // Browser navigations prefer the static 404 over the Worker. Share pages
+    // are SSR, so they must run first or /s/:id never loads.
+    "run_worker_first": ["/s/*"]
   },
+  "services": [
+    {
+      "binding": "API",
+      "service": "kindling-api"
+    }
+  ],
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1

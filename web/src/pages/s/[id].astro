@@ -1,7 +1,6 @@
 ---
 export const prerender = false;
 
-import { Image } from 'astro:assets';
 import Layout from '../../layouts/Layout.astro';
 import DownloadButton from '../../components/DownloadButton.astro';
 import ShareDock from '../../components/ShareDock.astro';
@@ -14,7 +13,7 @@ import {
 } from '../../lib/openStatus';
 
 const id = Astro.params.id ?? '';
-const idea = await fetchSharedIdea(id);
+const idea = await fetchSharedIdea(id, Astro.locals.runtime?.env?.API);
 
 if (!idea) {
   Astro.response.status = 404;
@@ -62,7 +61,7 @@ const description = idea?.name || idea?.description || 'saved with kindling.';
       <div class='mx-auto flex min-h-dvh w-full max-w-[402px] flex-col bg-white'>
         <div class='relative h-[487px] w-full overflow-hidden'>
           {idea.media_url ? (
-            <Image
+            <img
               src={idea.media_url}
               alt=''
               width={804}
