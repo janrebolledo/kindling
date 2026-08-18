@@ -48,7 +48,7 @@ let backendBaseURL = URL(string: "http://192.168.50.40:3000")!
 let webBaseURL = URL(string: "http://192.168.50.40:4321")!
 #else
 let backendBaseURL = URL(string: "https://api.getkindl.ing")!
-let webBaseURL = URL(string: "https://kindling.app")!
+let webBaseURL = URL(string: "https://getkindl.ing")!
 #endif
 
 private let ideasURL = backendBaseURL.appendingPathComponent("ideas")
