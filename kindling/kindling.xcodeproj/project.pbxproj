@@ -296,6 +296,8 @@
 				DEVELOPMENT_TEAM = FDX72WZH23;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = kindling/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = kindling;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -329,6 +331,8 @@
 				DEVELOPMENT_TEAM = FDX72WZH23;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = kindling/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = kindling;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

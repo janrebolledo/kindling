@@ -3,7 +3,7 @@ import cloudflare from '@astrojs/cloudflare';
 import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
-  site: 'https://kindling.app',
+  site: 'https://getkindl.ing',
   adapter: cloudflare({
     imageService: 'compile',
   }),

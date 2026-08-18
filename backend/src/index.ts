@@ -21,7 +21,16 @@ type ItemLog = {
 
 const app = new Hono<{ Bindings: CloudflareBindings }>();
 
-app.use('*', cors());
+app.use(
+  '*',
+  cors({
+    origin: [
+      'https://getkindl.ing',
+      'http://localhost:4321',
+      'http://127.0.0.1:4321',
+    ],
+  }),
+);
 
 app.get('/health', (c) => c.json({ ok: true }));
 

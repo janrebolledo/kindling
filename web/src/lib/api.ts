@@ -27,7 +27,11 @@ export async function fetchSharedIdea(
   id: string,
 ): Promise<SharedIdea | null> {
   if (!/^\d+$/.test(id)) return null;
-  const res = await fetch(`${apiBase()}/share/${id}`);
-  if (!res.ok) return null;
-  return (await res.json()) as SharedIdea;
+  try {
+    const res = await fetch(`${apiBase()}/share/${id}`);
+    if (!res.ok) return null;
+    return (await res.json()) as SharedIdea;
+  } catch {
+    return null;
+  }
 }
