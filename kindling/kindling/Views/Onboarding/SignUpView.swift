@@ -108,11 +108,7 @@ struct SignUpView: View {
                     }
                     .padding(.horizontal, -32)
 
-                    Text("By continuing, you agree to kindling's \(Text("Terms & Conditions").underline()) and acknowledge the \(Text("Privacy Policy").underline()).")
-                        .font(.system(size: 12))
-                        .foregroundColor(Color(red: 142/255, green: 142/255, blue: 147/255))
-                        .multilineTextAlignment(.center)
-                        .tracking(-0.12)
+                    OnboardingLegalText()
                         .padding(.horizontal, -24)
                 }
                 .padding(.bottom, 24)

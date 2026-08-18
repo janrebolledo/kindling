@@ -97,7 +97,7 @@ struct OnboardingPermissionsView: View {
 
                 Spacer()
 
-                legalText
+                OnboardingLegalText()
                     .padding(.bottom, 16)
             }
             .padding(.horizontal, 48)
@@ -193,14 +193,6 @@ struct OnboardingPermissionsView: View {
         .foregroundColor(.primary)
         .opacity(status == .granted ? 0.5 : 1.0)
         .animation(.easeInOut(duration: 0.3), value: status)
-    }
-
-    private var legalText: some View {
-        Text("By continuing, you agree to kindling's \(Text("Terms & Conditions").underline()) and acknowledge the \(Text("Privacy Policy").underline()).")
-            .font(.system(size: 12))
-            .foregroundColor(Color(red: 142/255, green: 142/255, blue: 147/255))
-            .multilineTextAlignment(.center)
-            .tracking(-0.12)
     }
 
     // MARK: - Logic (unchanged)

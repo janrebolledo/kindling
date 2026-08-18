@@ -156,11 +156,7 @@ struct EmailAuthView: View {
                     .frame(height: 56)
 
                     if mode == .signUp {
-                        Text("By continuing, you agree to kindling's \(Text("Terms & Conditions").underline()) and acknowledge the \(Text("Privacy Policy").underline()).")
-                            .font(.system(size: 12))
-                            .foregroundColor(kindlingMuted)
-                            .multilineTextAlignment(.center)
-                            .tracking(-0.12)
+                        OnboardingLegalText()
                             .padding(.horizontal, -24)
                     }
                 }

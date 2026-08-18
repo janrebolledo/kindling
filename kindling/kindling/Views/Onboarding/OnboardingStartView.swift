@@ -16,36 +16,38 @@ struct OnboardingStartView: View {
                 Color.white.ignoresSafeArea()
 
                 VStack(spacing: 0) {
-                    corkBoard(geo: geo)
-
                     VStack(spacing: 0) {
-                        Spacer()
+                        corkBoard(geo: geo)
 
-                        Text("finally, a way to moodboard your weekend.")
-                            .font(.system(size: 36, weight: .medium))
-                            .multilineTextAlignment(.center)
-                            .tracking(-0.9)
-                            .foregroundColor(.black)
-                            .padding(.horizontal, 20)
+                        VStack(spacing: 0) {
+                            Spacer()
 
-                        Text("tap anywhere to continue")
-                            .font(.system(size: 16))
-                            .foregroundColor(.black)
-                            .tracking(-0.16)
-                            .padding(.top, 16)
+                            Text("finally, a way to moodboard your weekend.")
+                                .font(.system(size: 36, weight: .medium))
+                                .multilineTextAlignment(.center)
+                                .tracking(-0.9)
+                                .foregroundColor(.black)
+                                .padding(.horizontal, 20)
 
-                        Spacer()
+                            Text("tap anywhere to continue")
+                                .font(.system(size: 16))
+                                .foregroundColor(.black)
+                                .tracking(-0.16)
+                                .padding(.top, 16)
 
-                        legalText
-                            .padding(.horizontal, 20)
-                            .padding(.bottom, 16)
+                            Spacer()
+                        }
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .onTapGesture { withAnimation(.easeInOut(duration: 0.35)) { step = 2 } }
+
+                    OnboardingLegalText()
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 16)
                 }
             }
         }
-        .contentShape(Rectangle())
-        .onTapGesture { withAnimation(.easeInOut(duration: 0.35)) { step = 2 } }
     }
 
     @ViewBuilder
@@ -131,13 +133,6 @@ struct OnboardingStartView: View {
         .padding(.top, 20)
     }
 
-    var legalText: some View {
-        Text("By continuing, you agree to kindling's \(Text("Terms & Conditions").underline()) and acknowledge the \(Text("Privacy Policy").underline()).")
-            .font(.system(size: 12))
-            .foregroundColor(Color(red: 142/255, green: 142/255, blue: 147/255))
-            .multilineTextAlignment(.center)
-            .tracking(-0.12)
-    }
 }
 
 #Preview {
