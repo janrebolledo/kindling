@@ -1,0 +1,10 @@
+{
+  "name": "kindling",
+  "private": true,
+  "workspaces": [
+    "backend"
+  ],
+  "devDependencies": {
+    "wrangler": "^4.34.0"
+  }
+}

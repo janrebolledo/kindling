@@ -1,4 +1,6 @@
 {
+  // Source of truth for local `cd backend && wrangler …`.
+  // Workers Builds with an empty Root directory uses the repo-root wrangler.jsonc instead.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "kindling-api",
   "main": "src/index.ts",

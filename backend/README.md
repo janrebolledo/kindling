@@ -24,6 +24,14 @@ npx wrangler secret put SUPABASE_API_KEY
 bun run deploy
 ```
 
+Workers Builds is connected to this Git repo. `kindling-api` lives in `backend/`, so in the Worker go to **Settings → Build** and set:
+
+- **Root directory:** `backend`
+- **Deploy command:** `npx wrangler deploy`
+- **Non-production branch deploy command:** `npx wrangler versions upload`
+
+If Root directory is left empty, the repository-root `wrangler.jsonc` is the fallback so those default commands still find this Worker.
+
 On the `api.getkindl.ing` custom domain, route API paths to this worker:
 
 - `api.getkindl.ing/ideas*`, `/account*`, `/share*`, `/health*` → `kindling-api`

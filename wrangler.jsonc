@@ -1,0 +1,18 @@
+{
+  // Cloudflare Workers Builds runs `npx wrangler versions upload` from the
+  // repository root. kindling-api lives in backend/; this file is the
+  // root-level entry that command needs. Prefer setting the Worker's
+  // Root directory to `backend` in the dashboard so this shim is unused.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "kindling-api",
+  "main": "backend/src/index.ts",
+  "compatibility_date": "2026-08-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "SUPABASE_URL": "https://bfbaqyhyxergcpsyhzcc.supabase.co"
+  }
+}
