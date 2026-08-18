@@ -3,8 +3,6 @@
 
 type Runtime = import('@astrojs/cloudflare').Runtime<{
   API: Fetcher;
-  SESSION: KVNamespace;
-  ASSETS: Fetcher;
 }>;
 
 declare namespace App {
@@ -12,7 +10,6 @@ declare namespace App {
 }
 
 interface ImportMetaEnv {
-  readonly PUBLIC_API_URL: string;
   readonly PUBLIC_APP_STORE_URL: string;
 }
 

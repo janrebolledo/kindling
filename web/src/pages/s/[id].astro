@@ -13,7 +13,7 @@ import {
 } from '../../lib/openStatus';
 
 const id = Astro.params.id ?? '';
-const idea = await fetchSharedIdea(id, Astro.locals.runtime?.env?.API);
+const idea = await fetchSharedIdea(Astro.locals.runtime.env.API, id);
 
 if (!idea) {
   Astro.response.status = 404;
