@@ -16,7 +16,6 @@ struct PinsView: View {
 
     @State var collections: [CollectionWrapper] = []
     @State private var searchText: String = ""
-    @State private var showAccount = false
     @State private var destination: HomeDestination?
     var isLoading: Bool = false
 
@@ -170,8 +169,8 @@ struct PinsView: View {
     }
 
     private var profilePill: some View {
-        Button {
-            showAccount = true
+        NavigationLink {
+            AccountView()
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "person.fill")
@@ -184,10 +183,6 @@ struct PinsView: View {
         }
         .buttonStyle(.glass)
         .tint(.primary)
-        .sheet(isPresented: $showAccount) {
-            AccountView()
-                .presentationDragIndicator(.visible)
-        }
     }
 
     private var searchBar: some View {

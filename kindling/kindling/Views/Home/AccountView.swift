@@ -58,6 +58,33 @@ private struct UsernamePayload: Encodable {
     let username: String
 }
 
+private enum SettingsPage: Hashable {
+    case settings
+    case displayName
+    case username
+    case transportType
+
+    var title: String {
+        switch self {
+        case .settings: return "settings"
+        case .displayName: return "display name"
+        case .username: return "username"
+        case .transportType: return "transport type"
+        }
+    }
+}
+
+private enum PhotoUploadError: LocalizedError {
+    case noImages
+
+    var errorDescription: String? {
+        switch self {
+        case .noImages:
+            return "We couldn't load the selected photos. Please try again."
+        }
+    }
+}
+
 struct AccountView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
@@ -70,10 +97,15 @@ struct AccountView: View {
     @State private var showDeleteError = false
     @State private var isDeletingAccount = false
     @State private var showDiscardDialog = false
+    @State private var showSignOutConfirm = false
 
     @State private var processedScreenshotCount = 0
     @State private var totalScreenshotCount = 0
     @State private var isProcessingScreenshots = false
+    @State private var isPhotoPickerPresented = false
+    @State private var selectedPhotoItems: [PhotosPickerItem] = []
+    @State private var showUploadError = false
+    @State private var uploadErrorMessage = ""
 
     @State private var isEditingName = false
     @State private var draftName = ""
@@ -115,114 +147,15 @@ struct AccountView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Text("account")
-                        .font(.system(size: 32, weight: .bold))
-                        .tracking(-0.6)
-                        .foregroundStyle(.primary)
-                    Spacer()
-                    if isEditing {
-                        saveButton
-                    }
-                }
-                .padding(.top, 8)
-
-                screenshotIndexingView
-                    .padding(.top, 14)
-
-                VStack(alignment: .leading, spacing: 28) {
-                    infoRow(label: "name") {
-                        nameValue
-                    }
-
-                    VStack(alignment: .trailing, spacing: 6) {
-                        infoRow(label: "username") {
-                            usernameValue
-                        }
-                        if let usernameError {
-                            Text(usernameError)
-                                .font(.system(size: 13))
-                                .tracking(-0.2)
-                                .foregroundStyle(accountRed)
-                                .frame(maxWidth: .infinity, alignment: .trailing)
-                        }
-                    }
-
-                    infoRow(label: "email") {
-                        Text(email)
-                            .font(.system(size: 16, weight: .semibold))
-                            .tracking(-0.4)
-                            .foregroundStyle(.primary)
-                    }
-
-                    infoRow(label: "preferred transport type") {
-                        transportPicker
-                    }
-
-                    infoRow(label: "edit iPhone gallery access") {
-                        Button(action: editGalleryAccess) {
-                            HStack(spacing: 4) {
-                                Text("Edit")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .tracking(-0.4)
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 14, weight: .semibold))
-                            }
-                            .foregroundStyle(.primary)
-                        }
-                    }
-                }
-                .padding(.top, 36)
-
-                VStack(spacing: 12) {
-                    pillButton(
-                        title: "Give feedback",
-                        systemName: "exclamationmark.bubble.fill",
-                        tint: .primary,
-                        action: giveFeedback
-                    )
-
-                    pillButton(
-                        title: isDeletingAccount ? "Deleting…" : "Delete account",
-                        systemName: "trash",
-                        tint: accountRed,
-                        action: { showDeleteConfirm = true }
-                    )
-                    .disabled(isDeletingAccount)
-                }
-                .padding(.top, 44)
-
-                pillButton(title: "Sign out", systemName: nil, tint: accountRed) {
-                    Task { try? await supabase.auth.signOut() }
-                }
-                .padding(.top, 24)
-
-                Text("v1.00 • jan rebolledo")
-                    .font(.system(size: 13))
-                    .tracking(-0.2)
-                    .foregroundStyle(figmaGray)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.top, 24)
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 200)
-            .padding(.bottom, 48)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        ScrollView {
+            settingsPage
+                .padding(.top, 16)
+                .padding(.bottom, 48)
         }
         .scrollIndicators(.hidden)
         .background((colorScheme == .dark ? Color.black : Color.white).ignoresSafeArea())
-        // Tapping anywhere outside the text fields ends editing.
-        .overlay {
-            if isEditing {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .ignoresSafeArea()
-                    .onTapGesture { endEditing() }
-            }
-        }
+        .navigationTitle(SettingsPage.settings.title)
+        .navigationBarTitleDisplayMode(.inline)
         .background(
             InteractiveDismissGuard(blocking: hasUnsavedChanges) {
                 showDiscardDialog = true
@@ -231,7 +164,8 @@ struct AccountView: View {
         .task {
             async let preference: Void = loadPreference()
             async let screenshotProgress: Void = refreshScreenshotProgress()
-            _ = await (preference, screenshotProgress)
+            await preference
+            await screenshotProgress
         }
         .onChange(of: userSettings.transportType) { _, newValue in
             guard isLoaded else { return }
@@ -242,6 +176,9 @@ struct AccountView: View {
         }
         .onChange(of: usernameFieldFocused) { _, focused in
             if !focused, isEditingUsername { Task { await saveUsername() } }
+        }
+        .onChange(of: selectedPhotoItems) { _, newItems in
+            processSelectedPhotos(newItems)
         }
         .alert("Delete account?", isPresented: $showDeleteConfirm) {
             Button("Cancel", role: .cancel) {}
@@ -262,6 +199,63 @@ struct AccountView: View {
         } message: {
             Text("Your unsaved changes will be lost.")
         }
+        .alert("Sign out?", isPresented: $showSignOutConfirm) {
+            Button("Cancel", role: .cancel) {}
+            Button("Sign out", role: .destructive) {
+                Task { try? await supabase.auth.signOut() }
+            }
+        } message: {
+            Text("You can sign back in anytime.")
+        }
+        .alert("Couldn't upload photos", isPresented: $showUploadError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(uploadErrorMessage)
+        }
+    }
+
+    private func detailPage(for destination: SettingsPage) -> some View {
+        ScrollView {
+            Group {
+                switch destination {
+                case .settings:
+                    settingsPage
+                case .displayName:
+                    displayNamePage
+                case .username:
+                    usernamePage
+                case .transportType:
+                    transportTypePage
+                }
+            }
+            .padding(.top, 16)
+            .padding(.bottom, 48)
+        }
+        .scrollIndicators(.hidden)
+        .background((colorScheme == .dark ? Color.black : Color.white).ignoresSafeArea())
+        .navigationTitle(destination.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { beginEditing(destination) }
+        .onDisappear { endEditing() }
+    }
+
+    private func beginEditing(_ destination: SettingsPage) {
+        switch destination {
+        case .displayName:
+            draftName = userSettings.displayName
+            isEditingName = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                nameFieldFocused = true
+            }
+        case .username:
+            draftUsername = username
+            usernameError = nil
+            isEditingUsername = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                usernameFieldFocused = true
+            }
+        case .settings, .transportType:
+            break
         }
     }
 
@@ -301,11 +295,405 @@ struct AccountView: View {
 
     // MARK: - Components
 
+    private var settingsPage: some View {
+        VStack(spacing: 64) {
+            screenshotIndexingView
+
+            settingsSection(title: "account") {
+                VStack(spacing: 24) {
+                    settingsCard {
+                        displayNameRow
+                        usernameRow
+                        emailRow
+                    }
+
+                    settingsActionButton(
+                        title: isDeletingAccount ? "Deleting…" : "Delete account",
+                        systemName: "trash",
+                        tint: accountRed,
+                        action: { showDeleteConfirm = true }
+                    )
+                    .disabled(isDeletingAccount)
+                }
+            }
+
+            settingsSection(title: "preferences") {
+                settingsCard {
+                    transportTypeRow
+                    galleryAccessRow
+                }
+            }
+
+            settingsSection(title: "legal") {
+                settingsCard {
+                    settingsRow(
+                        label: "terms & conditions",
+                        value: nil,
+                        tint: .primary,
+                        chevronTint: .primary
+                    ) {
+                        openPolicy(path: "terms")
+                    }
+                    settingsRow(
+                        label: "privacy policy",
+                        value: nil,
+                        tint: .primary,
+                        chevronTint: .primary
+                    ) {
+                        openPolicy(path: "privacy")
+                    }
+                }
+            }
+
+            VStack(spacing: 24) {
+                settingsActionButton(
+                    title: "Give feedback",
+                    systemName: "exclamationmark.bubble.fill",
+                    tint: .primary,
+                    action: giveFeedback
+                )
+
+                settingsActionButton(
+                    title: "Sign out",
+                    systemName: nil,
+                    tint: accountRed,
+                    action: { showSignOutConfirm = true }
+                )
+            }
+
+            Text("v1.00 early preview • jan rebolledo")
+                .font(.system(size: 16))
+                .tracking(-0.16)
+                .foregroundStyle(figmaGray)
+                .frame(maxWidth: .infinity)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var displayNamePage: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("display name")
+                    .font(.system(size: 10))
+                    .tracking(-0.125)
+                    .foregroundStyle(figmaGray)
+
+                TextField("display name", text: $draftName)
+                    .font(.system(size: 16, weight: .medium))
+                    .tracking(-0.4)
+                    .foregroundStyle(.primary)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.done)
+                    .focused($nameFieldFocused)
+                    .onSubmit { Task { await saveName() } }
+                    .disabled(isSavingName)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color("raisedSurface"), in: RoundedRectangle(cornerRadius: 24))
+        }
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var usernamePage: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("username")
+                    .font(.system(size: 10))
+                    .tracking(-0.125)
+                    .foregroundStyle(figmaGray)
+
+                TextField("username", text: lowercaseUsernameBinding)
+                    .font(.system(size: 16, weight: .medium))
+                    .tracking(-0.4)
+                    .foregroundStyle(.primary)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .textContentType(nil)
+                    .keyboardType(.asciiCapable)
+                    .submitLabel(.done)
+                    .focused($usernameFieldFocused)
+                    .onSubmit { Task { await saveUsername() } }
+                    .onChange(of: draftUsername) { _, newValue in
+                        let lowered = newValue.lowercased()
+                        if newValue != lowered { draftUsername = lowered }
+                    }
+                    .disabled(isSavingUsername)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color("raisedSurface"), in: RoundedRectangle(cornerRadius: 24))
+            .overlay {
+                if usernameError != nil {
+                    RoundedRectangle(cornerRadius: 24)
+                        .stroke(accountRed, lineWidth: 2)
+                }
+            }
+
+            Text(usernameError ?? "your username is unique and helps other add you")
+                .font(.system(size: 16))
+                .tracking(-0.4)
+                .foregroundStyle(usernameError == nil ? figmaGray : accountRed)
+                .padding(.horizontal, 12)
+        }
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var transportTypePage: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 20) {
+                ForEach(Array(TransportType.allCases.enumerated()), id: \.element.id) { index, type in
+                    if index > 0 {
+                        Rectangle()
+                            .fill(Color.primary.opacity(0.08))
+                            .frame(height: 1)
+                    }
+
+                    Button {
+                        userSettings.transportType = type
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: type.icon)
+                                .font(.system(size: 16))
+                                .frame(width: 16)
+                            Text(type.label)
+                                .font(.system(size: 16, weight: .medium))
+                                .tracking(-0.4)
+                            Spacer()
+                            if userSettings.transportType == type {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 16, weight: .semibold))
+                            }
+                        }
+                        .foregroundStyle(.primary)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 16)
+            .background(Color("raisedSurface"), in: RoundedRectangle(cornerRadius: 24))
+
+            Text("this is used to show destination ETA")
+                .font(.system(size: 16))
+                .tracking(-0.4)
+                .foregroundStyle(figmaGray)
+                .padding(.horizontal, 12)
+        }
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func settingsSection<Content: View>(
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 24) {
+            Text(title)
+                .font(.system(size: 18, weight: .medium))
+                .tracking(-0.45)
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 2)
+
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func settingsCard<Content: View>(
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(spacing: 20) {
+            content()
+        }
+        .padding(6)
+        .background(Color("raisedSurface"), in: RoundedRectangle(cornerRadius: 24))
+    }
+
+    private func settingsRow(
+        label: String,
+        value: String?,
+        tint: Color = .primary,
+        chevronTint: Color = figmaGray,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Text(label)
+                    .font(.system(size: 16, weight: .medium))
+                    .tracking(-0.4)
+                    .foregroundStyle(tint)
+
+                Spacer(minLength: 8)
+
+                if let value {
+                    Text(value)
+                        .font(.system(size: 16, weight: .medium))
+                        .tracking(-0.4)
+                        .foregroundStyle(figmaGray)
+                }
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(chevronTint)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 42)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var displayNameRow: some View {
+        settingsNavigationRow(
+            label: "display name",
+            value: userSettings.displayName,
+            destination: .displayName
+        )
+    }
+
+    private var usernameRow: some View {
+        settingsNavigationRow(
+            label: "username",
+            value: username.isEmpty ? "set username" : username,
+            destination: .username
+        )
+    }
+
+    private var emailRow: some View {
+        HStack(spacing: 10) {
+            Text("email")
+                .font(.system(size: 16, weight: .medium))
+                .tracking(-0.4)
+                .foregroundStyle(.primary)
+            Spacer(minLength: 8)
+            Text(email)
+                .font(.system(size: 16, weight: .medium))
+                .tracking(-0.4)
+                .foregroundStyle(figmaGray)
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 42)
+    }
+
+    private var transportTypeRow: some View {
+        NavigationLink {
+            AnyView(detailPage(for: .transportType))
+        } label: {
+            HStack(spacing: 10) {
+                Text("transport type")
+                    .font(.system(size: 16, weight: .medium))
+                    .tracking(-0.4)
+                    .foregroundStyle(.primary)
+
+                Spacer(minLength: 8)
+
+                HStack(spacing: 6) {
+                    Image(systemName: userSettings.transportType.icon)
+                        .font(.system(size: 14))
+                    Text(userSettings.transportType.label)
+                        .font(.system(size: 16, weight: .medium))
+                        .tracking(-0.4)
+                }
+                .foregroundStyle(figmaGray)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(figmaGray)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 42)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func settingsNavigationRow(
+        label: String,
+        value: String?,
+        tint: Color = .primary,
+        destination: SettingsPage
+    ) -> some View {
+        NavigationLink {
+            AnyView(detailPage(for: destination))
+        } label: {
+            settingsRowLabel(label: label, value: value, tint: tint)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func settingsRowLabel(
+        label: String,
+        value: String?,
+        tint: Color
+    ) -> some View {
+        HStack(spacing: 10) {
+            Text(label)
+                .font(.system(size: 16, weight: .medium))
+                .tracking(-0.4)
+                .foregroundStyle(tint)
+
+            Spacer(minLength: 8)
+
+            if let value {
+                Text(value)
+                    .font(.system(size: 16, weight: .medium))
+                    .tracking(-0.4)
+                    .foregroundStyle(figmaGray)
+            }
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(figmaGray)
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 42)
+        .contentShape(Rectangle())
+    }
+
+    private var galleryAccessRow: some View {
+        settingsRow(label: "edit iPhone gallery access", value: "Edit", tint: .primary) {
+            editGalleryAccess()
+        }
+    }
+
+    private func settingsActionButton(
+        title: String,
+        systemName: String?,
+        tint: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                if let systemName {
+                    Image(systemName: systemName)
+                        .font(.system(size: 16, weight: .medium))
+                }
+                Text(title)
+                    .font(.system(size: 16, weight: .medium))
+                    .tracking(-0.4)
+            }
+            .foregroundStyle(tint)
+            .frame(maxWidth: .infinity)
+            .frame(height: 48)
+            .background(Color("raisedSurface"), in: RoundedRectangle(cornerRadius: 24))
+        }
+        .buttonStyle(.plain)
+    }
+
     private var screenshotIndexingView: some View {
         VStack(spacing: 20) {
             VStack(alignment: .leading, spacing: 17) {
                 HStack {
-                    Text("Screenshots Processed")
+                    Text("screenshots processed")
                         .font(.system(size: 16, weight: .medium))
                         .tracking(-0.4)
                         .foregroundStyle(.primary)
@@ -325,7 +713,7 @@ struct AccountView: View {
                             .fill(Color(red: 217 / 255, green: 217 / 255, blue: 217 / 255))
 
                         Capsule()
-                            .fill(.primary)
+                            .fill(Color(red: 255 / 255, green: 137 / 255, blue: 4 / 255))
                             .frame(width: proxy.size.width * screenshotProgress)
                     }
                 }
@@ -336,21 +724,43 @@ struct AccountView: View {
 
             HStack(spacing: 16) {
                 screenshotActionButton(
-                    title: isProcessingScreenshots ? "Processing" : "Process More",
+                    title: isProcessingScreenshots ? "processing" : "process more",
                     systemName: isProcessingScreenshots ? "rays" : "plus",
                     isDisabled: isProcessingScreenshots,
                     isSpinning: isProcessingScreenshots,
                     action: processMoreScreenshots
                 )
 
-                screenshotActionButton(
-                    title: "Upload Photos",
-                    systemName: "photo",
-                    action: editGalleryAccess
+                Button {
+                    isPhotoPickerPresented = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "photo")
+                            .font(.system(size: 16, weight: .medium))
+                        Text("upload photos")
+                            .font(.system(size: 16, weight: .medium))
+                            .tracking(-0.4)
+                    }
+                    .foregroundStyle(.primary)
+                    .opacity(isProcessingScreenshots ? 0.5 : 1)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 42)
+                    .background(Color("raisedSurface"), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(isProcessingScreenshots)
+                .photosPicker(
+                    isPresented: $isPhotoPickerPresented,
+                    selection: $selectedPhotoItems,
+                    maxSelectionCount: 5,
+                    matching: .images
                 )
             }
 
-            Text("kindling cannot view your photos :)")
+            HStack(spacing: 4) {
+                Image(systemName: "info.circle")
+                Text("kindling cannot view your photos")
+            }
                 .font(.system(size: 12))
                 .tracking(-0.12)
                 .foregroundStyle(figmaGray)
@@ -561,6 +971,67 @@ struct AccountView: View {
         }
     }
 
+    private func processSelectedPhotos(_ items: [PhotosPickerItem]) {
+        guard !items.isEmpty, !isProcessingScreenshots else { return }
+
+        isProcessingScreenshots = true
+        Task {
+            do {
+                let images = await loadSelectedPhotos(from: items)
+                guard !images.isEmpty else { throw PhotoUploadError.noImages }
+
+                var cards: [ItemWrapper] = []
+                var processedIDs = Set<String>()
+
+                for try await event in uploadImagesStreaming(images: images) {
+                    switch event {
+                    case .idea(let item):
+                        cards.append(item)
+                    case .processed(let id):
+                        processedIDs.insert(id)
+                    }
+                }
+
+                // Save the processed ideas to the same default collection used
+                // by automatic screenshot indexing.
+                try await finalizeItems(cards)
+
+                if let userID = supabase.auth.currentUser?.id {
+                    let service = ParsedScreenshotsService(userID: userID)
+                    service.markAsParsed(Array(processedIDs))
+                    try? await service.syncToSupabase(userID: userID)
+                }
+
+                selectedPhotoItems = []
+                await refreshScreenshotProgress()
+            } catch {
+                selectedPhotoItems = []
+                uploadErrorMessage = error.localizedDescription
+                showUploadError = true
+            }
+
+            isProcessingScreenshots = false
+        }
+    }
+
+    private func loadSelectedPhotos(
+        from items: [PhotosPickerItem]
+    ) async -> [(String, UIImage?)] {
+        var images: [(String, UIImage?)] = []
+        images.reserveCapacity(items.count)
+
+        for item in items {
+            guard
+                let data = try? await item.loadTransferable(type: Data.self),
+                let image = UIImage(data: data)
+            else { continue }
+
+            images.append((item.itemIdentifier ?? UUID().uuidString, image))
+        }
+
+        return images
+    }
+
     private func openSettings() {
         if let url = URL(string: UIApplication.openSettingsURLString) {
             openURL(url)
@@ -620,6 +1091,11 @@ struct AccountView: View {
         if let url = components.url {
             openURL(url)
         }
+    }
+
+    private func openPolicy(path: String) {
+        guard let url = URL(string: "https://getkindl.ing/\(path)") else { return }
+        openURL(url)
     }
 
     // MARK: - Persistence
