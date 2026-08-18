@@ -1,4 +1,7 @@
 {
+  // Source of truth for local `cd web && wrangler …` and Workers Builds
+  // with Root directory `web`. Do not point this Worker at the repo root:
+  // the root wrangler.jsonc is named kindling-api.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "kindling-web",
   "main": "./dist/_worker.js/index.js",
