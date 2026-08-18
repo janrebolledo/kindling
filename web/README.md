@@ -30,3 +30,5 @@ Workers Builds is connected to this Git repo. `kindling-web` lives in `web/`, so
 Do not leave Root directory empty. The repository-root `wrangler.jsonc` is for `kindling-api` and will fail this Worker with a name mismatch.
 
 On `getkindl.ing`, point the custom domain at this worker (not `kindling-api`).
+
+Production deploys run on pushes to `main` (`npx wrangler deploy`). Pull request commits only upload preview versions.
