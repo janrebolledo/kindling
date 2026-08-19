@@ -287,33 +287,6 @@ struct IdeaView: View {
                     .frame(height: 203)
             }
 
-            // "tap to view saved places nearby" bottom overlay
-            ZStack {
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        .clear,
-                        Color(uiColor: UIColor.systemBackground).opacity(0.75),
-                    ]),
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .background(.ultraThinMaterial.opacity(0.3))
-
-                Text("tap to view saved places nearby")
-                    .font(.system(size: 16, weight: .medium))
-                    .tracking(-0.4)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 53)
-            .clipShape(
-                UnevenRoundedRectangle(
-                    topLeadingRadius: 0,
-                    bottomLeadingRadius: 24,
-                    bottomTrailingRadius: 24,
-                    topTrailingRadius: 0
-                )
-            )
         }
         .frame(height: 203)
         .clipShape(RoundedRectangle(cornerRadius: 24))
