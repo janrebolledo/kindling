@@ -15,7 +15,6 @@ export type Idea = {
   time: string | null;
   venue: string | null;
   place_id: string | null;
-  place_provider: 'apple' | 'google' | null;
   open_hours: string[] | null;
 };
 
@@ -68,7 +67,6 @@ export type SharedIdea = Pick<
   | 'duration'
   | 'venue'
   | 'place_id'
-  | 'place_provider'
   | 'open_hours'
   | 'created_at'
 >;

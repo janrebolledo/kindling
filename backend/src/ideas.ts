@@ -38,7 +38,6 @@ async function findIdeaByPlaceId(
     .from('ideas')
     .select()
     .eq('place_id', placeId)
-    .eq('place_provider', 'apple')
     .maybeSingle();
   if (error) return null;
   return data;
@@ -74,7 +73,6 @@ async function getOrCreateIdeaForPlace(
     venue,
     open_hours: null,
     place_id: placeId,
-    place_provider: 'apple',
   };
 
   // `ideas.id` is a Postgres identity column, so let the database generate it

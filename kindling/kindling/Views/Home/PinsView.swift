@@ -20,11 +20,6 @@ private struct MappedIdea: Identifiable {
     var id: Int { item.ideas?.id ?? item.idea_id }
 }
 
-private struct ApplePlaceIdentityUpdate: Encodable {
-    let place_id: String
-    let place_provider = "apple"
-}
-
 private struct DiscoveryIdeaImage: View {
     let item: CollectionItemWrapper
     @State private var localImage: UIImage?
@@ -95,17 +90,19 @@ private struct DiscoverySheetBackground: View {
                     startRadius: 0,
                     endRadius: max(proxy.size.width, proxy.size.height) * 0.58
                 )
-                .scaleEffect(x: 0.78, y: 1)
+                .frame(width: proxy.size.width, height: proxy.size.height)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
-private enum SheetSectionDestination: Hashable {
+private enum SheetSectionDestination: Hashable, Identifiable {
     case nomnomnom
     case nearby
     case events
+
+    var id: Self { self }
 }
 
 @Observable
@@ -230,6 +227,14 @@ struct PinsView: View {
                     .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.55)))
                     .presentationContentInteraction(.resizes)
                     .interactiveDismissDisabled(true)
+            }
+            .sheet(item: $sectionDestination) { destination in
+                sectionSheet(for: destination)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+                    .presentationContentInteraction(.scrolls)
+                    .presentationCornerRadius(0)
+                    .interactiveDismissDisabled(false)
             }
         }
         .task {
@@ -403,28 +408,44 @@ struct PinsView: View {
                             .toolbarVisibility(.visible, for: .navigationBar)
                         }
                     }
-                    .navigationDestination(item: $sectionDestination) { destination in
-                        switch destination {
-                        case .nomnomnom:
-                            SectionDetailView(
-                                title: "#nomnomnom",
-                                subtitle: subtitle(for: allNomnomnomItems),
-                                items: allNomnomnomItems
-                            )
-                        case .nearby:
-                            SectionDetailView(
-                                title: "Things Near You",
-                                subtitle: "places near you",
-                                items: filteredLocationItems
-                            )
-                        case .events:
-                            SectionDetailView(
-                                title: "events this week",
-                                subtitle: "what’s happening this week",
-                                items: filteredEventItems
-                            )
-                        }
+            }
+        }
+    }
+
+    private func sectionSheet(for destination: SheetSectionDestination) -> some View {
+        NavigationStack {
+            Group {
+                switch destination {
+                case .nomnomnom:
+                    SectionDetailView(
+                        title: "#nomnomnom",
+                        subtitle: subtitle(for: allNomnomnomItems),
+                        items: allNomnomnomItems
+                    )
+                case .nearby:
+                    SectionDetailView(
+                        title: "Things Near You",
+                        subtitle: "places near you",
+                        items: filteredLocationItems
+                    )
+                case .events:
+                    SectionDetailView(
+                        title: "events this week",
+                        subtitle: "what’s happening this week",
+                        items: filteredEventItems
+                    )
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        sectionDestination = nil
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 13, weight: .semibold))
                     }
+                    .accessibilityLabel("Close")
+                }
             }
         }
     }
@@ -439,21 +460,21 @@ struct PinsView: View {
                     discoverySection(
                         title: "#nomnomnom",
                         items: nomnomnomItems,
-                        action: { sectionDestination = .nomnomnom }
+                        action: { openSection(.nomnomnom) }
                     )
                 }
 
                 discoverySection(
                     title: "Things Near You",
                     items: filteredLocationItems,
-                    action: { sectionDestination = .nearby }
+                    action: { openSection(.nearby) }
                 )
 
                 if !filteredEventItems.isEmpty {
                     discoverySection(
                         title: "events this week",
                         items: filteredEventItems,
-                        action: { sectionDestination = .events }
+                        action: { openSection(.events) }
                     )
                 }
             }
@@ -463,19 +484,12 @@ struct PinsView: View {
         }
         .frame(maxWidth: .infinity)
         .scrollIndicators(.hidden)
+        .scrollEdgeEffectStyle(.soft, for: .top)
         .safeAreaInset(edge: .top, spacing: 0) {
             searchBar
                 .padding(.horizontal, 20)
-                .padding(.top, 10)
+                .padding(.top, 18)
                 .padding(.bottom, 12)
-                .background {
-                    VariableBlurView(
-                        maxBlurRadius: 24,
-                        direction: .blurredTopClearBottom,
-                        startOffset: -0.1
-                    )
-                    .ignoresSafeArea(edges: .top)
-                }
         }
     }
 
@@ -670,6 +684,16 @@ struct PinsView: View {
         isShowingIdeaInSheet = true
     }
 
+    private func openSection(_ destination: SheetSectionDestination) {
+        // The section page is a sibling presentation, not a destination
+        // nested inside the discovery sheet. Give the first sheet a run loop
+        // to dismiss before presenting the new full-height sheet.
+        isDiscoverySheetPresented = false
+        DispatchQueue.main.async {
+            sectionDestination = destination
+        }
+    }
+
     private func focusOnMap(_ item: CollectionItemWrapper) {
         guard let mapped = mappedIdeas.first(where: { $0.id == (item.ideas?.id ?? item.idea_id) }) else {
             // Keep cards without a resolvable location usable.
@@ -727,10 +751,7 @@ struct PinsView: View {
 
     private func resolveMissingPlaces() async {
         let candidates = allLocationItems.filter { item in
-            let idea = item.ideas
-            guard idea?.place_id != nil else { return false }
-            let provider = idea?.place_provider?.lowercased()
-            return provider == "apple" || provider == nil || provider == "google"
+            item.ideas?.place_id != nil
         }
 
         var resolvedThisPass = 0
@@ -766,29 +787,13 @@ struct PinsView: View {
                 continue
             }
 
-            let id = item.ideas?.id ?? item.idea_id
             mappedIdeas.append(MappedIdea(item: item, coordinate: coordinate))
-
-            // Legacy rows may still contain a Google ID. Once MapKit resolves
-            // one, replace only the persisted identity with Apple's ID; the
-            // coordinate remains transient.
-            if item.ideas?.place_provider?.lowercased() != "apple",
-               let appleID = mapItem.identifier?.rawValue {
-                let update = ApplePlaceIdentityUpdate(place_id: appleID)
-                try? await supabase
-                    .from("ideas")
-                    .update(update)
-                    .eq("id", value: id)
-                    .eq("place_provider", value: item.ideas?.place_provider ?? "google")
-                    .execute()
-            }
         }
     }
 
     private func resolveMapItem(for item: CollectionItemWrapper) async -> MKMapItem? {
         let idea = item.ideas
-        if idea?.place_provider?.lowercased() == "apple",
-           let placeID = idea?.place_id,
+        if let placeID = idea?.place_id,
            let identifier = MKMapItem.Identifier(rawValue: placeID) {
             let request = MKMapItemRequest(mapItemIdentifier: identifier)
             return await withCheckedContinuation { continuation in
@@ -797,18 +802,7 @@ struct PinsView: View {
                 }
             }
         }
-
-        // Legacy Google rows have no Apple ID yet. Migrate only the small
-        // visible-resolution batch; new rows never take this search path.
-        let address = [idea?.venue, idea?.address, idea?.location]
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .joined(separator: ", ")
-        guard !address.isEmpty else { return nil }
-        let request = MKLocalSearch.Request()
-        request.naturalLanguageQuery = address
-        request.resultTypes = .pointOfInterest
-        return try? await MKLocalSearch(request: request).start().mapItems.first
+        return nil
     }
 
     private func centerMapOnUser(_ coordinate: CLLocationCoordinate2D) {
