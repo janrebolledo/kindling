@@ -16,8 +16,13 @@ private let homeSectionPreviewLimit = 5
 private struct MappedIdea: Identifiable {
     let item: CollectionItemWrapper
     let coordinate: CLLocationCoordinate2D
+    let mapName: String?
 
     var id: Int { item.ideas?.id ?? item.idea_id }
+
+    var displayName: String {
+        mapName ?? item.ideas?.name ?? "Saved idea"
+    }
 }
 
 private struct DiscoveryIdeaImage: View {
@@ -277,7 +282,7 @@ struct PinsView: View {
         Map(position: $cameraPosition, selection: $selectedIdeaID) {
             ForEach(visibleIdeas) { mapped in
                 Annotation(
-                    mapped.item.ideas?.name ?? "Saved idea",
+                    mapped.displayName,
                     coordinate: mapped.coordinate,
                     anchor: .bottom
                 ) {
@@ -320,7 +325,7 @@ struct PinsView: View {
         }
         .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
         .animation(.spring(response: 0.3, dampingFraction: 0.82), value: isSelected)
-        .accessibilityLabel(mapped.item.ideas?.name ?? "Saved idea")
+        .accessibilityLabel(mapped.displayName)
     }
 
     private func pinEmoji(_ mapped: MappedIdea, isSelected: Bool) -> some View {
@@ -615,7 +620,11 @@ struct PinsView: View {
     }
 
     private func discoveryCard(_ item: CollectionItemWrapper) -> some View {
-        Button {
+        let displayName = mappedIdeas.first {
+            $0.id == (item.ideas?.id ?? item.idea_id)
+        }?.displayName ?? item.ideas?.name ?? "Untitled"
+
+        return Button {
             focusOnMap(item)
         } label: {
             VStack(alignment: .leading, spacing: 8) {
@@ -626,7 +635,7 @@ struct PinsView: View {
                         in: ideaTransition
                     )
 
-                Text(item.ideas?.name ?? "Untitled")
+                Text(displayName)
                     .font(.system(size: 19, weight: .medium))
                     .tracking(-0.45)
                     .foregroundStyle(.primary)
@@ -646,11 +655,16 @@ struct PinsView: View {
     }
 
     private func selectedPreview(_ item: CollectionItemWrapper) -> some View {
-        Button {
+        let mapName = mappedIdeas.first {
+            $0.id == (item.ideas?.id ?? item.idea_id)
+        }?.mapName
+
+        return Button {
             showIdeaInSheet(item)
         } label: {
             Card(
                 card: item,
+                mapName: mapName,
                 loadsMapData: false,
                 allowsDetailPresentation: false,
                 animatesImageLoading: false
@@ -724,7 +738,7 @@ struct PinsView: View {
 
     private func refreshMappedIdeas() {
         let previous = Dictionary(
-            mappedIdeas.map { ($0.id, $0.coordinate) },
+            mappedIdeas.map { ($0.id, ($0.coordinate, $0.mapName)) },
             uniquingKeysWith: { current, _ in current }
         )
 
@@ -733,8 +747,8 @@ struct PinsView: View {
             // Coordinates are MapKit response data and stay in memory only.
             // Keep a successfully resolved pin visible while a collection
             // refresh is happening.
-            guard let coordinate = previous[id] else { return nil }
-            return MappedIdea(item: item, coordinate: coordinate)
+            guard let (coordinate, mapName) = previous[id] else { return nil }
+            return MappedIdea(item: item, coordinate: coordinate, mapName: mapName)
         }
     }
 
@@ -776,7 +790,9 @@ struct PinsView: View {
                 continue
             }
 
-            mappedIdeas.append(MappedIdea(item: item, coordinate: coordinate))
+            mappedIdeas.append(
+                MappedIdea(item: item, coordinate: coordinate, mapName: mapItem.name)
+            )
         }
     }
 

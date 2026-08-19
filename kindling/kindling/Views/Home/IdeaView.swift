@@ -32,7 +32,7 @@ struct IdeaView: View {
     @State private var polaroidRotation = Double.random(in: -6...6)
 
     private var venueTitle: String {
-        card.ideas?.name ?? "Untitled"
+        mapItem?.name ?? card.ideas?.name ?? "Untitled"
     }
 
     private var locationText: String {

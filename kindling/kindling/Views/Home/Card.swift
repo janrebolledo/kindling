@@ -22,13 +22,14 @@ struct Card: View {
 
     var function: ((ItemWrapper?) async -> Void)?
     var card: CardData
+    var mapName: String? = nil
     var loadsMapData = true
     var allowsDetailPresentation = true
     var allowsDeletion = true
     var animatesImageLoading = false
 
     private var venueTitle: String {
-        card.ideas?.name ?? "Untitled"
+        mapName ?? mapItem?.name ?? card.ideas?.name ?? "Untitled"
     }
 
     private var isEvent: Bool {
