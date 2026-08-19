@@ -7,6 +7,7 @@ export type SharedIdea = {
   address: string | null;
   location: string | null;
   location_type: string | null;
+  location_emoji: string | null;
   duration: string | null;
   venue: string | null;
   place_id: string | null;

@@ -8,6 +8,7 @@ export type Idea = {
   address: string | null;
   location: string | null;
   location_type: string | null;
+  location_emoji: string | null;
   duration: string | null;
   pricing: number | null;
   date: string | null;
@@ -61,6 +62,7 @@ export type SharedIdea = Pick<
   | 'address'
   | 'location'
   | 'location_type'
+  | 'location_emoji'
   | 'duration'
   | 'venue'
   | 'place_id'

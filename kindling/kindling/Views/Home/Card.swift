@@ -175,7 +175,7 @@ struct Card: View {
                         .foregroundStyle(.black.opacity(0.5))
                     } else {
                         HStack(spacing: 8) {
-                            if let locationType = card.ideas?.location_type {
+                            if let locationType = card.ideas?.locationTypeLabel {
                                 Text(locationType).fontWeight(.medium)
                             }
                             if let duration = card.ideas?.duration {
@@ -225,7 +225,7 @@ struct Card: View {
                     .foregroundStyle(.primary.opacity(0.5))
                 } else {
                     HStack(spacing: 8) {
-                        if let locationType = card.ideas?.location_type {
+                        if let locationType = card.ideas?.locationTypeLabel {
                             Text(locationType).fontWeight(.medium)
                         }
                         if let duration = card.ideas?.duration {
@@ -401,4 +401,3 @@ private final class CardLocationManager: NSObject, CLLocationManagerDelegate {
 #Preview {
     ContentView()
 }
-

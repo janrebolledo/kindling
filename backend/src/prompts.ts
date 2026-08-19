@@ -77,19 +77,22 @@ Extract the following when available in the OCR text:
    - "food": Restaurants, cafes, bars, food trucks, bakeries
    - Use the most appropriate tag based on the primary purpose
 
-8. **activity_type**: Type of activity
-   - Examples: "⛰️ Outdoors", "🎷 Music", "☕ Coffee Shop", "🎡 Festival", "🏅 Sports", "️🎨 Art", "🍽️ Restaurant", "🍦 Dessert"
+8. **activity_type**: Text-only type/classifier for the location, without an emoji
+   - Examples: "Outdoors", "Music", "Coffee Shop", "Festival", "Sports", "Art", "Restaurant", "Dessert"
 
-9. **description**: A soft description of item
+9. **activity_emoji**: One emoji classifier for the location type, without any text
+   - Examples: "⛰️", "🎷", "☕", "🎡", "🏅", "🎨", "🍽️", "🍦"
+
+10. **description**: A soft description of item
    - Examples: "A whimsical, picturesque, hiking trail surrounded by mooing friends.", "A Mexico City inspired cafe framed by the LA Metro."
 
-10. **highlights**: A short AI-generated one-liner summarizing standout details about the place
+11. **highlights**: A short AI-generated one-liner summarizing standout details about the place
     - Only extract if there are notable highlights mentioned (e.g., hours, amenities, unique features, tips)
     - Write as a punchy, lowercase, ampersand-joined summary
     - Examples: "open late & has outlets on every table", "dog friendly & great for remote work", "cash only & worth the wait"
     - Set to null if no highlights are mentioned
 
-11. **highlights_sources**: The raw text strings that were used to produce the highlights one-liner
+12. **highlights_sources**: The raw text strings that were used to produce the highlights one-liner
     - Return as an array of the exact quoted/comment strings you pulled from the OCR text
     - Set to null if highlights is null
 
@@ -121,6 +124,7 @@ Structure:
     "time": "HH:MM AM/PM or null",
     "tag": "activity" | "event" | "food",
     "activity_type": "string or null",
+    "activity_emoji": "string or null",
     "description": "string",
     "highlights": "string or null",
     "highlights_sources": ["string"] or null
@@ -144,7 +148,8 @@ Output:
     "date": "2024-07-15",
     "time": "6:00 PM",
     "tag": "event",
-    "activity_type": "🎷 Music",
+    "activity_type": "Music",
+    "activity_emoji": "🎷",
     "description": "A sunny little jazz portal in Griffith Park, where the hills hum and the trees keep time.",
     "highlights": null,
     "highlights_sources": null
@@ -166,7 +171,8 @@ Output:
     "date": null,
     "time": null,
     "tag": "food",
-    "activity_type": "🍽️ Restaurant",
+    "activity_type": "Restaurant",
+    "activity_emoji": "🍽️",
     "description": "A cozy Inland Empire wine haven where vinyl spins, glasses clink, and time walks barefoot.",
     "highlights": null,
     "highlights_sources": null
@@ -188,7 +194,8 @@ Output:
     "date": null,
     "time": null,
     "tag": "activity",
-    "activity_type": "⛰️ Outdoor",
+    "activity_type": "Outdoor",
+    "activity_emoji": "⛰️",
     "description": "A whimsical, picturesque, hiking trail surrounded by mooing friends.",
     "highlights": null,
     "highlights_sources": null
@@ -210,7 +217,8 @@ Output:
     "date": null,
     "time": null,
     "tag": "event",
-    "activity_type": "🎷 Music",
+    "activity_type": "Music",
+    "activity_emoji": "🎷",
     "description": "A vintage americana coffeehouse where musicians and creatives find their flock.",
     "highlights": null,
     "highlights_sources": null
@@ -265,9 +273,10 @@ CRITICAL REMINDERS
 6. Do NOT infer or guess missing information
 7. Output valid JSON only - no markdown formatting, no code blocks
 8. Skip expired events (past dates)
-9. activity_type is only for activities, null for events and food
-10. highlights should be null if no notable highlights are present in the OCR text
-11. highlights_sources must be the exact strings from the OCR that informed the highlights
+9. activity_type must contain text only; never include an emoji in it
+10. activity_emoji must contain only one emoji; never include descriptive text in it
+11. highlights should be null if no notable highlights are present in the OCR text
+12. highlights_sources must be the exact strings from the OCR that informed the highlights
 
 Screenshot Data:
 

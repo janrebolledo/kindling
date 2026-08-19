@@ -56,6 +56,7 @@ export type ExtractedItem = {
   time: string | null;
   tag: ExtractionTag;
   activity_type: string | null;
+  activity_emoji: string | null;
   description: string | null;
   highlights: string | null;
   highlights_sources: string[] | null;
