@@ -144,7 +144,7 @@ app.post('/ideas', async (c) => {
             status: result.via === 'insert' ? 'inserted' : 'reused',
             via: result.via,
             idea_id: result.draft.idea_id,
-            venue: result.draft.ideas.venue,
+            venue: result.draft.ideas.name,
             place_id: result.draft.ideas.place_id,
           });
           await stream.writeSSE({

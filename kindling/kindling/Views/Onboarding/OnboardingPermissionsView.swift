@@ -203,7 +203,7 @@ struct OnboardingPermissionsView: View {
                 .value
 
             let candidates = ideas.filter {
-                $0.media_url != nil && $0.venue != nil
+                $0.media_url != nil && $0.name != nil
             }
             let selected = Array(candidates.shuffled().prefix(8))
             showcaseCards = selected.map { idea in

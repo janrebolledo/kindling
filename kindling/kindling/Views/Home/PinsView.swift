@@ -176,7 +176,7 @@ struct PinsView: View {
         guard !query.isEmpty else { return mappedIdeas }
         return mappedIdeas.filter { mapped in
             let idea = mapped.item.ideas
-            return [idea?.venue, idea?.name, idea?.location, idea?.location_type]
+            return [idea?.name, idea?.location_type]
                 .contains { $0?.lowercased().contains(query) == true }
         }
     }
@@ -277,7 +277,7 @@ struct PinsView: View {
         Map(position: $cameraPosition, selection: $selectedIdeaID) {
             ForEach(visibleIdeas) { mapped in
                 Annotation(
-                    mapped.item.ideas?.venue ?? "Saved idea",
+                    mapped.item.ideas?.name ?? "Saved idea",
                     coordinate: mapped.coordinate,
                     anchor: .bottom
                 ) {
@@ -320,7 +320,7 @@ struct PinsView: View {
         }
         .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
         .animation(.spring(response: 0.3, dampingFraction: 0.82), value: isSelected)
-        .accessibilityLabel(mapped.item.ideas?.venue ?? "Saved idea")
+        .accessibilityLabel(mapped.item.ideas?.name ?? "Saved idea")
     }
 
     private func pinEmoji(_ mapped: MappedIdea, isSelected: Bool) -> some View {
@@ -520,7 +520,7 @@ struct PinsView: View {
         guard !query.isEmpty else { return items }
         return items.filter { item in
             let idea = item.ideas
-            return [idea?.venue, idea?.name, idea?.location, idea?.location_type]
+            return [idea?.name, idea?.location_type]
                 .contains { $0?.lowercased().contains(query) == true }
         }
     }
@@ -626,29 +626,18 @@ struct PinsView: View {
                         in: ideaTransition
                     )
 
-                Text(item.ideas?.venue ?? "Untitled")
+                Text(item.ideas?.name ?? "Untitled")
                     .font(.system(size: 19, weight: .medium))
                     .tracking(-0.45)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
-                Text(item.ideas?.location ?? item.ideas?.address ?? "—")
+                Text(item.ideas?.locationTypeLabel ?? "saved place")
                     .font(.system(size: 14))
                     .tracking(-0.3)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
 
-                if let hours = item.ideas?.open_hours,
-                   let status = resolveOpenStatus(from: hours) {
-                    HStack(spacing: 7) {
-                        Text(status.isOpen ? "Open" : "Closed")
-                            .fontWeight(.medium)
-                        Text(status.detail)
-                    }
-                    .font(.system(size: 14))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                }
             }
             .frame(width: 250, alignment: .leading)
             .contentShape(Rectangle())

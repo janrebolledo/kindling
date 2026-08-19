@@ -41,18 +41,13 @@ struct Item: Codable, Identifiable {
     let type: String?
     let description: String?
     let media_url: String?
-    let address: String?
-    let location: String?
     let location_type: String?
     let location_emoji: String?
     let duration: String?
-    let pricing: Int?
     let date: String?
     let time: String?
-    let venue: String?
     let place_id: String?
     let created_at: String?
-    let open_hours: [String]?
 
     var locationTypeLabel: String? {
         let label = [location_emoji, location_type]

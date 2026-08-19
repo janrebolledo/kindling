@@ -154,9 +154,6 @@ struct SectionDetailView: View {
 
     private var availableFilters: [SectionFilter] {
         var result: [SectionFilter] = []
-        if items.contains(where: { ($0.ideas?.open_hours?.isEmpty == false) }) {
-            result.append(.openNow)
-        }
 
         var categories = Set<String>()
         for item in items {
@@ -185,10 +182,7 @@ struct SectionDetailView: View {
             if case .category(let name) = filter { return name }
             return nil
         }
-        let openNow = selectedFilters.contains(.openNow)
-
         return items.filter { item in
-            if openNow && !isOpenNow(item) { return false }
             if !categories.isEmpty && !categories.contains(where: { matches(item, category: $0) }) {
                 return false
             }
@@ -209,14 +203,8 @@ struct SectionDetailView: View {
 
     private func label(for filter: SectionFilter) -> String {
         switch filter {
-        case .openNow: "open now"
         case .category(let name): name
         }
-    }
-
-    private func isOpenNow(_ item: CollectionItemWrapper) -> Bool {
-        guard let hours = item.ideas?.open_hours else { return false }
-        return resolveOpenStatus(from: hours)?.isOpen == true
     }
 
     private func matches(_ item: CollectionItemWrapper, category: String) -> Bool {
@@ -225,7 +213,7 @@ struct SectionDetailView: View {
             if locationType.lowercased().contains(singular(category)) { return true }
         }
 
-        let haystack = [item.ideas?.location_type, item.ideas?.venue, item.ideas?.name]
+        let haystack = [item.ideas?.location_type, item.ideas?.name]
             .compactMap { $0?.lowercased() }
             .joined(separator: " ")
 
@@ -284,6 +272,5 @@ struct SectionDetailView: View {
 }
 
 private enum SectionFilter: Hashable {
-    case openNow
     case category(String)
 }

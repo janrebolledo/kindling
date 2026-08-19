@@ -4,14 +4,12 @@ export type SharedIdea = {
   type: string | null;
   description: string | null;
   media_url: string | null;
-  address: string | null;
-  location: string | null;
   location_type: string | null;
   location_emoji: string | null;
   duration: string | null;
-  venue: string | null;
   place_id: string | null;
-  open_hours: string[] | null;
+  date: string | null;
+  time: string | null;
   created_at: string;
 };
 

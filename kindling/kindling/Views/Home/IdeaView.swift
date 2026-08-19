@@ -32,13 +32,11 @@ struct IdeaView: View {
     @State private var polaroidRotation = Double.random(in: -6...6)
 
     private var venueTitle: String {
-        card.ideas?.venue ?? "Untitled"
+        card.ideas?.name ?? "Untitled"
     }
 
     private var locationText: String {
-        (card.ideas?.location?.isEmpty ?? true)
-            ? (card.ideas?.address ?? "—")
-            : card.ideas?.location ?? "—"
+        card.ideas?.locationTypeLabel ?? "saved place"
     }
 
     var body: some View {
@@ -79,19 +77,13 @@ struct IdeaView: View {
                 .padding(.bottom, 8)
 
                 // Status row
-                if card.ideas?.locationTypeLabel != nil || card.ideas?.duration != nil || card.ideas?.open_hours != nil {
+                if card.ideas?.locationTypeLabel != nil || card.ideas?.duration != nil {
                     HStack(spacing: 8) {
-                        if let hours = card.ideas?.open_hours,
-                           let status = resolveOpenStatus(from: hours) {
-                            Text(status.isOpen ? "Open" : "Closed").fontWeight(.medium)
-                            Text(status.detail)
-                        } else {
-                            if let locationType = card.ideas?.locationTypeLabel {
-                                Text(locationType).fontWeight(.medium)
-                            }
-                            if let hrs = card.ideas?.duration {
-                                Text(hrs)
-                            }
+                        if let locationType = card.ideas?.locationTypeLabel {
+                            Text(locationType).fontWeight(.medium)
+                        }
+                        if let hrs = card.ideas?.duration {
+                            Text(hrs)
                         }
                     }
                     .font(.system(size: 16))
@@ -159,33 +151,6 @@ struct IdeaView: View {
                 .padding(.horizontal, 13)
                 .padding(.bottom, 48)
                 .background { SheetScrollOwnership() }
-
-            // Hours
-            if let hours = card.ideas?.open_hours, !hours.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("hours")
-                        .font(.system(size: 14, weight: .medium))
-                        .tracking(-0.35)
-                        .foregroundStyle(.secondary)
-                    ForEach(hours, id: \.self) { entry in
-                        let parts = entry.split(separator: ":", maxSplits: 1).map(String.init)
-                        HStack(alignment: .top) {
-                            Text(parts.first ?? entry)
-                                .font(.system(size: 14, weight: .medium))
-                                .tracking(-0.35)
-                                .foregroundStyle(.primary)
-                                .frame(width: 100, alignment: .leading)
-                            Text(parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : "")
-                                .font(.system(size: 14))
-                                .tracking(-0.35)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 24)
-                .padding(.bottom, 32)
-            }
 
             // Polaroid + saved info + actions
             savedSection

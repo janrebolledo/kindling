@@ -13,10 +13,6 @@ type AppleMapsCredentials = {
 
 type ApplePlace = {
   id?: string;
-  name?: string;
-  formattedAddressLines?: string[];
-  coordinate?: { latitude?: number; longitude?: number };
-  structuredAddress?: MapsPlace['structuredAddress'];
 };
 
 type AppleSearchResponse = {
@@ -115,13 +111,7 @@ async function getMapsAccessToken(credentials: AppleMapsCredentials): Promise<st
 }
 
 function toMapsPlace(place: ApplePlace): MapsPlace | null {
-  if (!place.id || !place.name) return null;
-  return {
-    id: place.id,
-    name: place.name,
-    formattedAddress: place.formattedAddressLines?.join(', '),
-    structuredAddress: place.structuredAddress,
-  };
+  return place.id ? { id: place.id } : null;
 }
 
 export async function lookupPlace(

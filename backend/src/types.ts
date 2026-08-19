@@ -5,17 +5,12 @@ export type Idea = {
   type: string | null;
   description: string | null;
   media_url: string | null;
-  address: string | null;
-  location: string | null;
   location_type: string | null;
   location_emoji: string | null;
   duration: string | null;
-  pricing: number | null;
   date: string | null;
   time: string | null;
-  venue: string | null;
   place_id: string | null;
-  open_hours: string[] | null;
 };
 
 // The enriched, user-agnostic shape of a collection_item. The client caches
@@ -34,17 +29,6 @@ export type DraftCollectionItem = {
 
 export type MapsPlace = {
   id?: string;
-  name?: string;
-  formattedAddress?: string;
-  structuredAddress?: {
-    administrativeArea?: string;
-    administrativeAreaCode?: string;
-    locality?: string;
-    postCode?: string;
-    subLocality?: string;
-    thoroughfare?: string;
-    subThoroughfare?: string;
-  };
 };
 
 export type Screenshot = {
@@ -60,13 +44,11 @@ export type SharedIdea = Pick<
   | 'type'
   | 'description'
   | 'media_url'
-  | 'address'
-  | 'location'
   | 'location_type'
   | 'location_emoji'
   | 'duration'
-  | 'venue'
   | 'place_id'
-  | 'open_hours'
+  | 'date'
+  | 'time'
   | 'created_at'
 >;

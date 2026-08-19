@@ -27,12 +27,8 @@ struct Card: View {
     var allowsDeletion = true
     var animatesImageLoading = false
 
-    private var address: String {
-        (card.ideas?.address ?? card.ideas?.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
     private var venueTitle: String {
-        card.ideas?.venue ?? "Untitled"
+        card.ideas?.name ?? "Untitled"
     }
 
     private var isEvent: Bool {
@@ -164,28 +160,17 @@ struct Card: View {
 
                     locationEtaRow(fontSize: 14, color: .black)
 
-                    if let hours = card.ideas?.open_hours,
-                       let status = resolveOpenStatus(from: hours) {
-                        HStack(spacing: 8) {
-                            Text(status.isOpen ? "Open" : "Closed").fontWeight(.medium)
-                            Text(status.detail)
+                    HStack(spacing: 8) {
+                        if let locationType = card.ideas?.locationTypeLabel {
+                            Text(locationType).fontWeight(.medium)
                         }
-                        .font(.system(size: 14))
-                        .tracking(-0.35)
-                        .foregroundStyle(.black.opacity(0.5))
-                    } else {
-                        HStack(spacing: 8) {
-                            if let locationType = card.ideas?.locationTypeLabel {
-                                Text(locationType).fontWeight(.medium)
-                            }
-                            if let duration = card.ideas?.duration {
-                                Text(duration)
-                            }
+                        if let duration = card.ideas?.duration {
+                            Text(duration)
                         }
-                        .font(.system(size: 14))
-                        .tracking(-0.35)
-                        .foregroundStyle(.black.opacity(0.5))
                     }
+                    .font(.system(size: 14))
+                    .tracking(-0.35)
+                    .foregroundStyle(.black.opacity(0.5))
                 }
             }
             .padding(16)
@@ -214,28 +199,17 @@ struct Card: View {
 
                 locationEtaRow(fontSize: 14, color: .secondary)
 
-                if let hours = card.ideas?.open_hours,
-                   let status = resolveOpenStatus(from: hours) {
-                    HStack(spacing: 8) {
-                        Text(status.isOpen ? "Open" : "Closed").fontWeight(.medium)
-                        Text(status.detail)
+                HStack(spacing: 8) {
+                    if let locationType = card.ideas?.locationTypeLabel {
+                        Text(locationType).fontWeight(.medium)
                     }
-                    .font(.system(size: 14))
-                    .tracking(-0.35)
-                    .foregroundStyle(.primary.opacity(0.5))
-                } else {
-                    HStack(spacing: 8) {
-                        if let locationType = card.ideas?.locationTypeLabel {
-                            Text(locationType).fontWeight(.medium)
-                        }
-                        if let duration = card.ideas?.duration {
-                            Text(duration)
-                        }
+                    if let duration = card.ideas?.duration {
+                        Text(duration)
                     }
-                    .font(.system(size: 14))
-                    .tracking(-0.35)
-                    .foregroundStyle(.primary.opacity(0.5))
                 }
+                .font(.system(size: 14))
+                .tracking(-0.35)
+                .foregroundStyle(.primary.opacity(0.5))
             }
             .padding(8)
         }
@@ -274,7 +248,7 @@ struct Card: View {
     @ViewBuilder
     private func locationEtaRow(fontSize: CGFloat, color: some ShapeStyle) -> some View {
         HStack(spacing: 4) {
-            Text(card.ideas?.location ?? "—")
+            Text(card.ideas?.locationTypeLabel ?? "saved place")
             if let eta = etaString {
                 Text("•")
                 Image(systemName: userSettings.transportType.icon)
@@ -331,21 +305,19 @@ struct Card: View {
 
     private func fetchMapData() async {
         if mapItem != nil { return }
-        guard !address.isEmpty else { return }
-        let request = MKLocalSearch.Request()
-        request.naturalLanguageQuery = address
-        do {
-            try Task.checkCancellation()
-            let response = try await MKLocalSearch(request: request).start()
-            try Task.checkCancellation()
-            guard let item = response.mapItems.first else { return }
-            mapItem = item
-            directionsCache.store(mapItem: item, for: ideaID)
-        } catch is CancellationError {
-            return
-        } catch {
-            print("MapKit search error: \(error)")
+        guard let placeID = card.ideas?.place_id,
+              let identifier = MKMapItem.Identifier(rawValue: placeID)
+        else { return }
+
+        let request = MKMapItemRequest(mapItemIdentifier: identifier)
+        let item = await withCheckedContinuation { continuation in
+            request.getMapItem { mapItem, _ in
+                continuation.resume(returning: mapItem)
+            }
         }
+        guard !Task.isCancelled, let item else { return }
+        mapItem = item
+        directionsCache.store(mapItem: item, for: ideaID)
     }
 
     private func fetchETA() async {

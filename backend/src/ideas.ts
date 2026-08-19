@@ -3,7 +3,7 @@ import { lookupPlace } from './places';
 import type { ExtractedItem, ExtractionResult } from './utils/parseScreenshot';
 import type { DraftCollectionItem, Idea, MapsPlace } from './types';
 
-export type LinkedVia = 'place_id' | 'insert' | 'conflict' | 'fts';
+export type LinkedVia = 'place_id' | 'insert' | 'conflict';
 
 export type ProcessResult =
   | { status: 'linked'; via: LinkedVia; draft: DraftCollectionItem }
@@ -24,12 +24,6 @@ function toDraft(
   };
 }
 
-function locationLabel(place: MapsPlace): string | null {
-  const city = place.structuredAddress?.locality ?? '';
-  const state = place.structuredAddress?.administrativeArea ?? '';
-  return `${city}${city && state ? ', ' : ''}${state}`.trim() || null;
-}
-
 async function findIdeaByPlaceId(
   supabase: SupabaseClient,
   placeId: string,
@@ -48,30 +42,21 @@ async function getOrCreateIdeaForPlace(
   place: MapsPlace,
   image: string | null,
   item: ExtractedItem,
-): Promise<{ idea: Idea; via: Exclude<LinkedVia, 'fts'> } | null> {
+): Promise<{ idea: Idea; via: LinkedVia } | null> {
   const placeId = place.id!;
   const existing = await findIdeaByPlaceId(supabase, placeId);
   if (existing) return { idea: existing, via: 'place_id' };
-
-  const location = locationLabel(place);
-  const venue = place.name ?? item.venue;
-  const address = place.formattedAddress ?? null;
 
   const newIdea = {
     name: item.name,
     type: item.tag,
     description: item.description ?? null,
     media_url: image,
-    address,
-    location,
     location_type: item.activity_type ?? null,
     location_emoji: item.activity_emoji ?? null,
     duration: null,
-    pricing: null,
     date: item.date,
     time: item.time,
-    venue,
-    open_hours: null,
     place_id: placeId,
   };
 
@@ -114,11 +99,7 @@ export async function processEntry(
   const address = item.address ?? '';
   const query = `${venue} ${location} ${address}`.trim();
 
-  // Places is the identity; FTS is only a fallback when Places misses.
-  const [supabaseResult, mapsData] = await Promise.all([
-    supabase.from('ideas').select().textSearch('venue', venue, { type: 'websearch' }),
-    lookupPlace(query, appleMaps),
-  ]);
+  const mapsData = await lookupPlace(query, appleMaps);
 
   if (mapsData?.place.id) {
     const created = await getOrCreateIdeaForPlace(
@@ -137,18 +118,9 @@ export async function processEntry(
     };
   }
 
-  const { data: matches } = supabaseResult;
-  if (matches && matches.length > 0) {
-    return {
-      status: 'linked',
-      via: 'fts',
-      draft: toDraft(matches[0] as Idea, id, item),
-    };
-  }
-
   return {
     status: 'dropped',
-    reason: 'places_miss_and_no_fts_match',
+    reason: 'apple_maps_miss',
     venue,
   };
 }
