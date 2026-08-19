@@ -1,6 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { lookupPlace } from './places';
-import { mapPriceLevelToInt } from './utils/mapPriceLevelToInt';
 import type { ExtractedItem, ExtractionResult } from './utils/parseScreenshot';
 import type { DraftCollectionItem, Idea, MapsPlace } from './types';
 
@@ -26,16 +25,8 @@ function toDraft(
 }
 
 function locationLabel(place: MapsPlace): string | null {
-  const city =
-    place.addressComponents?.find(
-      (i) => i.types?.includes('locality') && i.types?.includes('political'),
-    )?.longText ?? '';
-  const state =
-    place.addressComponents?.find(
-      (i) =>
-        i.types?.includes('administrative_area_level_1') &&
-        i.types?.includes('political'),
-    )?.longText ?? '';
+  const city = place.structuredAddress?.locality ?? '';
+  const state = place.structuredAddress?.administrativeArea ?? '';
   return `${city}${city && state ? ', ' : ''}${state}`.trim() || null;
 }
 
@@ -47,6 +38,7 @@ async function findIdeaByPlaceId(
     .from('ideas')
     .select()
     .eq('place_id', placeId)
+    .eq('place_provider', 'apple')
     .maybeSingle();
   if (error) return null;
   return data;
@@ -63,26 +55,26 @@ async function getOrCreateIdeaForPlace(
   if (existing) return { idea: existing, via: 'place_id' };
 
   const location = locationLabel(place);
-  const venue = place.displayName?.text ?? item.venue;
+  const venue = place.name ?? item.venue;
   const address = place.formattedAddress ?? null;
 
   const newIdea = {
     name: item.name,
     type: item.tag,
-    description:
-      place.generativeSummary?.overview?.text ?? item.description ?? null,
+    description: item.description ?? null,
     media_url: image,
     address,
     location,
     location_type: item.activity_type ?? null,
     location_emoji: item.activity_emoji ?? null,
     duration: null,
-    pricing: mapPriceLevelToInt(place.priceLevel ?? 'PRICE_LEVEL_UNSPECIFIED'),
+    pricing: null,
     date: item.date,
     time: item.time,
     venue,
-    open_hours: place.currentOpeningHours?.weekdayDescriptions ?? null,
+    open_hours: null,
     place_id: placeId,
+    place_provider: 'apple',
   };
 
   // `ideas.id` is a Postgres identity column, so let the database generate it
@@ -105,7 +97,7 @@ async function getOrCreateIdeaForPlace(
 
 export async function processEntry(
   supabase: SupabaseClient,
-  mapsApiKey: string,
+  appleMaps: Parameters<typeof lookupPlace>[1],
   entry: ExtractionResult,
 ): Promise<ProcessResult> {
   const { id, data } = entry;
@@ -118,7 +110,8 @@ export async function processEntry(
   }
 
   const item = data.item;
-  const venue = item.venue;
+  // The guard above guarantees a venue for successful extraction results.
+  const venue = item.venue!;
   const location = item.location ?? '';
   const address = item.address ?? '';
   const query = `${venue} ${location} ${address}`.trim();
@@ -126,7 +119,7 @@ export async function processEntry(
   // Places is the identity; FTS is only a fallback when Places misses.
   const [supabaseResult, mapsData] = await Promise.all([
     supabase.from('ideas').select().textSearch('venue', venue, { type: 'websearch' }),
-    lookupPlace(query, mapsApiKey),
+    lookupPlace(query, appleMaps),
   ]);
 
   if (mapsData?.place.id) {

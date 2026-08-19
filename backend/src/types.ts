@@ -15,6 +15,7 @@ export type Idea = {
   time: string | null;
   venue: string | null;
   place_id: string | null;
+  place_provider: 'apple' | 'google' | null;
   open_hours: string[] | null;
 };
 
@@ -34,16 +35,17 @@ export type DraftCollectionItem = {
 
 export type MapsPlace = {
   id?: string;
-  addressComponents?: Array<{
-    longText: string;
-    types: string[];
-  }>;
-  generativeSummary?: { overview?: { text?: string } };
+  name?: string;
   formattedAddress?: string;
-  priceLevel?: string;
-  displayName?: { text?: string };
-  currentOpeningHours?: { weekdayDescriptions?: string[] };
-  photos?: Array<{ name: string }>;
+  structuredAddress?: {
+    administrativeArea?: string;
+    administrativeAreaCode?: string;
+    locality?: string;
+    postCode?: string;
+    subLocality?: string;
+    thoroughfare?: string;
+    subThoroughfare?: string;
+  };
 };
 
 export type Screenshot = {
@@ -66,6 +68,7 @@ export type SharedIdea = Pick<
   | 'duration'
   | 'venue'
   | 'place_id'
+  | 'place_provider'
   | 'open_hours'
   | 'created_at'
 >;

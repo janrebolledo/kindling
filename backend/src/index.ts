@@ -92,7 +92,11 @@ app.post('/ideas', async (c) => {
 
   const supabase = createSupabase(c.env);
   const ai = createAI(c.env);
-  const mapsApiKey = c.env.GOOGLE_MAPS_API_KEY;
+  const appleMaps = {
+    APPLE_MAPS_TEAM_ID: c.env.APPLE_MAPS_TEAM_ID,
+    APPLE_MAPS_KEY_ID: c.env.APPLE_MAPS_KEY_ID,
+    APPLE_MAPS_PRIVATE_KEY: c.env.APPLE_MAPS_PRIVATE_KEY,
+  };
 
   let extracted;
   try {
@@ -122,7 +126,7 @@ app.post('/ideas', async (c) => {
             return;
           }
 
-          const result = await processEntry(supabase, mapsApiKey, entry);
+          const result = await processEntry(supabase, appleMaps, entry);
           if (result.status === 'dropped') {
             summary.dropped += 1;
             summary.items.push({

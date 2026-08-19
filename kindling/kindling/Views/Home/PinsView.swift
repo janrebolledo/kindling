@@ -5,185 +5,351 @@
 //  Created by Jan Rebolledo on 2/24/26.
 //
 
+import Foundation
+import MapKit
 import Supabase
 import SwiftUI
 
 private let figmaGray = Color(red: 142 / 255, green: 142 / 255, blue: 147 / 255)
+private let homeSectionPreviewLimit = 5
+
+private struct MappedIdea: Identifiable {
+    let item: CollectionItemWrapper
+    let coordinate: CLLocationCoordinate2D
+
+    var id: Int { item.ideas?.id ?? item.idea_id }
+}
+
+private struct ApplePlaceIdentityUpdate: Encodable {
+    let place_id: String
+    let place_provider = "apple"
+}
+
+private struct DiscoveryIdeaImage: View {
+    let item: CollectionItemWrapper
+    @State private var localImage: UIImage?
+
+    var body: some View {
+        ZStack {
+            Color.gray.opacity(0.14)
+
+            if let mediaURL = item.ideas?.media_url,
+               let url = URL(string: mediaURL) {
+                AsyncImage(url: url) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else if phase.error == nil {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        placeholder
+                    }
+                }
+            } else if let localImage {
+                Image(uiImage: localImage)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                placeholder
+            }
+        }
+        // A concrete render size prevents the async image from changing the
+        // carousel's layout or appearing to move independently of its card.
+        .frame(width: 250, height: 150)
+        .clipped()
+        .task(id: item.local_id) {
+            guard item.ideas?.media_url == nil, !item.local_id.isEmpty else { return }
+            localImage = try? await loadImage(from: item.local_id)
+        }
+    }
+
+    private var placeholder: some View {
+        Image(systemName: "photo")
+            .font(.system(size: 24))
+            .foregroundStyle(.secondary)
+    }
+}
+
+private struct DiscoverySheetBackground: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var surfaceColor: Color {
+        Color(uiColor: .systemBackground)
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack {
+                // Fill the entire presentation first. The map remains visible
+                // above the sheet; keeping the sheet itself opaque prevents
+                // the system material from showing through as a hard band.
+                surfaceColor
+
+                RadialGradient(
+                    stops: [
+                        .init(color: Color(red: 202 / 255, green: 53 / 255, blue: 0).opacity(0.16), location: 0),
+                        .init(color: Color(red: 228 / 255, green: 95 / 255, blue: 2 / 255).opacity(0.15), location: 0.25),
+                        .init(color: Color(red: 255 / 255, green: 137 / 255, blue: 4 / 255).opacity(0.10), location: 0.5),
+                        .init(color: .clear, location: 1),
+                    ],
+                    center: UnitPoint(x: 0.5, y: 0.42),
+                    startRadius: 0,
+                    endRadius: max(proxy.size.width, proxy.size.height) * 0.58
+                )
+                .scaleEffect(x: 0.78, y: 1)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private enum SheetSectionDestination: Hashable {
+    case nomnomnom
+    case nearby
+    case events
+}
+
+@Observable
+private final class PinsLocationManager: NSObject, CLLocationManagerDelegate {
+    var location: CLLocation?
+    private let manager = CLLocationManager()
+
+    override init() {
+        super.init()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyKilometer
+    }
+
+    func requestLocation() {
+        manager.requestWhenInUseAuthorization()
+        manager.requestLocation()
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        guard manager.authorizationStatus == .authorizedWhenInUse ||
+              manager.authorizationStatus == .authorizedAlways else { return }
+        manager.requestLocation()
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        location = locations.last
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}
+}
 
 struct PinsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(UserSettings.self) private var userSettings
     @Environment(ScreenshotIndexingController.self) private var screenshotIndexing
 
-    @State var collections: [CollectionWrapper] = []
-    @State private var searchText: String = ""
-    @State private var destination: HomeDestination?
-    var isLoading: Bool = false
-
-    private var displayName: String {
-        userSettings.displayName
-    }
-
-    // MARK: - Derived data
+    @State private var collections: [CollectionWrapper] = []
+    @State private var mappedIdeas: [MappedIdea] = []
+    @State private var resolvingIdeaIDs = Set<Int>()
+    @State private var failedIdeaIDs = Set<Int>()
+    @State private var mapKitRequestTimes: [Date] = []
+    @State private var locationManager = PinsLocationManager()
+    @State private var searchText = ""
+    @State private var selectedIdeaID: Int?
+    @State private var cameraPosition: MapCameraPosition = .automatic
+    @State private var hasSetInitialCamera = false
+    @State private var isLoading = true
+    @State private var detailIdea: CollectionItemWrapper?
+    @State private var isShowingIdeaInSheet = false
+    @State private var sectionDestination: SheetSectionDestination?
+    @State private var isDiscoverySheetPresented = true
+    @State private var discoveryDetent: PresentationDetent = .fraction(0.55)
+    @Namespace private var ideaTransition
 
     private var query: String {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
-    private func matches(_ item: CollectionItemWrapper) -> Bool {
-        guard !query.isEmpty else { return true }
-        let fields = [item.ideas?.venue, item.ideas?.name, item.ideas?.location]
-        return fields.contains { ($0?.lowercased().contains(query)) == true }
-    }
-
-    private func isEvent(_ item: CollectionItemWrapper) -> Bool {
-        item.ideas?.type?.lowercased() == "event"
-    }
-
-    private func locationItems(
-        for collection: CollectionWrapper,
-        applyingSearch: Bool = true
-    ) -> [CollectionItemWrapper] {
-        (collection.collection_items ?? []).filter {
-            !isEvent($0) && (!applyingSearch || matches($0))
-        }
-    }
-
-    private var eventItems: [CollectionItemWrapper] {
-        eventItems(applyingSearch: true)
-    }
-
-    private func eventItems(applyingSearch: Bool) -> [CollectionItemWrapper] {
+    private var allLocationItems: [CollectionItemWrapper] {
         var seen = Set<Int>()
-        var result: [CollectionItemWrapper] = []
-        for item in collections.flatMap({ $0.collection_items ?? [] })
-        where isEvent(item) && (!applyingSearch || matches(item)) {
-            let key = item.ideas?.id ?? item.idea_id
-            if seen.insert(key).inserted { result.append(item) }
-        }
-        return result
+        return collections
+            .flatMap { $0.collection_items ?? [] }
+            .filter { item in
+                guard item.ideas?.type?.lowercased() != "event" else { return false }
+                let id = item.ideas?.id ?? item.idea_id
+                return seen.insert(id).inserted
+            }
     }
 
-    // MARK: - Body
+    private var visibleIdeas: [MappedIdea] {
+        guard !query.isEmpty else { return mappedIdeas }
+        return mappedIdeas.filter { mapped in
+            let idea = mapped.item.ideas
+            return [idea?.venue, idea?.name, idea?.location, idea?.location_type]
+                .contains { $0?.lowercased().contains(query) == true }
+        }
+    }
+
+    private var selectedIdea: MappedIdea? {
+        visibleIdeas.first { $0.id == selectedIdeaID }
+    }
+
+    private var nomnomnomCollection: CollectionWrapper? {
+        collections.first { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "nomnomnom" }
+    }
+
+    private var nomnomnomItems: [CollectionItemWrapper] {
+        guard let collection = nomnomnomCollection else { return [] }
+        return filter(locationItems(for: collection, applyingSearch: false))
+    }
+
+    private var allNomnomnomItems: [CollectionItemWrapper] {
+        guard let collection = nomnomnomCollection else { return [] }
+        return locationItems(for: collection, applyingSearch: false)
+    }
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    headerContent
+            ZStack(alignment: .top) {
+                map
 
-                    ForEach(collections) { collection in
-                        let items = locationItems(for: collection)
-                        if !items.isEmpty {
-                            section(
-                                title: "#\(collection.name)",
-                                items: items,
-                                destination: .collection(collection.id)
-                            )
-                        }
-                    }
-
-                    if !eventItems.isEmpty {
-                        section(
-                            title: "events this week",
-                            items: eventItems,
-                            destination: .events
-                        )
+                if let selectedIdea {
+                    VStack {
+                        Spacer()
+                        selectedPreview(selectedIdea.item)
                     }
                 }
-                .padding(.top, 16)
-                .padding(.bottom, 120)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(alignment: .top) { gradient }
+
+                topChrome
             }
-            .scrollIndicators(.hidden)
-            .background((colorScheme == .dark ? Color.black : Color.white).ignoresSafeArea())
+            .ignoresSafeArea(edges: .bottom)
             .toolbarVisibility(.hidden, for: .navigationBar)
-            .navigationDestination(item: $destination) { dest in
-                SectionDetailView(
-                    title: title(for: dest),
-                    subtitle: subtitle(for: dest),
-                    items: items(for: dest)
-                )
+            .sheet(isPresented: $isDiscoverySheetPresented) {
+                sheetContent
+                    .presentationDetents(
+                        [.fraction(0.55), .large],
+                        selection: $discoveryDetent
+                    )
+                    .presentationDragIndicator(.visible)
+                    .presentationBackground(.clear)
+                    .presentationCornerRadius(36)
+                    .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.55)))
+                    .presentationContentInteraction(.resizes)
+                    .interactiveDismissDisabled(true)
             }
         }
         .task {
+            locationManager.requestLocation()
             await loadCollections()
             await screenshotIndexing.scan()
+            // Refresh ideas created by the scan, then resolve only a bounded
+            // batch of Apple Place IDs for the map.
             await loadCollections()
+            await resolveMissingPlaces()
         }
-    }
-
-    private func loadCollections() async {
-        await migrateLegacyDefaultCollectionName()
-        do {
-            collections =
-                try await supabase
-                .from("collections")
-                .select("*, collection_items(*, ideas(*))").execute()
-                .value
-        } catch {
-            dump(error)
+        .onChange(of: locationManager.location) { _, newLocation in
+            guard let newLocation, !hasSetInitialCamera, selectedIdeaID == nil else { return }
+            centerMapOnUser(newLocation.coordinate)
         }
+        .onChange(of: searchText) { _, _ in
+            selectedIdeaID = nil
+            cameraPosition = .automatic
+        }
+        .onChange(of: selectedIdeaID) { _, newValue in
+            if newValue == nil {
+                if !isShowingIdeaInSheet {
+                    discoveryDetent = .fraction(0.55)
+                }
+                isDiscoverySheetPresented = true
+            } else {
+                isShowingIdeaInSheet = false
+                isDiscoverySheetPresented = false
+            }
+        }
+        .onChange(of: isShowingIdeaInSheet) { _, isShowing in
+            if !isShowing {
+                discoveryDetent = .fraction(0.55)
+            }
+        }
+        .animation(.spring(response: 0.38, dampingFraction: 0.9), value: selectedIdeaID)
     }
 
-    // MARK: - Header
-
-    private var gradient: some View {
-        Image(colorScheme == .dark ? "gradient dark" : "gradient light")
-            .resizable()
-            .scaledToFill()
-            .frame(height: 380)
-            .frame(maxWidth: .infinity)
-            .clipped()
-            .ignoresSafeArea(edges: .top)
+    private var map: some View {
+        Map(position: $cameraPosition, selection: $selectedIdeaID) {
+            ForEach(visibleIdeas) { mapped in
+                Annotation(
+                    mapped.item.ideas?.venue ?? "Saved idea",
+                    coordinate: mapped.coordinate,
+                    anchor: .bottom
+                ) {
+                    mapPin(mapped)
+                }
+                .tag(mapped.id)
+            }
+            UserAnnotation()
+        }
+        .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
+        .mapControls {
+            MapUserLocationButton()
+            MapCompass()
+            MapScaleView()
+        }
+        .onMapCameraChange(frequency: .onEnd) { _ in
+            Task { await resolveMissingPlaces() }
+        }
+        .ignoresSafeArea()
+        .accessibilityLabel("Map of saved ideas")
     }
 
-    private var headerContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .center) {
+    private func mapPin(_ mapped: MappedIdea) -> some View {
+        let isSelected = selectedIdeaID == mapped.id
+        return VStack(spacing: 0) {
+            if isSelected {
+                pinEmoji(mapped, isSelected: true)
+                    .background(Color.white, in: Circle())
+                    .overlay(Circle().stroke(Color.white, lineWidth: 3))
+            } else {
+                pinEmoji(mapped, isSelected: false)
+                    .glassEffect(.regular, in: Circle())
+                    .overlay(Circle().stroke(Color.white, lineWidth: 3))
+            }
+
+            Image(systemName: "arrowtriangle.down.fill")
+                .font(.system(size: 10))
+                .foregroundStyle(isSelected ? Color.white : Color.white.opacity(0.72))
+                .offset(y: -2)
+        }
+        .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
+        .animation(.spring(response: 0.3, dampingFraction: 0.82), value: isSelected)
+        .accessibilityLabel(mapped.item.ideas?.venue ?? "Saved idea")
+    }
+
+    private func pinEmoji(_ mapped: MappedIdea, isSelected: Bool) -> some View {
+        Text(mapped.item.ideas?.location_emoji ?? "✦")
+            .font(.system(size: isSelected ? 24 : 18))
+            .frame(width: isSelected ? 48 : 38, height: isSelected ? 48 : 38)
+            .foregroundStyle(.primary)
+    }
+
+    private var topChrome: some View {
+        VStack(spacing: 12) {
+            HStack {
                 Image(colorScheme == .dark ? "kindling white" : "kindling black")
                     .resizable()
                     .scaledToFit()
                     .frame(height: 22)
                 Spacer()
-                profilePill
+                NavigationLink { AccountView() } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 13, weight: .medium))
+                        Text(userSettings.displayName)
+                            .font(.system(size: 16))
+                            .tracking(-0.4)
+                            .lineLimit(1)
+                    }
+                }
+                .buttonStyle(.glass)
+                .tint(.primary)
+                .accessibilityLabel("Account for \(userSettings.displayName)")
             }
-
-            Text("what's up, \(displayName)?")
-                .font(.system(size: 24, weight: .medium))
-                .tracking(-0.6)
-                .foregroundStyle(.primary)
-                .padding(.top, 44)
-
-            Text("here's the rundown of what you have saved.")
-                .font(.system(size: 16))
-                .tracking(-0.4)
-                .foregroundStyle(.primary)
-                .padding(.top, 8)
-
-            searchBar
-                .padding(.top, 24)
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 24)
-    }
-
-    private var profilePill: some View {
-        NavigationLink {
-            AccountView()
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "person.fill")
-                    .font(.system(size: 13))
-                Text(displayName)
-                    .font(.system(size: 16))
-                    .tracking(-0.4)
-            }
-            .foregroundStyle(.primary)
-        }
-        .buttonStyle(.glass)
-        .tint(.primary)
+        .padding(.horizontal, 20)
+        .padding(.top, 8)
     }
 
     private var searchBar: some View {
@@ -197,87 +363,464 @@ struct PinsView: View {
             )
             .tint(.primary)
             .foregroundStyle(.primary)
+
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityLabel("Clear search")
+            }
         }
         .font(.system(size: 16))
         .tracking(-0.4)
         .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .frame(height: 50)
         .glassEffect(.regular, in: Capsule())
     }
 
-    // MARK: - Section
+    private var sheetContent: some View {
+        ZStack {
+            DiscoverySheetBackground()
+                .ignoresSafeArea()
 
-    private func section(
+            NavigationStack {
+                discoverySheet
+                    .background(Color.clear)
+                    .toolbarVisibility(.hidden, for: .navigationBar)
+                    .navigationDestination(isPresented: $isShowingIdeaInSheet) {
+                        if let detailIdea {
+                            IdeaView(
+                                card: detailIdea,
+                                function: { _ in await loadCollections() },
+                                allowsDeletion: true
+                            )
+                            .navigationTransition(
+                                .zoom(sourceID: transitionID(for: detailIdea), in: ideaTransition)
+                            )
+                            .toolbarVisibility(.visible, for: .navigationBar)
+                        }
+                    }
+                    .navigationDestination(item: $sectionDestination) { destination in
+                        switch destination {
+                        case .nomnomnom:
+                            SectionDetailView(
+                                title: "#nomnomnom",
+                                subtitle: subtitle(for: allNomnomnomItems),
+                                items: allNomnomnomItems
+                            )
+                        case .nearby:
+                            SectionDetailView(
+                                title: "Things Near You",
+                                subtitle: "places near you",
+                                items: filteredLocationItems
+                            )
+                        case .events:
+                            SectionDetailView(
+                                title: "events this week",
+                                subtitle: "what’s happening this week",
+                                items: filteredEventItems
+                            )
+                        }
+                    }
+            }
+        }
+    }
+
+    private var discoverySheet: some View {
+        ScrollView(.vertical) {
+            // This stack only contains a few sections. Keeping it eager gives
+            // the sheet a stable full content height when sections contain
+            // nested horizontal scrollers.
+            VStack(alignment: .leading, spacing: 28) {
+                if !nomnomnomItems.isEmpty {
+                    discoverySection(
+                        title: "#nomnomnom",
+                        items: nomnomnomItems,
+                        action: { sectionDestination = .nomnomnom }
+                    )
+                }
+
+                discoverySection(
+                    title: "Things Near You",
+                    items: filteredLocationItems,
+                    action: { sectionDestination = .nearby }
+                )
+
+                if !filteredEventItems.isEmpty {
+                    discoverySection(
+                        title: "events this week",
+                        items: filteredEventItems,
+                        action: { sectionDestination = .events }
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 20)
+            .padding(.bottom, 60)
+        }
+        .frame(maxWidth: .infinity)
+        .scrollIndicators(.hidden)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            searchBar
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
+                .padding(.bottom, 12)
+                .background {
+                    VariableBlurView(
+                        maxBlurRadius: 24,
+                        direction: .blurredTopClearBottom,
+                        startOffset: -0.1
+                    )
+                    .ignoresSafeArea(edges: .top)
+                }
+        }
+    }
+
+    private var filteredLocationItems: [CollectionItemWrapper] {
+        filter(allLocationItems)
+    }
+
+    private func locationItems(
+        for collection: CollectionWrapper,
+        applyingSearch: Bool
+    ) -> [CollectionItemWrapper] {
+        let items = (collection.collection_items ?? []).filter {
+            $0.ideas?.type?.lowercased() != "event"
+        }
+        return applyingSearch ? filter(items) : items
+    }
+
+    private var filteredEventItems: [CollectionItemWrapper] {
+        var seen = Set<Int>()
+        let events = collections.flatMap { $0.collection_items ?? [] }.filter { item in
+            guard item.ideas?.type?.lowercased() == "event" else { return false }
+            return seen.insert(item.ideas?.id ?? item.idea_id).inserted
+        }
+        return filter(events)
+    }
+
+    private func filter(_ items: [CollectionItemWrapper]) -> [CollectionItemWrapper] {
+        guard !query.isEmpty else { return items }
+        return items.filter { item in
+            let idea = item.ideas
+            return [idea?.venue, idea?.name, idea?.location, idea?.location_type]
+                .contains { $0?.lowercased().contains(query) == true }
+        }
+    }
+
+    private func subtitle(for items: [CollectionItemWrapper]) -> String {
+        let types = items.compactMap { $0.ideas?.type?.lowercased() }
+        let foodCount = types.filter { $0 == "food" }.count
+        if !types.isEmpty && foodCount * 2 >= types.count {
+            return "tasty things you saved."
+        }
+        return "things you saved."
+    }
+
+    private func discoverySection(
         title: String,
         items: [CollectionItemWrapper],
-        destination: HomeDestination
+        action: @escaping () -> Void
     ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Button {
-                self.destination = destination
-            } label: {
-                HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 14) {
+            Button(action: action) {
+                HStack(spacing: 7) {
                     Text(title)
                         .font(.system(size: 20, weight: .medium))
                         .tracking(-0.5)
-                        .foregroundStyle(.primary)
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(figmaGray)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.secondary)
                     Spacer(minLength: 0)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(.horizontal, 24)
-            .accessibilityHint("View all")
+            .padding(.horizontal, 20)
 
-            ScrollView(.horizontal) {
-                LazyHStack(spacing: 16) {
-                    ForEach(items) { item in
-                        Card(card: item)
-                            .frame(width: 300)
+            if items.isEmpty {
+                Text(isLoading ? "finding your ideas..." : "no saved ideas here yet")
+                    .font(.system(size: 15))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 20)
+                    .frame(height: 120)
+            } else {
+                ScrollView(.horizontal) {
+                    LazyHStack(spacing: 14) {
+                        ForEach(items.prefix(homeSectionPreviewLimit)) { item in
+                            discoveryCard(item)
+                        }
+
+                        if items.count > homeSectionPreviewLimit {
+                            viewMoreCard(action: action)
+                        }
                     }
+                    .padding(.horizontal, 20)
                 }
-                .padding(.horizontal, 24)
+                .scrollIndicators(.hidden)
             }
-            .scrollIndicators(.hidden)
         }
     }
 
-    private func title(for destination: HomeDestination) -> String {
-        switch destination {
-        case .collection(let id):
-            if let name = collections.first(where: { $0.id == id })?.name {
-                return "#\(name)"
+    private func viewMoreCard(action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 14) {
+                Spacer()
+
+                Text("view more")
+                    .font(.system(size: 28, weight: .medium))
+                    .tracking(-0.7)
+                    .foregroundStyle(.primary)
+
+                HStack(spacing: 6) {
+                    Text("view all")
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 15, weight: .semibold))
+                }
+                .font(.system(size: 16, weight: .medium))
+                .tracking(-0.35)
+                .foregroundStyle(Color(.systemBackground))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(Color.primary, in: Capsule())
             }
-            return "#collection"
-        case .events:
-            return "events this week"
+            .padding(18)
+            .frame(width: 250, height: 250, alignment: .leading)
+            .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("View more")
+    }
+
+    private func discoveryCard(_ item: CollectionItemWrapper) -> some View {
+        Button {
+            focusOnMap(item)
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                DiscoveryIdeaImage(item: item)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .matchedTransitionSource(
+                        id: transitionID(for: item),
+                        in: ideaTransition
+                    )
+
+                Text(item.ideas?.venue ?? "Untitled")
+                    .font(.system(size: 19, weight: .medium))
+                    .tracking(-0.45)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                Text(item.ideas?.location ?? item.ideas?.address ?? "—")
+                    .font(.system(size: 14))
+                    .tracking(-0.3)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                if let hours = item.ideas?.open_hours,
+                   let status = resolveOpenStatus(from: hours) {
+                    HStack(spacing: 7) {
+                        Text(status.isOpen ? "Open" : "Closed")
+                            .fontWeight(.medium)
+                        Text(status.detail)
+                    }
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                }
+            }
+            .frame(width: 250, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func selectedPreview(_ item: CollectionItemWrapper) -> some View {
+        Button {
+            showIdeaInSheet(item)
+        } label: {
+            Card(
+                card: item,
+                loadsMapData: false,
+                allowsDetailPresentation: false,
+                animatesImageLoading: false
+            )
+            .frame(maxWidth: 340)
+            .padding(12)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 18)
+        .padding(.bottom, 8)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    private func showIdeaInSheet(_ item: CollectionItemWrapper) {
+        detailIdea = item
+        discoveryDetent = .large
+        isDiscoverySheetPresented = true
+        isShowingIdeaInSheet = true
+    }
+
+    private func focusOnMap(_ item: CollectionItemWrapper) {
+        guard let mapped = mappedIdeas.first(where: { $0.id == (item.ideas?.id ?? item.idea_id) }) else {
+            // Keep cards without a resolvable location usable.
+            showIdeaInSheet(item)
+            return
+        }
+
+        withAnimation(.easeInOut(duration: 0.45)) {
+            cameraPosition = .region(
+                MKCoordinateRegion(
+                    center: mapped.coordinate,
+                    latitudinalMeters: 1_200,
+                    longitudinalMeters: 1_200
+                )
+            )
+            selectedIdeaID = mapped.id
         }
     }
 
-    private func subtitle(for destination: HomeDestination) -> String {
-        switch destination {
-        case .events:
-            return "happening this week."
-        case .collection:
-            let types = items(for: destination).compactMap { $0.ideas?.type?.lowercased() }
-            let foodCount = types.filter { $0 == "food" }.count
-            if !types.isEmpty && foodCount * 2 >= types.count {
-                return "tasty things you saved."
-            }
-            return "things you saved."
+    private func transitionID(for item: CollectionItemWrapper) -> String {
+        "idea-image-\(item.ideas?.id ?? item.idea_id)"
+    }
+
+    private func loadCollections() async {
+        isLoading = true
+        await migrateLegacyDefaultCollectionName()
+        do {
+            collections = try await supabase
+                .from("collections")
+                .select("*, collection_items(*, ideas(*))")
+                .execute()
+                .value
+            refreshMappedIdeas()
+        } catch {
+            dump(error)
+        }
+        isLoading = false
+    }
+
+    private func refreshMappedIdeas() {
+        let previous = Dictionary(
+            mappedIdeas.map { ($0.id, $0.coordinate) },
+            uniquingKeysWith: { current, _ in current }
+        )
+
+        mappedIdeas = allLocationItems.compactMap { item in
+            let id = item.ideas?.id ?? item.idea_id
+            // Coordinates are MapKit response data and stay in memory only.
+            // Keep a successfully resolved pin visible while a collection
+            // refresh is happening.
+            guard let coordinate = previous[id] else { return nil }
+            return MappedIdea(item: item, coordinate: coordinate)
         }
     }
 
-    private func items(for destination: HomeDestination) -> [CollectionItemWrapper] {
-        switch destination {
-        case .collection(let id):
-            guard let collection = collections.first(where: { $0.id == id }) else { return [] }
-            return locationItems(for: collection, applyingSearch: false)
-        case .events:
-            return eventItems(applyingSearch: false)
+    private func resolveMissingPlaces() async {
+        let candidates = allLocationItems.filter { item in
+            let idea = item.ideas
+            guard idea?.place_id != nil else { return false }
+            let provider = idea?.place_provider?.lowercased()
+            return provider == "apple" || provider == nil || provider == "google"
+        }
+
+        var resolvedThisPass = 0
+        for item in candidates {
+            guard resolvedThisPass < 6 else { break }
+            let ideaID = item.ideas?.id ?? item.idea_id
+            guard !mappedIdeas.contains(where: { $0.id == ideaID }),
+                  !resolvingIdeaIDs.contains(ideaID),
+                  !failedIdeaIDs.contains(ideaID) else { continue }
+
+            resolvingIdeaIDs.insert(ideaID)
+            defer { resolvingIdeaIDs.remove(ideaID) }
+            resolvedThisPass += 1
+
+            // A small gap plus a six-item batch prevents a map refresh from
+            // creating the burst of requests that caused the throttle error.
+            if resolvedThisPass > 1 {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+            }
+
+            let cutoff = Date().addingTimeInterval(-60)
+            mapKitRequestTimes.removeAll { $0 < cutoff }
+            guard mapKitRequestTimes.count < 40 else { return }
+            mapKitRequestTimes.append(Date())
+
+            guard let mapItem = await resolveMapItem(for: item) else {
+                failedIdeaIDs.insert(ideaID)
+                continue
+            }
+            let coordinate = mapItem.location.coordinate
+            guard CLLocationCoordinate2DIsValid(coordinate) else {
+                failedIdeaIDs.insert(ideaID)
+                continue
+            }
+
+            let id = item.ideas?.id ?? item.idea_id
+            mappedIdeas.append(MappedIdea(item: item, coordinate: coordinate))
+
+            // Legacy rows may still contain a Google ID. Once MapKit resolves
+            // one, replace only the persisted identity with Apple's ID; the
+            // coordinate remains transient.
+            if item.ideas?.place_provider?.lowercased() != "apple",
+               let appleID = mapItem.identifier?.rawValue {
+                let update = ApplePlaceIdentityUpdate(place_id: appleID)
+                try? await supabase
+                    .from("ideas")
+                    .update(update)
+                    .eq("id", value: id)
+                    .eq("place_provider", value: item.ideas?.place_provider ?? "google")
+                    .execute()
+            }
+        }
+    }
+
+    private func resolveMapItem(for item: CollectionItemWrapper) async -> MKMapItem? {
+        let idea = item.ideas
+        if idea?.place_provider?.lowercased() == "apple",
+           let placeID = idea?.place_id,
+           let identifier = MKMapItem.Identifier(rawValue: placeID) {
+            let request = MKMapItemRequest(mapItemIdentifier: identifier)
+            return await withCheckedContinuation { continuation in
+                request.getMapItem { mapItem, _ in
+                    continuation.resume(returning: mapItem)
+                }
+            }
+        }
+
+        // Legacy Google rows have no Apple ID yet. Migrate only the small
+        // visible-resolution batch; new rows never take this search path.
+        let address = [idea?.venue, idea?.address, idea?.location]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
+        guard !address.isEmpty else { return nil }
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = address
+        request.resultTypes = .pointOfInterest
+        return try? await MKLocalSearch(request: request).start().mapItems.first
+    }
+
+    private func centerMapOnUser(_ coordinate: CLLocationCoordinate2D) {
+        hasSetInitialCamera = true
+        withAnimation(.easeInOut(duration: 0.45)) {
+            cameraPosition = .region(
+                MKCoordinateRegion(
+                    center: coordinate,
+                    latitudinalMeters: 48_280,
+                    longitudinalMeters: 48_280
+                )
+            )
         }
     }
 }

@@ -1,6 +1,6 @@
 # Kindling API (Cloudflare Worker)
 
-Hono API for screenshot parsing, Places lookup, account deletion, and public share pages.
+Hono API for screenshot parsing, Apple Maps lookup, account deletion, and public share pages.
 
 ## Local
 
@@ -19,7 +19,9 @@ Dev server listens on `http://0.0.0.0:3000` so the iOS simulator/device can keep
 ```sh
 bun run types
 npx wrangler secret put GEMINI_API_KEY
-npx wrangler secret put GOOGLE_MAPS_API_KEY
+npx wrangler secret put APPLE_MAPS_TEAM_ID
+npx wrangler secret put APPLE_MAPS_KEY_ID
+npx wrangler secret put APPLE_MAPS_PRIVATE_KEY
 npx wrangler secret put SUPABASE_API_KEY
 bun run deploy
 ```
