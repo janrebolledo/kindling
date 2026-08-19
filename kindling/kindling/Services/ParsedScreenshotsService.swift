@@ -14,12 +14,16 @@ struct UserDataPayload: Encodable {
 }
 
 class ParsedScreenshotsService {
-    private static let legacyDefaultsKey = "parsedScreenshotLocalIDs"
-    private static let onboardingDefaultsKey = "parsedScreenshotLocalIDs.onboarding"
+    private nonisolated static let legacyDefaultsKey = "parsedScreenshotLocalIDs"
+    private nonisolated static let onboardingDefaultsKey = "parsedScreenshotLocalIDs.onboarding"
 
     private let defaultsKey: String
 
-    init(userID: UUID? = supabase.auth.currentUser?.id) {
+    convenience init() {
+        self.init(userID: supabase.auth.currentUser?.id)
+    }
+
+    nonisolated init(userID: UUID?) {
         if let userID {
             defaultsKey = "parsedScreenshotLocalIDs.\(userID.uuidString)"
         } else {
@@ -36,16 +40,16 @@ class ParsedScreenshotsService {
         }
     }
 
-    func loadLocalParsedIDs() -> Set<String> {
+    nonisolated func loadLocalParsedIDs() -> Set<String> {
         let array = UserDefaults.standard.stringArray(forKey: defaultsKey) ?? []
         return Set(array)
     }
 
-    func saveLocalParsedIDs(_ ids: Set<String>) {
+    nonisolated func saveLocalParsedIDs(_ ids: Set<String>) {
         UserDefaults.standard.set(Array(ids), forKey: defaultsKey)
     }
 
-    func clearLocal() {
+    nonisolated func clearLocal() {
         UserDefaults.standard.removeObject(forKey: defaultsKey)
     }
 
@@ -58,7 +62,7 @@ class ParsedScreenshotsService {
         OnboardingDraftCache.clear()
     }
 
-    func markAsParsed(_ newIDs: [String]) {
+    nonisolated func markAsParsed(_ newIDs: [String]) {
         var existing = loadLocalParsedIDs()
         existing.formUnion(newIDs)
         saveLocalParsedIDs(existing)

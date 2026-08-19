@@ -9,6 +9,8 @@ import UIKit
 
 class ScreenshotManager {
 
+    nonisolated init() {}
+
     // Request photo library access
     func requestPhotoLibraryAccess() async -> Bool {
         let status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
@@ -17,7 +19,7 @@ class ScreenshotManager {
     }
 
     // Fetch all screenshots from the photo library
-    func fetchScreenshots() -> [PHAsset] {
+    nonisolated func fetchScreenshots() -> [PHAsset] {
         let fetchOptions = PHFetchOptions()
 
         // Filter for screenshots using mediaSubtypes
@@ -45,7 +47,7 @@ class ScreenshotManager {
     }
 
     // Load image from PHAsset
-    func loadImage(
+    nonisolated func loadImage(
         from asset: PHAsset,
         targetSize: CGSize = PHImageManagerMaximumSize,
 

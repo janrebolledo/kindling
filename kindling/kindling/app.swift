@@ -26,6 +26,7 @@ struct AppEntry: App {
     @State private var authenticated = false
     @State private var userSettings = UserSettings()
     @State private var directionsCache = DirectionsCache()
+    @State private var screenshotIndexing = ScreenshotIndexingController.shared
 
     var body: some Scene {
 
@@ -39,6 +40,7 @@ struct AppEntry: App {
             }
             .environment(userSettings)
             .environment(directionsCache)
+            .environment(screenshotIndexing)
             .environment(\.isAuthenticated, authenticated)
             .task {
                 for await state in supabase.auth.authStateChanges {

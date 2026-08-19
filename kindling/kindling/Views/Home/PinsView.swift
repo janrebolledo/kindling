@@ -13,6 +13,7 @@ private let figmaGray = Color(red: 142 / 255, green: 142 / 255, blue: 147 / 255)
 struct PinsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(UserSettings.self) private var userSettings
+    @Environment(ScreenshotIndexingController.self) private var screenshotIndexing
 
     @State var collections: [CollectionWrapper] = []
     @State private var searchText: String = ""
@@ -108,7 +109,7 @@ struct PinsView: View {
         }
         .task {
             await loadCollections()
-            await scanForNewScreenshots()
+            await screenshotIndexing.scan()
             await loadCollections()
         }
     }

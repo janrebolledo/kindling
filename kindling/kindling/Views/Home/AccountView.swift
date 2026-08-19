@@ -74,23 +74,13 @@ private enum SettingsPage: Hashable {
     }
 }
 
-private enum PhotoUploadError: LocalizedError {
-    case noImages
-
-    var errorDescription: String? {
-        switch self {
-        case .noImages:
-            return "We couldn't load the selected photos. Please try again."
-        }
-    }
-}
-
 struct AccountView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(UserSettings.self) private var userSettings
+    @Environment(ScreenshotIndexingController.self) private var screenshotIndexing
 
     @State private var isLoaded = false
     @State private var showDeleteConfirm = false
@@ -100,11 +90,6 @@ struct AccountView: View {
     @State private var showSignOutConfirm = false
     @State private var showFeedback = false
 
-    @State private var processedScreenshotCount = 0
-    @State private var totalScreenshotCount = 0
-    @State private var isProcessingScreenshots = false
-    @State private var processingImageCount = 0
-    @State private var processedProcessingImageCount = 0
     @State private var isPhotoPickerPresented = false
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
     @State private var showUploadError = false
@@ -159,16 +144,15 @@ struct AccountView: View {
         .background((colorScheme == .dark ? Color.black : Color.white).ignoresSafeArea())
         .navigationTitle(SettingsPage.settings.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarVisibility(.visible, for: .navigationBar)
         .background(
             InteractiveDismissGuard(blocking: hasUnsavedChanges) {
                 showDiscardDialog = true
             }
         )
         .task {
-            async let preference: Void = loadPreference()
-            async let screenshotProgress: Void = refreshScreenshotProgress()
-            await preference
-            await screenshotProgress
+            await loadPreference()
+            await screenshotIndexing.refreshProgress()
         }
         .onChange(of: userSettings.transportType) { _, newValue in
             guard isLoaded else { return }
@@ -241,6 +225,7 @@ struct AccountView: View {
         .background((colorScheme == .dark ? Color.black : Color.white).ignoresSafeArea())
         .navigationTitle(destination.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarVisibility(.visible, for: .navigationBar)
         .onAppear { beginEditing(destination) }
         .onDisappear { endEditing() }
     }
@@ -707,19 +692,19 @@ struct AccountView: View {
                     Spacer()
 
                     HStack(spacing: 0) {
-                        Text("\(processedScreenshotCount)")
+                        Text("\(screenshotIndexing.processedScreenshotCount)")
                             .contentTransition(.numericText())
-                            .opacity(isProcessingScreenshots && !reduceMotion ? 0.5 : 1)
+                            .opacity(screenshotIndexing.isProcessing && !reduceMotion ? 0.5 : 1)
                             .animation(
-                                isProcessingScreenshots && !reduceMotion
+                                screenshotIndexing.isProcessing && !reduceMotion
                                     ? .easeInOut(duration: 0.9).repeatForever(
                                         autoreverses: true
                                     )
                                     : .easeOut(duration: 0.15),
-                                value: isProcessingScreenshots
+                                value: screenshotIndexing.isProcessing
                             )
 
-                        Text("/\(totalScreenshotCount)")
+                        Text("/\(screenshotIndexing.totalScreenshotCount)")
                     }
                     .font(.system(size: 16, weight: .medium))
                     .tracking(-0.4)
@@ -731,7 +716,7 @@ struct AccountView: View {
                         Capsule()
                             .fill(Color(red: 217 / 255, green: 217 / 255, blue: 217 / 255))
 
-                        if isProcessingScreenshots {
+                        if screenshotIndexing.isProcessing {
                             Capsule()
                                 .fill(Color(red: 247 / 255, green: 190 / 255, blue: 125 / 255))
                                 .frame(width: proxy.size.width * processingScreenshotProgress)
@@ -750,10 +735,10 @@ struct AccountView: View {
 
             HStack(spacing: 16) {
                 screenshotActionButton(
-                    title: isProcessingScreenshots ? "processing" : "process more",
-                    systemName: isProcessingScreenshots ? "rays" : "plus",
-                    isDisabled: isProcessingScreenshots,
-                    isSpinning: isProcessingScreenshots,
+                    title: screenshotIndexing.isProcessing ? "processing" : "process more",
+                    systemName: screenshotIndexing.isProcessing ? "rays" : "plus",
+                    isDisabled: screenshotIndexing.isBusy,
+                    isSpinning: screenshotIndexing.isProcessing,
                     action: processMoreScreenshots
                 )
 
@@ -768,13 +753,13 @@ struct AccountView: View {
                             .tracking(-0.4)
                     }
                     .foregroundStyle(.primary)
-                    .opacity(isProcessingScreenshots ? 0.5 : 1)
+                    .opacity(screenshotIndexing.isBusy ? 0.5 : 1)
                     .frame(maxWidth: .infinity)
                     .frame(height: 42)
                     .background(Color("raisedSurface"), in: Capsule())
                 }
                 .buttonStyle(.plain)
-                .disabled(isProcessingScreenshots)
+                .disabled(screenshotIndexing.isBusy)
                 .photosPicker(
                     isPresented: $isPhotoPickerPresented,
                     selection: $selectedPhotoItems,
@@ -795,29 +780,39 @@ struct AccountView: View {
     }
 
     private var screenshotProgress: CGFloat {
-        guard totalScreenshotCount > 0 else { return 0 }
-        return min(CGFloat(processedScreenshotCount) / CGFloat(totalScreenshotCount), 1)
+        guard screenshotIndexing.totalScreenshotCount > 0 else { return 0 }
+        return min(
+            CGFloat(screenshotIndexing.processedScreenshotCount)
+                / CGFloat(screenshotIndexing.totalScreenshotCount),
+            1
+        )
     }
 
     private var displayedScreenshotProgress: CGFloat {
-        guard totalScreenshotCount > 0 else { return screenshotProgress }
-        guard isProcessingScreenshots else { return screenshotProgress }
+        guard screenshotIndexing.totalScreenshotCount > 0 else { return screenshotProgress }
+        guard screenshotIndexing.isProcessing else { return screenshotProgress }
 
         return min(
-            CGFloat(processedScreenshotCount + processedProcessingImageCount)
-                / CGFloat(totalScreenshotCount),
+            CGFloat(
+                screenshotIndexing.processedScreenshotCount
+                    + screenshotIndexing.processedProcessingImageCount
+            ) / CGFloat(screenshotIndexing.totalScreenshotCount),
             1
         )
     }
 
     private var processingScreenshotProgress: CGFloat {
-        let remainingImages = max(processingImageCount - processedProcessingImageCount, 0)
+        let remainingImages = max(
+            screenshotIndexing.processingImageCount
+                - screenshotIndexing.processedProcessingImageCount,
+            0
+        )
         guard remainingImages > 0 else { return displayedScreenshotProgress }
 
         let indicatorWidth: CGFloat
-        if totalScreenshotCount > 0 {
+        if screenshotIndexing.totalScreenshotCount > 0 {
             indicatorWidth = min(
-                CGFloat(remainingImages) / CGFloat(totalScreenshotCount),
+                CGFloat(remainingImages) / CGFloat(screenshotIndexing.totalScreenshotCount),
                 0.08
             )
         } else {
@@ -998,110 +993,24 @@ struct AccountView: View {
 
     // MARK: - Actions
 
-    private func refreshScreenshotProgress() async {
-        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        guard status == .authorized || status == .limited else {
-            processedScreenshotCount = ParsedScreenshotsService().loadLocalParsedIDs().count
-            totalScreenshotCount = 0
-            return
-        }
-
-        let screenshots = ScreenshotManager().fetchScreenshots()
-        let screenshotIDs = Set(screenshots.map(\.localIdentifier))
-        let parsedIDs = ParsedScreenshotsService().loadLocalParsedIDs()
-
-        totalScreenshotCount = screenshots.count
-        processedScreenshotCount = parsedIDs.intersection(screenshotIDs).count
-    }
-
     private func processMoreScreenshots() {
-        guard !isProcessingScreenshots else { return }
-        isProcessingScreenshots = true
-        processingImageCount = 5
-        processedProcessingImageCount = 0
-
-        Task {
-            defer {
-                isProcessingScreenshots = false
-                processingImageCount = 0
-                processedProcessingImageCount = 0
-            }
-
-            await scanForNewScreenshots { processed, total in
-                processingImageCount = total
-                processedProcessingImageCount = processed
-            }
-            await refreshScreenshotProgress()
-        }
+        guard !screenshotIndexing.isBusy else { return }
+        Task { await screenshotIndexing.scan(limit: 5) }
     }
 
     private func processSelectedPhotos(_ items: [PhotosPickerItem]) {
-        guard !items.isEmpty, !isProcessingScreenshots else { return }
+        guard !items.isEmpty, !screenshotIndexing.isBusy else { return }
 
-        isProcessingScreenshots = true
-        processingImageCount = items.count
-        processedProcessingImageCount = 0
         Task {
-            defer {
-                isProcessingScreenshots = false
-                processingImageCount = 0
-                processedProcessingImageCount = 0
-            }
-
             do {
-                let images = await loadSelectedPhotos(from: items)
-                guard !images.isEmpty else { throw PhotoUploadError.noImages }
-                processingImageCount = images.count
-
-                var cards: [ItemWrapper] = []
-                var processedIDs = Set<String>()
-
-                for try await event in uploadImagesStreaming(images: images) {
-                    switch event {
-                    case .idea(let item):
-                        cards.append(item)
-                    case .processed(let id):
-                        processedIDs.insert(id)
-                        processedProcessingImageCount = processedIDs.count
-                    }
-                }
-
-                // Save the processed ideas to the same default collection used
-                // by automatic screenshot indexing.
-                try await finalizeItems(cards)
-
-                if let userID = supabase.auth.currentUser?.id {
-                    let service = ParsedScreenshotsService(userID: userID)
-                    service.markAsParsed(Array(processedIDs))
-                    try? await service.syncToSupabase(userID: userID)
-                }
-
+                try await screenshotIndexing.processSelectedPhotos(items)
                 selectedPhotoItems = []
-                await refreshScreenshotProgress()
             } catch {
                 selectedPhotoItems = []
                 uploadErrorMessage = error.localizedDescription
                 showUploadError = true
             }
         }
-    }
-
-    private func loadSelectedPhotos(
-        from items: [PhotosPickerItem]
-    ) async -> [(String, UIImage?)] {
-        var images: [(String, UIImage?)] = []
-        images.reserveCapacity(items.count)
-
-        for item in items {
-            guard
-                let data = try? await item.loadTransferable(type: Data.self),
-                let image = UIImage(data: data)
-            else { continue }
-
-            images.append((item.itemIdentifier ?? UUID().uuidString, image))
-        }
-
-        return images
     }
 
     private func openSettings() {

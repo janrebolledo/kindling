@@ -57,6 +57,9 @@ struct SectionDetailView: View {
         }
         .scrollIndicators(.hidden)
         .background((colorScheme == .dark ? Color.black : Color.white).ignoresSafeArea())
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarVisibility(.visible, for: .navigationBar)
     }
 
     // MARK: - Header
@@ -73,20 +76,14 @@ struct SectionDetailView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(title)
-                .font(.system(size: 24, weight: .medium))
-                .tracking(-0.6)
-                .foregroundStyle(.primary)
-                .padding(.top, 40)
-
             Text(subtitle)
                 .font(.system(size: 16))
                 .tracking(-0.4)
                 .foregroundStyle(.primary)
-                .padding(.top, 12)
+                .padding(.top, 16)
         }
         .padding(.horizontal, 24)
-        .padding(.top, 24)
+        .padding(.top, 8)
     }
 
     // MARK: - Filters

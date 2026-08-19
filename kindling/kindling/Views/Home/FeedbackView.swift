@@ -33,6 +33,7 @@ struct FeedbackView: View {
             }
             .navigationTitle("feedback")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarVisibility(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("cancel") { dismiss() }
