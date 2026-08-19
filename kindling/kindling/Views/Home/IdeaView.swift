@@ -210,49 +210,39 @@ struct IdeaView: View {
 
     @ViewBuilder
     private var heroSection: some View {
-        ZStack(alignment: .bottom) {
-            GeometryReader { geometry in
-                Group {
-                    if let mediaUrl = card.ideas?.media_url,
-                        let url = URL(string: mediaUrl)
-                    {
-                        AsyncImage(url: url) { phase in
-                            switch phase {
-                            case .success(let image):
-                                image
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                            default:
-                                placeholderImage(geometry: geometry)
-                            }
+        GeometryReader { geometry in
+            Group {
+                if let mediaUrl = card.ideas?.media_url,
+                    let url = URL(string: mediaUrl)
+                {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                        default:
+                            placeholderImage(geometry: geometry)
                         }
+                    }
+                    .frame(width: geometry.size.width, height: LayoutConstants.heroHeight)
+                    .clipped()
+                } else if let localImage {
+                    Image(uiImage: localImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
                         .frame(width: geometry.size.width, height: LayoutConstants.heroHeight)
                         .clipped()
-                    } else if let localImage {
-                        Image(uiImage: localImage)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: geometry.size.width, height: LayoutConstants.heroHeight)
-                            .clipped()
-                    } else {
-                        placeholderImage(geometry: geometry)
-                    }
+                } else {
+                    placeholderImage(geometry: geometry)
                 }
             }
-            .frame(maxWidth: .infinity)
-
-            LinearGradient(
-                gradient: Gradient(stops: [
-                    .init(color: .clear, location: 0.473),
-                    .init(color: Color(uiColor: UIColor.systemBackground), location: 1.0),
-                ]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: LayoutConstants.heroHeight)
-            .frame(maxWidth: .infinity)
         }
         .frame(height: LayoutConstants.heroHeight)
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
+        .padding(.bottom, 16)
     }
 
     @ViewBuilder

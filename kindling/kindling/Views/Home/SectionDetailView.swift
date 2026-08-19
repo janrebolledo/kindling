@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 enum HomeDestination: Hashable, Identifiable {
     case collection(Int)
@@ -50,29 +51,21 @@ struct SectionDetailView: View {
 
                 footer
                     .padding(.top, 32)
-                    .padding(.bottom, 48)
+                .padding(.bottom, 48)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(alignment: .top) { gradient }
         }
         .scrollIndicators(.hidden)
+        .scrollEdgeEffectStyle(.soft, for: .top)
         .background((colorScheme == .dark ? Color.black : Color.white).ignoresSafeArea())
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarVisibility(.visible, for: .navigationBar)
+        .toolbarVisibility(.hidden, for: .navigationBar)
+        .background { InteractivePopGestureEnabler() }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            pageHeader
+        }
     }
 
     // MARK: - Header
-
-    private var gradient: some View {
-        Image(colorScheme == .dark ? "gradient dark" : "gradient light")
-            .resizable()
-            .scaledToFill()
-            .frame(height: 380)
-            .frame(maxWidth: .infinity)
-            .clipped()
-            .ignoresSafeArea(edges: .top)
-    }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -84,6 +77,33 @@ struct SectionDetailView: View {
         }
         .padding(.horizontal, 24)
         .padding(.top, 8)
+    }
+
+    private var pageHeader: some View {
+        ZStack {
+            Text(title)
+                .font(.system(size: 17, weight: .semibold))
+                .tracking(-0.35)
+                .lineLimit(1)
+
+            HStack {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 16, weight: .semibold))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Back")
+
+                Spacer()
+            }
+        }
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 12)
     }
 
     // MARK: - Filters
@@ -268,6 +288,29 @@ struct SectionDetailView: View {
         if plural.hasSuffix("ies") { return String(plural.dropLast(3)) + "y" }
         if plural.hasSuffix("s") { return String(plural.dropLast()) }
         return plural
+    }
+}
+
+private struct InteractivePopGestureEnabler: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> Controller {
+        Controller()
+    }
+
+    func updateUIViewController(_ controller: Controller, context: Context) {
+        controller.enableInteractivePopGesture()
+    }
+
+    final class Controller: UIViewController {
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            enableInteractivePopGesture()
+        }
+
+        func enableInteractivePopGesture() {
+            guard let navigationController else { return }
+            navigationController.interactivePopGestureRecognizer?.isEnabled = true
+            navigationController.interactivePopGestureRecognizer?.delegate = nil
+        }
     }
 }
 

@@ -43,9 +43,11 @@ private struct ProcessedScreenshotEvent: Decodable {
     let id: String
 }
 
-#if DEBUG
-let backendBaseURL = URL(string: "http://192.168.50.40:3000")!
-let webBaseURL = URL(string: "http://192.168.50.40:4321")!
+// Debug builds default to live. Remove USE_LIVE_BACKEND from the Debug
+// compilation conditions when a local backend is needed.
+#if DEBUG && !USE_LIVE_BACKEND
+let backendBaseURL = URL(string: "http://10.104.192.97:3000")!
+let webBaseURL = URL(string: "http://10.104.192.97:4321")!
 #else
 let backendBaseURL = URL(string: "https://api.getkindl.ing")!
 let webBaseURL = URL(string: "https://getkindl.ing")!

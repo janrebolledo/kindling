@@ -12,7 +12,7 @@ import Logo from '../components/Logo.astro';
       <Logo />
     </a>
     <h1 class="text-[32px] font-medium tracking-[-0.8px]">privacy</h1>
-    <p class="mt-2 text-[16px] tracking-[-0.4px] text-muted">last updated Aug 15, 2026</p>
+    <p class="mt-2 text-[16px] tracking-[-0.4px] text-muted">last updated Aug 19, 2026</p>
     <div class="mt-8 space-y-4 text-[16px] leading-relaxed tracking-[-0.4px] text-black/80">
       <p>
         kindling is made by jan rebolledo. this page is the whole policy: what the app uses,
@@ -52,14 +52,16 @@ import Logo from '../components/Logo.astro';
 
       <h2 class="pt-4 text-[20px] font-medium tracking-[-0.5px] text-black">saved places</h2>
       <p>
-        places you save — name, address, hours, and a photo of the venue — live with your
-        account. that’s your list, not a copy of your screenshots.
+        places you save — a title, description, category, event details, a photo, and an Apple
+        Maps place identifier — live with your account. kindling does not store Apple Maps place
+        details such as addresses, hours, venue names, or pricing. that’s your list, not a
+        copy of your screenshots.
       </p>
 
       <h2 class="pt-4 text-[20px] font-medium tracking-[-0.5px] text-black">location</h2>
       <p>
-        if you allow it, kindling uses your location on your phone to estimate travel time. we
-        don’t send your live location to our servers.
+        if you allow it, kindling uses your location on your phone with Apple Maps to estimate
+        travel time. we don’t send your live location to our servers.
       </p>
       <p>
         you can turn off photo or location access anytime in ios settings → kindling.
@@ -67,18 +69,18 @@ import Logo from '../components/Logo.astro';
 
       <h2 class="pt-4 text-[20px] font-medium tracking-[-0.5px] text-black">sharing</h2>
       <p>
-        if you share a place from the app, we publish the saved venue (name, photo, location,
-        highlights) at a public link. your screenshot is not included.
+        if you share an idea from the app, we publish its name, description, optional media, and
+        highlights at a public link. your screenshot is not included.
       </p>
 
       <h2 class="pt-4 text-[20px] font-medium tracking-[-0.5px] text-black">who else sees data</h2>
       <p>
-        apple (sign in), supabase (account and saved places), google gemini (screenshot text,
-        to find places), and cloudflare (hosts the app). supabase, gemini, and cloudflare are
-        required under their terms to protect this data. we keep logs for up to 7 days to debug
-        the app. they don’t contain screenshot images or the full screenshot text — just
-        technical info like error messages, and sometimes venue names. we don’t use analytics
-        or ad trackers.
+        apple (sign in and Maps features), supabase (account and saved places), google gemini
+        (screenshot text, to find places), and cloudflare (hosts the app). kindling no longer
+        sends saved-place data to Google Maps. supabase, gemini, and cloudflare are required
+        under their terms to protect this data. we keep logs for up to 7 days to debug the app.
+        they don’t contain screenshot images or the full screenshot text — just technical info
+        like error messages, and sometimes venue names. we don’t use analytics or ad trackers.
       </p>
 
       <h2 class="pt-4 text-[20px] font-medium tracking-[-0.5px] text-black">deletion</h2>

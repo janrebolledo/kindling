@@ -27,11 +27,11 @@ struct OnboardingStartView: View {
                         .tracking(-0.9)
                         .foregroundStyle(.black)
                         .padding(.horizontal, 24)
-                        .padding(.top, 24)
+                        .padding(.top, 20)
 
                     Spacer(minLength: 16)
 
-                    VStack(spacing: 12) {
+                    VStack(spacing: 8) {
                         OnboardingPrimaryButton(title: "continue →") {
                             withAnimation(OnboardingMotion.step(reduceMotion)) {
                                 onContinue()
@@ -44,18 +44,18 @@ struct OnboardingStartView: View {
                             }
                         } label: {
                             Text("or sign into your account")
-                                .font(.system(size: 20, weight: .medium))
-                                .tracking(-0.5)
+                                .font(.system(size: 16, weight: .medium))
+                                .tracking(-0.32)
                                 .foregroundStyle(.black.opacity(0.5))
-                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .frame(maxWidth: .infinity, minHeight: 36)
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(OnboardingPressStyle())
 
                         OnboardingLegalText()
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 12)
                 }
             }
         }
@@ -63,7 +63,7 @@ struct OnboardingStartView: View {
 
     @ViewBuilder
     func corkBoard(geo: GeometryProxy) -> some View {
-        let boardWidth = geo.size.width - 32
+        let boardWidth = min(geo.size.width - 64, 350)
         let boardHeight = boardWidth * (481.0 / 370.0)
 
         ZStack {
@@ -132,8 +132,8 @@ struct OnboardingStartView: View {
         }
         .frame(width: boardWidth, height: boardHeight)
         .clipShape(RoundedRectangle(cornerRadius: 50, style: .continuous))
-        .padding(.horizontal, 16)
-        .padding(.top, 20)
+        .padding(.horizontal, 32)
+        .padding(.top, 16)
     }
 }
 

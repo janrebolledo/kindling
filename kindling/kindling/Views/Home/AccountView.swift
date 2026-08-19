@@ -145,6 +145,23 @@ struct AccountView: View {
         .navigationTitle(SettingsPage.settings.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarVisibility(.visible, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    if hasUnsavedChanges {
+                        showDiscardDialog = true
+                    } else {
+                        dismiss()
+                    }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(width: 36, height: 36)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Close settings")
+            }
+        }
         .background(
             InteractiveDismissGuard(blocking: hasUnsavedChanges) {
                 showDiscardDialog = true

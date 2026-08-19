@@ -91,7 +91,7 @@ private struct DiscoverySheetBackground: View {
                         .init(color: Color(red: 255 / 255, green: 137 / 255, blue: 4 / 255).opacity(0.10), location: 0.5),
                         .init(color: .clear, location: 1),
                     ],
-                    center: UnitPoint(x: 0.5, y: 0.42),
+                    center: UnitPoint(x: 0.5, y: 0.58),
                     startRadius: 0,
                     endRadius: max(proxy.size.width, proxy.size.height) * 0.58
                 )
@@ -102,12 +102,10 @@ private struct DiscoverySheetBackground: View {
     }
 }
 
-private enum SheetSectionDestination: Hashable, Identifiable {
+private enum SheetSectionDestination: Hashable {
     case nomnomnom
     case nearby
     case events
-
-    var id: Self { self }
 }
 
 @Observable
@@ -159,6 +157,7 @@ struct PinsView: View {
     @State private var isShowingIdeaInSheet = false
     @State private var sectionDestination: SheetSectionDestination?
     @State private var isDiscoverySheetPresented = true
+    @State private var isSettingsSheetPresented = false
     @State private var discoveryDetent: PresentationDetent = .fraction(0.55)
     @Namespace private var ideaTransition
 
@@ -232,14 +231,6 @@ struct PinsView: View {
                     .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.55)))
                     .presentationContentInteraction(.resizes)
                     .interactiveDismissDisabled(true)
-            }
-            .sheet(item: $sectionDestination) { destination in
-                sectionSheet(for: destination)
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.visible)
-                    .presentationContentInteraction(.scrolls)
-                    .presentationCornerRadius(0)
-                    .interactiveDismissDisabled(false)
             }
         }
         .task {
@@ -343,7 +334,9 @@ struct PinsView: View {
                     .scaledToFit()
                     .frame(height: 22)
                 Spacer()
-                NavigationLink { AccountView() } label: {
+                Button {
+                    isSettingsSheetPresented = true
+                } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "person.fill")
                             .font(.system(size: 13, weight: .medium))
@@ -355,6 +348,7 @@ struct PinsView: View {
                 }
                 .buttonStyle(.glass)
                 .tint(.primary)
+                .accessibilityHint("Opens settings")
                 .accessibilityLabel("Account for \(userSettings.displayName)")
             }
         }
@@ -393,7 +387,7 @@ struct PinsView: View {
 
     private var sheetContent: some View {
         ZStack {
-            DiscoverySheetBackground()
+            Color(uiColor: .systemBackground)
                 .ignoresSafeArea()
 
             NavigationStack {
@@ -413,45 +407,38 @@ struct PinsView: View {
                             .toolbarVisibility(.visible, for: .navigationBar)
                         }
                     }
+                    .navigationDestination(item: $sectionDestination) { destination in
+                        switch destination {
+                        case .nomnomnom:
+                            SectionDetailView(
+                                title: "#nomnomnom",
+                                subtitle: subtitle(for: allNomnomnomItems),
+                                items: allNomnomnomItems
+                            )
+                        case .nearby:
+                            SectionDetailView(
+                                title: "Things Near You",
+                                subtitle: "places near you",
+                                items: filteredLocationItems
+                            )
+                        case .events:
+                            SectionDetailView(
+                                title: "events this week",
+                                subtitle: "what’s happening this week",
+                                items: filteredEventItems
+                            )
+                        }
+                    }
             }
         }
-    }
-
-    private func sectionSheet(for destination: SheetSectionDestination) -> some View {
-        NavigationStack {
-            Group {
-                switch destination {
-                case .nomnomnom:
-                    SectionDetailView(
-                        title: "#nomnomnom",
-                        subtitle: subtitle(for: allNomnomnomItems),
-                        items: allNomnomnomItems
-                    )
-                case .nearby:
-                    SectionDetailView(
-                        title: "Things Near You",
-                        subtitle: "places near you",
-                        items: filteredLocationItems
-                    )
-                case .events:
-                    SectionDetailView(
-                        title: "events this week",
-                        subtitle: "what’s happening this week",
-                        items: filteredEventItems
-                    )
-                }
+        .sheet(isPresented: $isSettingsSheetPresented) {
+            NavigationStack {
+                AccountView()
             }
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        sectionDestination = nil
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 13, weight: .semibold))
-                    }
-                    .accessibilityLabel("Close")
-                }
-            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(36)
+            .presentationBackground(Color(uiColor: .systemBackground))
         }
     }
 
@@ -465,27 +452,32 @@ struct PinsView: View {
                     discoverySection(
                         title: "#nomnomnom",
                         items: nomnomnomItems,
-                        action: { openSection(.nomnomnom) }
+                        action: { sectionDestination = .nomnomnom }
                     )
                 }
 
                 discoverySection(
                     title: "Things Near You",
                     items: filteredLocationItems,
-                    action: { openSection(.nearby) }
+                    action: { sectionDestination = .nearby }
                 )
 
                 if !filteredEventItems.isEmpty {
                     discoverySection(
                         title: "events this week",
                         items: filteredEventItems,
-                        action: { openSection(.events) }
+                        action: { sectionDestination = .events }
                     )
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 20)
             .padding(.bottom, 60)
+            .background(alignment: .top) {
+                DiscoverySheetBackground()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 620)
+            }
         }
         .frame(maxWidth: .infinity)
         .scrollIndicators(.hidden)
@@ -586,14 +578,7 @@ struct PinsView: View {
 
     private func viewMoreCard(action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 14) {
-                Spacer()
-
-                Text("view more")
-                    .font(.system(size: 28, weight: .medium))
-                    .tracking(-0.7)
-                    .foregroundStyle(.primary)
-
+            ZStack {
                 HStack(spacing: 6) {
                     Text("view all")
                     Image(systemName: "arrow.right")
@@ -606,17 +591,11 @@ struct PinsView: View {
                 .padding(.vertical, 12)
                 .background(Color.primary, in: Capsule())
             }
-            .padding(18)
-            .frame(width: 250, height: 250, alignment: .leading)
-            .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(Color.primary.opacity(0.12), lineWidth: 1)
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .frame(width: 250, height: 250)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("View more")
+        .accessibilityLabel("View all")
     }
 
     private func discoveryCard(_ item: CollectionItemWrapper) -> some View {
@@ -685,16 +664,6 @@ struct PinsView: View {
         discoveryDetent = .large
         isDiscoverySheetPresented = true
         isShowingIdeaInSheet = true
-    }
-
-    private func openSection(_ destination: SheetSectionDestination) {
-        // The section page is a sibling presentation, not a destination
-        // nested inside the discovery sheet. Give the first sheet a run loop
-        // to dismiss before presenting the new full-height sheet.
-        isDiscoverySheetPresented = false
-        DispatchQueue.main.async {
-            sectionDestination = destination
-        }
     }
 
     private func focusOnMap(_ item: CollectionItemWrapper) {

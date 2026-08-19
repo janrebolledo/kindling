@@ -44,7 +44,7 @@ struct PillButton: View {
                 .padding(.vertical, 5)
         }
         .if(isSelected) {
-            $0.buttonStyle(.glassProminent).tint(Color("hotpink"))
+            $0.buttonStyle(.glassProminent).tint(.pink)
         }
         .if(!isSelected) { $0.buttonStyle(.glass) }
     }
