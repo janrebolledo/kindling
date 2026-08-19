@@ -193,7 +193,7 @@ struct IdeaView: View {
                 .padding(.bottom, 48)
 
             // Bottom action buttons
-            VStack(spacing: 8) {
+            VStack(spacing: 14) {
                 Button {
                     // TODO: report issue
                 } label: {
@@ -202,7 +202,8 @@ struct IdeaView: View {
                         .tracking(-0.4)
                         .foregroundStyle(.primary)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 42)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 14)
                 }
                 .buttonStyle(.plain)
                 .background(pillBackground)
@@ -222,7 +223,8 @@ struct IdeaView: View {
                             .tracking(-0.4)
                             .foregroundStyle(isDeletingFromCollection ? .secondary : destructiveRed)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 42)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 14)
                     }
                     .buttonStyle(.plain)
                     .background(pillBackground)
@@ -407,7 +409,7 @@ struct IdeaView: View {
                         .font(.system(size: 16, weight: .medium))
                         .tracking(-0.4)
                         .foregroundStyle(.primary)
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, 12)
                         .frame(height: 42)
                 }
                 .buttonStyle(.plain)
@@ -433,7 +435,7 @@ struct IdeaView: View {
                             .font(.system(size: 16, weight: .medium))
                             .tracking(-0.4)
                             .foregroundStyle(isDeletingFromDevice ? .secondary : destructiveRed)
-                            .padding(.horizontal, 16)
+                            .padding(.horizontal, 12)
                             .frame(height: 42)
                     }
                     .buttonStyle(.plain)
