@@ -138,10 +138,6 @@ struct IdeaView: View {
                     Text(etaString ?? "—")
                 }
                 .font(.system(size: 16))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(pillBackground)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 24)
