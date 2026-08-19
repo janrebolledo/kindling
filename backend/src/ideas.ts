@@ -48,7 +48,10 @@ async function getOrCreateIdeaForPlace(
   if (existing) return { idea: existing, via: 'place_id' };
 
   const newIdea = {
-    name: item.name,
+    // `item.venue` comes from the user's screenshot extraction, not Apple
+    // Maps. Keep it as the app-owned display title now that venue is not a
+    // persisted provider field.
+    name: item.name ?? item.venue,
     type: item.tag,
     description: item.description ?? null,
     media_url: image,
