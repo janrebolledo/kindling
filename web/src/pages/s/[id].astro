@@ -81,7 +81,7 @@ const description = idea?.name || idea?.description || 'saved with kindling.';
           <h1 class='text-[32px] font-medium tracking-[-0.8px] text-black'>
             {venue}
           </h1>
-          {(status || idea.location_type || idea.duration) && (
+          {(status || idea.location_type || idea.location_emoji || idea.duration) && (
             <div class='flex items-center gap-2 text-[16px] tracking-[-0.4px] text-muted'>
               {status ? (
                 <>
@@ -92,8 +92,12 @@ const description = idea?.name || idea?.description || 'saved with kindling.';
                 </>
               ) : (
                 <>
-                  {idea.location_type && (
-                    <span class='font-medium'>{idea.location_type}</span>
+                  {(idea.location_emoji || idea.location_type) && (
+                    <span class='font-medium'>
+                      {[idea.location_emoji, idea.location_type]
+                        .filter(Boolean)
+                        .join(' ')}
+                    </span>
                   )}
                   {idea.duration && <span>{idea.duration}</span>}
                 </>

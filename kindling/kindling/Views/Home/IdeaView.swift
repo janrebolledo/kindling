@@ -79,14 +79,14 @@ struct IdeaView: View {
                 .padding(.bottom, 8)
 
                 // Status row
-                if card.ideas?.location_type != nil || card.ideas?.duration != nil || card.ideas?.open_hours != nil {
+                if card.ideas?.locationTypeLabel != nil || card.ideas?.duration != nil || card.ideas?.open_hours != nil {
                     HStack(spacing: 8) {
                         if let hours = card.ideas?.open_hours,
                            let status = resolveOpenStatus(from: hours) {
                             Text(status.isOpen ? "Open" : "Closed").fontWeight(.medium)
                             Text(status.detail)
                         } else {
-                            if let locationType = card.ideas?.location_type {
+                            if let locationType = card.ideas?.locationTypeLabel {
                                 Text(locationType).fontWeight(.medium)
                             }
                             if let hrs = card.ideas?.duration {

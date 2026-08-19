@@ -44,6 +44,7 @@ struct Item: Codable, Identifiable {
     let address: String?
     let location: String?
     let location_type: String?
+    let location_emoji: String?
     let duration: String?
     let pricing: Int?
     let date: String?
@@ -52,6 +53,17 @@ struct Item: Codable, Identifiable {
     let place_id: String?
     let created_at: String?
     let open_hours: [String]?
+
+    var locationTypeLabel: String? {
+        let label = [location_emoji, location_type]
+            .compactMap { value in
+                guard let value, !value.isEmpty else { return nil }
+                return value
+            }
+            .joined(separator: " ")
+
+        return label.isEmpty ? nil : label
+    }
 }
 
 struct collection: Encodable, Identifiable {
