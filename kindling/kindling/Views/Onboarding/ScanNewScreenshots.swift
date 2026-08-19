@@ -14,8 +14,14 @@ import UIKit
 
 /// Scans for new (unparsed) screenshots on app open and ingests a small batch.
 /// - Parameter limit: maximum number of new screenshots to parse per call.
-func scanForNewScreenshots(limit: Int = 5) async {
-    await ScreenshotIndexingCoordinator.shared.scan(limit: limit)
+func scanForNewScreenshots(
+    limit: Int = 5,
+    onProgress: (@MainActor @Sendable (Int, Int) -> Void)? = nil
+) async {
+    await ScreenshotIndexingCoordinator.shared.scan(
+        limit: limit,
+        onProgress: onProgress
+    )
 }
 
 /// Owns the indexing session so view lifecycle tasks and manual button taps
@@ -28,19 +34,27 @@ final class ScreenshotIndexingCoordinator {
 
     private init() {}
 
-    func scan(limit: Int) async {
+    func scan(
+        limit: Int,
+        onProgress: (@MainActor @Sendable (Int, Int) -> Void)? = nil
+    ) async {
         if let currentScan {
             await currentScan.value
             return
         }
 
-        let task = Task { await performScan(limit: limit) }
+        let task = Task {
+            await performScan(limit: limit, onProgress: onProgress)
+        }
         currentScan = task
         await task.value
         currentScan = nil
     }
 
-    private func performScan(limit: Int) async {
+    private func performScan(
+        limit: Int,
+        onProgress: (@MainActor @Sendable (Int, Int) -> Void)?
+    ) async {
         guard let userID = supabase.auth.currentUser?.id else { return }
 
         let service = ParsedScreenshotsService(userID: userID)
@@ -77,6 +91,8 @@ final class ScreenshotIndexingCoordinator {
         }
         .filter { $0.1 != nil }
 
+        onProgress?(0, images.count)
+
     // Parse via the backend, collecting both ideas and explicit per-screenshot
     // acknowledgements. A missing acknowledgement remains eligible for retry.
         var cards: [ItemWrapper] = []
@@ -89,6 +105,7 @@ final class ScreenshotIndexingCoordinator {
                         cards.append(item)
                     case .processed(let id):
                         processedIDs.insert(id)
+                        onProgress?(processedIDs.count, images.count)
                     }
                 }
             } catch {

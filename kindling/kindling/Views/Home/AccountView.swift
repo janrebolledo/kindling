@@ -102,6 +102,8 @@ struct AccountView: View {
     @State private var processedScreenshotCount = 0
     @State private var totalScreenshotCount = 0
     @State private var isProcessingScreenshots = false
+    @State private var processingImageCount = 0
+    @State private var processedProcessingImageCount = 0
     @State private var isPhotoPickerPresented = false
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
     @State private var showUploadError = false
@@ -700,11 +702,24 @@ struct AccountView: View {
 
                     Spacer()
 
-                    Text("\(processedScreenshotCount)/\(totalScreenshotCount)")
-                        .font(.system(size: 16, weight: .medium))
-                        .tracking(-0.4)
-                        .foregroundStyle(figmaGray)
-                        .contentTransition(.numericText())
+                    HStack(spacing: 0) {
+                        Text("\(processedScreenshotCount)")
+                            .contentTransition(.numericText())
+                            .opacity(isProcessingScreenshots && !reduceMotion ? 0.5 : 1)
+                            .animation(
+                                isProcessingScreenshots && !reduceMotion
+                                    ? .easeInOut(duration: 0.9).repeatForever(
+                                        autoreverses: true
+                                    )
+                                    : .easeOut(duration: 0.15),
+                                value: isProcessingScreenshots
+                            )
+
+                        Text("/\(totalScreenshotCount)")
+                    }
+                    .font(.system(size: 16, weight: .medium))
+                    .tracking(-0.4)
+                    .foregroundStyle(figmaGray)
                 }
 
                 GeometryReader { proxy in
@@ -712,13 +727,20 @@ struct AccountView: View {
                         Capsule()
                             .fill(Color(red: 217 / 255, green: 217 / 255, blue: 217 / 255))
 
+                        if isProcessingScreenshots {
+                            Capsule()
+                                .fill(Color(red: 247 / 255, green: 190 / 255, blue: 125 / 255))
+                                .frame(width: proxy.size.width * processingScreenshotProgress)
+                        }
+
                         Capsule()
                             .fill(Color(red: 255 / 255, green: 137 / 255, blue: 4 / 255))
-                            .frame(width: proxy.size.width * screenshotProgress)
+                            .frame(width: proxy.size.width * displayedScreenshotProgress)
                     }
                 }
                 .frame(height: 6)
-                .animation(.easeInOut(duration: 0.25), value: screenshotProgress)
+                .animation(.easeInOut(duration: 0.25), value: displayedScreenshotProgress)
+                .animation(.easeInOut(duration: 0.25), value: processingScreenshotProgress)
             }
             .padding(14)
 
@@ -759,7 +781,7 @@ struct AccountView: View {
 
             HStack(spacing: 4) {
                 Image(systemName: "info.circle")
-                Text("kindling cannot view your photos")
+                Text("kindling does not store your photos")
             }
                 .font(.system(size: 12))
                 .tracking(-0.12)
@@ -771,6 +793,34 @@ struct AccountView: View {
     private var screenshotProgress: CGFloat {
         guard totalScreenshotCount > 0 else { return 0 }
         return min(CGFloat(processedScreenshotCount) / CGFloat(totalScreenshotCount), 1)
+    }
+
+    private var displayedScreenshotProgress: CGFloat {
+        guard totalScreenshotCount > 0 else { return screenshotProgress }
+        guard isProcessingScreenshots else { return screenshotProgress }
+
+        return min(
+            CGFloat(processedScreenshotCount + processedProcessingImageCount)
+                / CGFloat(totalScreenshotCount),
+            1
+        )
+    }
+
+    private var processingScreenshotProgress: CGFloat {
+        let remainingImages = max(processingImageCount - processedProcessingImageCount, 0)
+        guard remainingImages > 0 else { return displayedScreenshotProgress }
+
+        let indicatorWidth: CGFloat
+        if totalScreenshotCount > 0 {
+            indicatorWidth = min(
+                CGFloat(remainingImages) / CGFloat(totalScreenshotCount),
+                0.08
+            )
+        } else {
+            indicatorWidth = 0.05
+        }
+
+        return min(displayedScreenshotProgress + indicatorWidth, 1)
     }
 
     private func screenshotActionButton(
@@ -963,11 +1013,21 @@ struct AccountView: View {
     private func processMoreScreenshots() {
         guard !isProcessingScreenshots else { return }
         isProcessingScreenshots = true
+        processingImageCount = 5
+        processedProcessingImageCount = 0
 
         Task {
-            await scanForNewScreenshots()
+            defer {
+                isProcessingScreenshots = false
+                processingImageCount = 0
+                processedProcessingImageCount = 0
+            }
+
+            await scanForNewScreenshots { processed, total in
+                processingImageCount = total
+                processedProcessingImageCount = processed
+            }
             await refreshScreenshotProgress()
-            isProcessingScreenshots = false
         }
     }
 
@@ -975,10 +1035,19 @@ struct AccountView: View {
         guard !items.isEmpty, !isProcessingScreenshots else { return }
 
         isProcessingScreenshots = true
+        processingImageCount = items.count
+        processedProcessingImageCount = 0
         Task {
+            defer {
+                isProcessingScreenshots = false
+                processingImageCount = 0
+                processedProcessingImageCount = 0
+            }
+
             do {
                 let images = await loadSelectedPhotos(from: items)
                 guard !images.isEmpty else { throw PhotoUploadError.noImages }
+                processingImageCount = images.count
 
                 var cards: [ItemWrapper] = []
                 var processedIDs = Set<String>()
@@ -989,6 +1058,7 @@ struct AccountView: View {
                         cards.append(item)
                     case .processed(let id):
                         processedIDs.insert(id)
+                        processedProcessingImageCount = processedIDs.count
                     }
                 }
 
@@ -1009,8 +1079,6 @@ struct AccountView: View {
                 uploadErrorMessage = error.localizedDescription
                 showUploadError = true
             }
-
-            isProcessingScreenshots = false
         }
     }
 
