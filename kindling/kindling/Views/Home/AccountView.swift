@@ -98,6 +98,7 @@ struct AccountView: View {
     @State private var isDeletingAccount = false
     @State private var showDiscardDialog = false
     @State private var showSignOutConfirm = false
+    @State private var showFeedback = false
 
     @State private var processedScreenshotCount = 0
     @State private var totalScreenshotCount = 0
@@ -213,6 +214,9 @@ struct AccountView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(uploadErrorMessage)
+        }
+        .sheet(isPresented: $showFeedback) {
+            FeedbackView()
         }
     }
 
@@ -352,7 +356,7 @@ struct AccountView: View {
                     title: "Give feedback",
                     systemName: "exclamationmark.bubble.fill",
                     tint: .primary,
-                    action: giveFeedback
+                    action: { showFeedback = true }
                 )
 
                 settingsActionButton(
@@ -1148,16 +1152,6 @@ struct AccountView: View {
         } catch {
             dump(error)
             showDeleteError = true
-        }
-    }
-
-    private func giveFeedback() {
-        var components = URLComponents()
-        components.scheme = "mailto"
-        components.path = "contact@janrebolledo.com"
-        components.queryItems = [URLQueryItem(name: "subject", value: "Kindling Feedback")]
-        if let url = components.url {
-            openURL(url)
         }
     }
 

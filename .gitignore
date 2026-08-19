@@ -7,4 +7,6 @@
 node_modules/
 .wrangler/
 
-supabase/
+supabase/*
+!supabase/migrations/
+!supabase/migrations/*.sql

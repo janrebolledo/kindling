@@ -11,6 +11,8 @@ declare namespace App {
 
 interface ImportMetaEnv {
   readonly PUBLIC_APP_STORE_URL: string;
+  readonly PUBLIC_SUPABASE_URL?: string;
+  readonly PUBLIC_SUPABASE_PUBLISHABLE_KEY?: string;
 }
 
 interface ImportMeta {

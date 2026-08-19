@@ -1,0 +1,71 @@
+---
+interface Props {
+  label: string;
+  name: string;
+  type?: string;
+  autocomplete?: string;
+  required?: boolean;
+  multiline?: boolean;
+  maxlength?: number;
+  enterkeyhint?: string;
+  autocapitalize?: string;
+}
+
+const {
+  label,
+  name,
+  type = 'text',
+  autocomplete,
+  required = true,
+  multiline = false,
+  maxlength,
+  enterkeyhint,
+  autocapitalize,
+} = Astro.props;
+
+const fieldClass =
+  'w-full resize-none bg-transparent text-[16px] font-medium tracking-[-0.4px] text-black outline-none placeholder:text-muted/50';
+---
+
+<label
+  class="contact-field group flex w-full flex-col gap-1 rounded-[22px] bg-surface px-4 py-3 focus-within:ring-2 focus-within:ring-black/10"
+  data-field={name}
+  data-squircle
+  data-squircle-radius="22"
+>
+  <span class="flex items-center justify-between text-[11px] font-medium tracking-[-0.1375px] text-muted">
+    <span>{label}</span>
+    <span class="text-[10px] text-muted/60">required</span>
+  </span>
+  {
+    multiline ? (
+      <textarea
+        id={name}
+        name={name}
+        class:list={[fieldClass, 'min-h-[120px]']}
+        required={required}
+        maxlength={maxlength}
+        autocomplete={autocomplete}
+        aria-describedby={`${name}-error`}
+        enterkeyhint={enterkeyhint}
+        autocapitalize={autocapitalize}
+        spellcheck={multiline}
+        rows={5}
+      />
+    ) : (
+      <input
+        id={name}
+        name={name}
+        type={type}
+        class={fieldClass}
+        required={required}
+        maxlength={maxlength}
+        autocomplete={autocomplete}
+        aria-describedby={`${name}-error`}
+        enterkeyhint={enterkeyhint}
+        autocapitalize={autocapitalize}
+      />
+    )
+  }
+  <span id={`${name}-error`} class="contact-field-error" aria-live="polite"></span>
+</label>

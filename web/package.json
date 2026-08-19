@@ -9,6 +9,7 @@
     "deploy": "astro build && wrangler deploy"
   },
   "dependencies": {
+    "@lisse/core": "^0.7.1",
     "astro": "^5.13.0"
   },
   "devDependencies": {

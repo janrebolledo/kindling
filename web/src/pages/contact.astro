@@ -1,0 +1,243 @@
+---
+export const prerender = true;
+
+import Layout from '../layouts/Layout.astro';
+import Footer from '../components/Footer.astro';
+import Logo from '../components/Logo.astro';
+import FormField from '../components/FormField.astro';
+
+const contactEmail = 'contact@janrebolledo.com';
+---
+
+<Layout
+  title='contact · kindling'
+  description='questions, feedback, anything else. we read it.'
+>
+  <div class='contact-page mx-auto flex min-h-dvh max-w-[640px] flex-col px-6 py-16'>
+    <a href='/' class='mb-12 rounded-full focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black'>
+      <Logo />
+    </a>
+
+    <main class='flex flex-1 flex-col'>
+      <section>
+        <h1 class='text-[32px] font-medium tracking-[-0.8px]'>contact</h1>
+        <p class='mt-2 text-[16px] tracking-[-0.4px] text-muted'>
+          thank you for reaching out, feel free to ask questions, provide feedback, or make inquiries. we'll get back to you as soon as possible.
+        </p>
+      </section>
+
+      <form
+        id='contact-form'
+        class='contact-form mt-8 flex w-full flex-col gap-3'
+        novalidate
+      >
+          <div class='flex flex-col gap-3'>
+            <FormField
+              label='name'
+              name='name'
+              autocomplete='name'
+              autocapitalize='words'
+              maxlength={100}
+              enterkeyhint='next'
+            />
+            <FormField
+              label='email'
+              name='email'
+              type='email'
+              autocomplete='email'
+              autocapitalize='off'
+              maxlength={254}
+              enterkeyhint='next'
+            />
+          </div>
+          <FormField
+            label='message'
+            name='message'
+            multiline
+            autocomplete='off'
+            maxlength={4000}
+            enterkeyhint='send'
+          />
+
+          <div class='mt-3 flex flex-col gap-3'>
+            <button
+              type='submit'
+              class='contact-submit group flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-[18px] bg-black px-5 text-[16px] font-medium tracking-[-0.4px] text-white transition-[transform,background-color] duration-[160ms] ease-out hover:bg-[#242424] enabled:active:scale-[0.97] motion-reduce:transition-none motion-reduce:enabled:active:scale-100'
+            >
+              <span>send</span>
+              <span aria-hidden='true' class='text-[20px] transition-transform duration-[160ms] group-hover:translate-x-0.5 motion-reduce:transition-none'>→</span>
+            </button>
+            <p class='text-center text-[13px] leading-[1.35] tracking-[-0.26px] text-muted'>or email <a class='underline decoration-solid underline-offset-2 hover:text-black' href={`mailto:${contactEmail}`}>{contactEmail}</a></p>
+          </div>
+          <p id='contact-status' class='contact-status' role='status' aria-live='polite' hidden></p>
+      </form>
+    </main>
+
+    <div class='mt-auto pt-16'>
+      <Footer />
+    </div>
+  </div>
+</Layout>
+
+<style>
+  .contact-page {
+    background: transparent;
+  }
+
+  .contact-field {
+    min-height: 74px;
+    corner-shape: squircle;
+    transition: background-color 160ms ease-out, box-shadow 160ms ease-out;
+  }
+
+  .contact-field:focus-within {
+    background: #fff;
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
+  }
+
+  .contact-field.has-error {
+    background: rgba(255, 56, 60, 0.07);
+    box-shadow: 0 0 0 2px rgba(255, 56, 60, 0.72);
+  }
+
+  .contact-field-error {
+    min-height: 0;
+    color: #d70015;
+    font-size: 12px;
+    letter-spacing: -0.24px;
+  }
+
+  .contact-status {
+    margin: -0.5rem 0 0;
+    border-radius: 14px;
+    background: rgba(52, 199, 89, 0.1);
+    padding: 0.7rem 0.85rem;
+    color: #1d6b35;
+    font-size: 13px;
+    line-height: 1.35;
+    letter-spacing: -0.26px;
+  }
+
+  .contact-status[data-state='error'] {
+    background: rgba(255, 56, 60, 0.08);
+    color: #b00012;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .contact-field {
+      transition: none;
+    }
+  }
+</style>
+
+<script>
+  import { generateClipPath, observeResize } from '@lisse/core';
+  import { submitContactSubmission } from '../lib/contact';
+
+  const form = document.querySelector<HTMLFormElement>('#contact-form');
+  const status = document.querySelector<HTMLElement>('#contact-status');
+  const submit = form?.querySelector<HTMLButtonElement>('button[type="submit"]');
+  const contactEmail = 'contact@janrebolledo.com';
+
+  document.querySelectorAll<HTMLElement>('[data-squircle]').forEach((element) => {
+    const radius = Number(element.dataset.squircleRadius ?? 24);
+    const updateClipPath = () => {
+      const { width, height } = element.getBoundingClientRect();
+      if (width && height) {
+        element.style.clipPath = generateClipPath(width, height, {
+          radius,
+          smoothing: 0.65,
+          preserveSmoothing: true,
+        });
+      }
+    };
+
+    updateClipPath();
+    observeResize(element, updateClipPath);
+  });
+
+  if (form) {
+    const fields = Array.from(form.querySelectorAll<HTMLElement>('[data-field]'));
+
+    const validateField = (field: HTMLElement, announce = false) => {
+      const control = field.querySelector<HTMLInputElement | HTMLTextAreaElement>('input, textarea');
+      const error = field.querySelector<HTMLElement>('.contact-field-error');
+      if (!control || !error) return true;
+
+      let message = '';
+      if (!control.value.trim()) {
+        message = `${field.dataset.field} is required.`;
+      } else if (control instanceof HTMLInputElement && control.type === 'email' && !control.validity.valid) {
+        message = 'enter a valid email address.';
+      }
+
+      field.classList.toggle('has-error', Boolean(message));
+      control.setAttribute('aria-invalid', String(Boolean(message)));
+      error.textContent = message;
+      if (announce && message) error.dataset.announced = 'true';
+      return !message;
+    };
+
+    fields.forEach((field) => {
+      const control = field.querySelector<HTMLInputElement | HTMLTextAreaElement>('input, textarea');
+      control?.addEventListener('blur', () => validateField(field, true));
+      control?.addEventListener('input', () => {
+        if (field.classList.contains('has-error')) validateField(field);
+      });
+    });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const valid = fields.map((field) => validateField(field, true)).every(Boolean);
+      if (!valid) {
+        const firstInvalid = form.querySelector<HTMLInputElement | HTMLTextAreaElement>('[aria-invalid="true"]');
+        firstInvalid?.focus();
+        if (status) {
+          status.hidden = false;
+          status.dataset.state = 'error';
+          status.textContent = 'take another look at the highlighted field.';
+        }
+        return;
+      }
+
+      const data = new FormData(form);
+      const name = String(data.get('name') ?? '').trim();
+      const email = String(data.get('email') ?? '').trim();
+      const message = String(data.get('message') ?? '').trim();
+
+      if (submit) {
+        const label = submit.querySelector('span');
+        if (label) label.textContent = 'sending…';
+        submit.disabled = true;
+      }
+
+      try {
+        await submitContactSubmission({
+          source: 'web',
+          name,
+          email,
+          message,
+        });
+
+        if (status) {
+          status.hidden = false;
+          status.dataset.state = 'success';
+          status.textContent = `thanks — your message is on its way. we’ll get back to you soon.`;
+        }
+        form.reset();
+      } catch {
+        if (status) {
+          status.hidden = false;
+          status.dataset.state = 'error';
+          status.textContent = `something went wrong. please try again or email ${contactEmail}.`;
+        }
+      } finally {
+        if (submit) {
+          const label = submit.querySelector('span');
+          if (label) label.textContent = 'send';
+          submit.disabled = false;
+        }
+      }
+    });
+  }
+</script>
