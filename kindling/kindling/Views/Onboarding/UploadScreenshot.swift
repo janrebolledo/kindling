@@ -11,6 +11,7 @@ import Photos
 import Supabase
 import UIKit
 import Vision
+import os
 
 struct Upload: Codable {
     let id: String
@@ -46,7 +47,7 @@ private struct ProcessedScreenshotEvent: Decodable {
 // Debug builds default to live. Remove USE_LIVE_BACKEND from the Debug
 // compilation conditions when a local backend is needed.
 #if DEBUG && !USE_LIVE_BACKEND
-let backendBaseURL = URL(string: "http://10.104.192.97:3000")!
+let backendBaseURL = URL(string: "http://192.168.1.114:3000")!
 let webBaseURL = URL(string: "http://10.104.192.97:4321")!
 #else
 let backendBaseURL = URL(string: "https://api.getkindl.ing")!
@@ -67,6 +68,11 @@ private func makeRequest(url: URL, body: Data) -> URLRequest {
     return urlRequest
 }
 
+private let screenshotUploadLogger = Logger(
+    subsystem: Bundle.main.bundleIdentifier ?? "kindling",
+    category: "ScreenshotUpload"
+)
+
 /// Streams ideas from POST /ideas (SSE) and yields each `ItemWrapper` as it arrives. Finishes when the server sends the "done" event.
 func uploadImagesStreaming(
     images: [(String, UIImage?)]
@@ -79,15 +85,20 @@ func uploadImagesStreaming(
                 ) { group in
                     for image in images {
                         group.addTask {
-                            (
-                                image.0,
-                                await recognizeText(
-                                    in: image.1!,
-                                    recognitionLevel: .fast,
-                                    languages: ["en"],
-                                    usesLanguageCorrection: true
+                            guard let uiImage = image.1 else {
+                                screenshotUploadLogger.error(
+                                    "Skipping screenshot with no image, id=\(image.0, privacy: .private(mask: .hash))"
                                 )
+                                return (image.0, "")
+                            }
+
+                            let text = await recognizeText(
+                                in: uiImage,
+                                recognitionLevel: .fast,
+                                languages: ["en"],
+                                usesLanguageCorrection: true
                             )
+                            return (image.0, text)
                         }
                     }
                     var results: [Upload] = []
@@ -96,7 +107,6 @@ func uploadImagesStreaming(
                     }
                     return results
                 }
-
                 let providerRaw = UserDefaults.standard.string(
                     forKey: InferenceProvider.defaultsKey
                 )
@@ -110,6 +120,9 @@ func uploadImagesStreaming(
                     )
                 case .appleFoundationModels:
                     guard LocalScreenshotInference.isAvailable else {
+                        screenshotUploadLogger.error(
+                            "Local inference requested but Apple Intelligence is unavailable"
+                        )
                         throw ScreenshotInferenceError.appleModelUnavailable
                     }
                     let extracted = try await LocalScreenshotInference.extract(entries)
@@ -125,6 +138,10 @@ func uploadImagesStreaming(
                 guard let httpResponse = response as? HTTPURLResponse,
                     (200..<300).contains(httpResponse.statusCode)
                 else {
+                    let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+                    screenshotUploadLogger.error(
+                        "Screenshot upload received an invalid HTTP response, status=\(statusCode)"
+                    )
                     continuation.finish(
                         throwing: NSError(
                             domain: "UploadScreenshot",
@@ -160,7 +177,10 @@ func uploadImagesStreaming(
                                 bytes: eventBytes,
                                 encoding: .utf8
                             )
-                        else { break }
+                        else {
+                            screenshotUploadLogger.error("Received invalid UTF-8 in SSE response")
+                            break
+                        }
                         let eventType = eventBlock.split(separator: "\n")
                             .reduce(into: (event: "", data: "")) { acc, line in
                                 let s = String(line)
@@ -186,6 +206,8 @@ func uploadImagesStreaming(
                                 )
                             {
                                 continuation.yield(.idea(wrapper))
+                            } else {
+                                screenshotUploadLogger.error("Failed to decode SSE idea event")
                             }
                         }
                         if eventType.event == "processed", !eventType.data.isEmpty {
@@ -196,12 +218,20 @@ func uploadImagesStreaming(
                                 )
                             {
                                 continuation.yield(.processed(processed.id))
+                            } else {
+                                screenshotUploadLogger.error("Failed to decode SSE processed event")
                             }
                         }
                     }
                 }
+                screenshotUploadLogger.error(
+                    "Screenshot upload stream ended without a done event"
+                )
                 continuation.finish()
             } catch {
+                screenshotUploadLogger.error(
+                    "Screenshot upload failed: \(String(describing: error), privacy: .public)"
+                )
                 continuation.finish(throwing: error)
             }
         }

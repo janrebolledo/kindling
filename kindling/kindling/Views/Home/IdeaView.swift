@@ -29,6 +29,7 @@ struct IdeaView: View {
     @State private var showQuickLook = false
     @State private var isDeletingFromCollection = false
     @State private var isDeletingFromDevice = false
+    @State private var showShareSheet = false
     @State private var polaroidRotation = Double.random(in: -6...6)
 
     private var venueTitle: String {
@@ -56,11 +57,11 @@ struct IdeaView: View {
 
                     Spacer()
 
-                    ShareLink(
-                        item: webBaseURL
-                            .appendingPathComponent("s")
-                            .appendingPathComponent("\(card.ideas?.id ?? card.id)")
-                    ) {
+                    Button {
+                        let ideaID = card.ideas?.id ?? card.id
+                        Task { await UserAnalyticsService.recordIdeaShare(ideaID) }
+                        showShareSheet = true
+                    } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "square.and.arrow.up")
                             Text("share")
@@ -203,6 +204,9 @@ struct IdeaView: View {
                 let result = PHAsset.fetchAssets(withLocalIdentifiers: [card.local_id], options: nil)
                 screenshotDate = result.firstObject?.creationDate
             }
+        }
+        .sheet(isPresented: $showShareSheet) {
+            IdeaShareSheet(items: [shareURL])
         }
     }
 
@@ -373,6 +377,12 @@ struct IdeaView: View {
 
     // MARK: - Helpers
 
+    private var shareURL: URL {
+        webBaseURL
+            .appendingPathComponent("s")
+            .appendingPathComponent("\(card.ideas?.id ?? card.id)")
+    }
+
     private func deleteFromCollection(deleteFromDevice: Bool = false) async {
         do {
             try await supabase
@@ -380,6 +390,14 @@ struct IdeaView: View {
                 .delete()
                 .eq("id", value: card.id)
                 .execute()
+
+            let ideaID = card.ideas?.id ?? card.id
+            Task {
+                await UserAnalyticsService.recordIdeaDeletion(
+                    ideaID,
+                    localID: card.local_id
+                )
+            }
 
             if deleteFromDevice {
                 let fetchResult = PHAsset.fetchAssets(
@@ -413,6 +431,19 @@ struct IdeaView: View {
         }
         return "unknown"
     }
+}
+
+private struct IdeaShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(
+        _ uiViewController: UIActivityViewController,
+        context: Context
+    ) {}
 }
 
 /// Keeps sheet dismiss attached to the idea scroller. MapKit (and any other

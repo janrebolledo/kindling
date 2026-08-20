@@ -70,20 +70,9 @@ private struct DiscoveryIdeaImage: View {
 }
 
 private struct DiscoverySheetBackground: View {
-    @Environment(\.colorScheme) private var colorScheme
-
-    private var surfaceColor: Color {
-        Color(uiColor: .systemBackground)
-    }
-
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                // Fill the entire presentation first. The map remains visible
-                // above the sheet; keeping the sheet itself opaque prevents
-                // the system material from showing through as a hard band.
-                surfaceColor
-
                 RadialGradient(
                     stops: [
                         .init(color: Color(red: 202 / 255, green: 53 / 255, blue: 0).opacity(0.16), location: 0),
@@ -388,6 +377,7 @@ struct PinsView: View {
     private var sheetContent: some View {
         ZStack {
             Color(uiColor: .systemBackground)
+                .opacity(isDiscoverySheetTranslucent ? 0.72 : 1)
                 .ignoresSafeArea()
 
             NavigationStack {
@@ -442,51 +432,55 @@ struct PinsView: View {
         }
     }
 
+    private var isDiscoverySheetTranslucent: Bool {
+        discoveryDetent != .large
+    }
+
     private var discoverySheet: some View {
-        ScrollView(.vertical) {
-            // This stack only contains a few sections. Keeping it eager gives
-            // the sheet a stable full content height when sections contain
-            // nested horizontal scrollers.
-            VStack(alignment: .leading, spacing: 28) {
-                if !nomnomnomItems.isEmpty {
+        GeometryReader { proxy in
+            ScrollView(.vertical) {
+                // This stack only contains a few sections. Keeping it eager gives
+                // the sheet a stable full content height when sections contain
+                // nested horizontal scrollers.
+                VStack(alignment: .leading, spacing: 28) {
+                    if !nomnomnomItems.isEmpty {
+                        discoverySection(
+                            title: "#nomnomnom",
+                            items: nomnomnomItems,
+                            action: { sectionDestination = .nomnomnom }
+                        )
+                    }
+
                     discoverySection(
-                        title: "#nomnomnom",
-                        items: nomnomnomItems,
-                        action: { sectionDestination = .nomnomnom }
+                        title: "Things Near You",
+                        items: filteredLocationItems,
+                        action: { sectionDestination = .nearby }
                     )
+
+                    if !filteredEventItems.isEmpty {
+                        discoverySection(
+                            title: "events this week",
+                            items: filteredEventItems,
+                            action: { sectionDestination = .events }
+                        )
+                    }
                 }
-
-                discoverySection(
-                    title: "Things Near You",
-                    items: filteredLocationItems,
-                    action: { sectionDestination = .nearby }
-                )
-
-                if !filteredEventItems.isEmpty {
-                    discoverySection(
-                        title: "events this week",
-                        items: filteredEventItems,
-                        action: { sectionDestination = .events }
-                    )
+                .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .top)
+                .padding(.top, 20)
+                .padding(.bottom, 60)
+                .background {
+                    DiscoverySheetBackground()
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, 20)
-            .padding(.bottom, 60)
-            .background(alignment: .top) {
-                DiscoverySheetBackground()
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 620)
+            .frame(maxWidth: .infinity)
+            .scrollIndicators(.hidden)
+            .scrollEdgeEffectStyle(.soft, for: .top)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                searchBar
+                    .padding(.horizontal, 20)
+                    .padding(.top, 18)
+                    .padding(.bottom, 12)
             }
-        }
-        .frame(maxWidth: .infinity)
-        .scrollIndicators(.hidden)
-        .scrollEdgeEffectStyle(.soft, for: .top)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            searchBar
-                .padding(.horizontal, 20)
-                .padding(.top, 18)
-                .padding(.bottom, 12)
         }
     }
 

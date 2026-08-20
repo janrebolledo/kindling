@@ -37,6 +37,24 @@ export async function wipeAccount(
     .eq('user_id', userId);
   if (userDataError) return { ok: false, message: userDataError.message };
 
+  const { error: sharesError } = await supabase
+    .from('idea_shares')
+    .delete()
+    .eq('user_id', userId);
+  if (sharesError) return { ok: false, message: sharesError.message };
+
+  const { error: deletionsError } = await supabase
+    .from('idea_deletions')
+    .delete()
+    .eq('user_id', userId);
+  if (deletionsError) return { ok: false, message: deletionsError.message };
+
+  const { error: opensError } = await supabase
+    .from('idea_share_opens')
+    .delete()
+    .eq('owner_user_id', userId);
+  if (opensError) return { ok: false, message: opensError.message };
+
   // Hard-delete so the same Apple `sub` can create a brand-new auth user.
   // Soft-delete keeps the identity and Sign in with Apple restores the old account.
   const { error: authError } = await supabase.auth.admin.deleteUser(

@@ -12,6 +12,7 @@ import PhotosUI
 import Supabase
 import SwiftUI
 import UIKit
+import os
 
 /// Owns the indexing session so automatic scans and account-screen actions
 /// cannot select or process the same batch concurrently. It also owns the
@@ -20,6 +21,11 @@ import UIKit
 @Observable
 final class ScreenshotIndexingController {
     static let shared = ScreenshotIndexingController()
+
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "kindling",
+        category: "ScreenshotIndexing"
+    )
 
     var processedScreenshotCount = 0
     var totalScreenshotCount = 0
@@ -58,7 +64,13 @@ final class ScreenshotIndexingController {
             currentOperation = nil
             currentOperationKind = nil
         }
-        _ = try? await operation.value
+        do {
+            try await operation.value
+        } catch {
+            Self.logger.error(
+                "Automatic screenshot scan failed: \(String(describing: error), privacy: .public)"
+            )
+        }
     }
 
     /// Processes photos selected from the account screen.

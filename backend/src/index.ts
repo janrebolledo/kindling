@@ -5,7 +5,7 @@ import { createAI, createSupabase } from './clients';
 import { userFromBearerToken, wipeAccount } from './deleteAccount';
 import { processEntry } from './ideas';
 import { log, logError } from './log';
-import { getSharedIdea } from './share';
+import { getSharedIdea, recordShareOpen } from './share';
 import type { Screenshot } from './types';
 import { parseScreenshot } from './utils/parseScreenshot';
 import type { ExtractionResult } from './utils/parseScreenshot';
@@ -41,9 +41,23 @@ app.get('/share/:id', async (c) => {
     return c.json({ error: 'Not found' }, 404);
   }
 
-  const idea = await getSharedIdea(createSupabase(c.env), id);
+  let idea;
+  try {
+    idea = await getSharedIdea(createSupabase(c.env), id);
+  } catch (err) {
+    logError('share.fetch_failed', err, { idea_id: id });
+    return c.json({ error: 'Failed to load idea' }, 500);
+  }
+
   if (idea == null) {
     return c.json({ error: 'Not found' }, 404);
+  }
+
+  try {
+    await recordShareOpen(createSupabase(c.env), id);
+  } catch (err) {
+    // Analytics must never take down a public share page.
+    logError('share.open_record_failed', err, { idea_id: id });
   }
 
   c.header('Cache-Control', 'public, max-age=60');

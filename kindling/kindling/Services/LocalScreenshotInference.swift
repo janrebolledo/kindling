@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+import os
 
 @Generable
 private enum LocalExtractionStatus {
@@ -71,9 +72,21 @@ struct LocalExtractionItem: Encodable {
 }
 
 enum LocalScreenshotInference {
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "kindling",
+        category: "LocalScreenshotInference"
+    )
+
     static var isAvailable: Bool {
-        if case .available = SystemLanguageModel.default.availability { return true }
-        return false
+        let availability = SystemLanguageModel.default.availability
+        let available: Bool
+        if case .available = availability {
+            available = true
+        } else {
+            available = false
+        }
+
+        return available
     }
 
     static func extract(_ screenshots: [Upload]) async throws -> [LocalExtractionResult] {
@@ -86,11 +99,27 @@ enum LocalScreenshotInference {
 
         var results: [LocalExtractionResult] = []
         results.reserveCapacity(screenshots.count)
-        for screenshot in screenshots {
-            let response = try await session.respond(
-                to: "Analyze this OCR text:\n\(screenshot.text)",
-                generating: LocalExtraction.self
-            )
+        for (index, screenshot) in screenshots.enumerated() {
+            let textLength = screenshot.text.utf8.count
+            if screenshot.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                logger.error(
+                    "Screenshot \(index + 1)/\(screenshots.count) has empty OCR text, id=\(screenshot.id, privacy: .private(mask: .hash)), OCR bytes=\(textLength)"
+                )
+            }
+
+            let response: LanguageModelSession.Response<LocalExtraction>
+            do {
+                response = try await session.respond(
+                    to: "Analyze this OCR text:\n\(screenshot.text)",
+                    generating: LocalExtraction.self
+                )
+            } catch {
+                logger.error(
+                    "Local extraction failed for screenshot \(index + 1)/\(screenshots.count), id=\(screenshot.id, privacy: .private(mask: .hash)): \(String(describing: error), privacy: .public)"
+                )
+                throw error
+            }
+
             let output = response.content
             let item = output.item.map {
                 LocalExtractionItem(

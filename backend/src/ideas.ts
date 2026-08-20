@@ -102,7 +102,10 @@ export async function processEntry(
   const address = item.address ?? '';
   const query = `${venue} ${location} ${address}`.trim();
 
-  const mapsData = await lookupPlace(query, appleMaps);
+  const mapsData = await lookupPlace(query, appleMaps, {
+    entry_id: id,
+    venue,
+  });
 
   if (mapsData?.place.id) {
     const created = await getOrCreateIdeaForPlace(
