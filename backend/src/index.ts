@@ -8,6 +8,7 @@ import { log, logError } from './log';
 import { getSharedIdea } from './share';
 import type { Screenshot } from './types';
 import { parseScreenshot } from './utils/parseScreenshot';
+import type { ExtractionResult } from './utils/parseScreenshot';
 
 type ItemLog = {
   status: string;
@@ -68,43 +69,29 @@ app.delete('/account', async (c) => {
   return c.json({ ok: true });
 });
 
-app.post('/ideas', async (c) => {
-  const started = Date.now();
-  const user_id = c.req.header('x-user-id') ?? null;
-  const screenshots: Screenshot[] = await c.req.json();
-  const summary = {
-    user_id,
-    screenshots: screenshots?.length ?? 0,
-    ideas: 0,
-    inserted: 0,
-    reused: 0,
-    skipped: 0,
-    sensitive: 0,
-    dropped: 0,
-    failed: 0,
-    items: [] as ItemLog[],
-  };
-
-  if (!screenshots || screenshots.length === 0) {
-    log('ideas.done', { ...summary, ms: Date.now() - started });
-    return c.json([], 200);
-  }
-
+async function streamExtractedIdeas(
+  c: Parameters<typeof streamSSE>[0],
+  extracted: ExtractionResult[],
+  summary: {
+    user_id: string | null;
+    screenshots: number;
+    ideas: number;
+    inserted: number;
+    reused: number;
+    skipped: number;
+    sensitive: number;
+    dropped: number;
+    failed: number;
+    items: ItemLog[];
+  },
+  started: number,
+) {
   const supabase = createSupabase(c.env);
-  const ai = createAI(c.env);
   const appleMaps = {
     APPLE_MAPS_TEAM_ID: c.env.APPLE_MAPS_TEAM_ID,
     APPLE_MAPS_KEY_ID: c.env.APPLE_MAPS_KEY_ID,
     APPLE_MAPS_PRIVATE_KEY: c.env.APPLE_MAPS_PRIVATE_KEY,
   };
-
-  let extracted;
-  try {
-    extracted = await parseScreenshot(screenshots, ai);
-  } catch (err) {
-    logError('ideas.done', err, { ...summary, ms: Date.now() - started });
-    throw err;
-  }
 
   return streamSSE(c, async (stream) => {
     await Promise.all(
@@ -169,6 +156,66 @@ app.post('/ideas', async (c) => {
     await stream.writeSSE({ event: 'done', data: '' });
     await stream.close();
   });
+}
+
+app.post('/ideas', async (c) => {
+  const started = Date.now();
+  const user_id = c.req.header('x-user-id') ?? null;
+  const screenshots: Screenshot[] = await c.req.json();
+  const summary = {
+    user_id,
+    screenshots: screenshots?.length ?? 0,
+    ideas: 0,
+    inserted: 0,
+    reused: 0,
+    skipped: 0,
+    sensitive: 0,
+    dropped: 0,
+    failed: 0,
+    items: [] as ItemLog[],
+  };
+
+  if (!screenshots || screenshots.length === 0) {
+    log('ideas.done', { ...summary, ms: Date.now() - started });
+    return c.json([], 200);
+  }
+
+  const ai = createAI(c.env);
+
+  let extracted;
+  try {
+    extracted = await parseScreenshot(screenshots, ai);
+  } catch (err) {
+    logError('ideas.done', err, { ...summary, ms: Date.now() - started });
+    throw err;
+  }
+
+  return streamExtractedIdeas(c, extracted, summary, started);
+});
+
+// Local inference keeps screenshot OCR on the device. The server receives only
+// the structured extraction needed for Apple Maps enrichment and persistence.
+app.post('/ideas/extracted', async (c) => {
+  const started = Date.now();
+  const user_id = c.req.header('x-user-id') ?? null;
+  const extracted: ExtractionResult[] = await c.req.json();
+  const summary = {
+    user_id,
+    screenshots: extracted?.length ?? 0,
+    ideas: 0,
+    inserted: 0,
+    reused: 0,
+    skipped: 0,
+    sensitive: 0,
+    dropped: 0,
+    failed: 0,
+    items: [] as ItemLog[],
+  };
+
+  if (!Array.isArray(extracted) || extracted.length === 0) {
+    return c.json([], 200);
+  }
+  return streamExtractedIdeas(c, extracted, summary, started);
 });
 
 export default app;

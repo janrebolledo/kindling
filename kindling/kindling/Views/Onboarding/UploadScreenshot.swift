@@ -53,21 +53,18 @@ let backendBaseURL = URL(string: "https://api.getkindl.ing")!
 let webBaseURL = URL(string: "https://getkindl.ing")!
 #endif
 
-private let ideasURL = backendBaseURL.appendingPathComponent("ideas")
-
-/// Builds the OCR entries and shared request for POST /ideas. Caller sets body and uses for streaming or single response.
-private func makeEntriesAndRequest(entries: [Upload]) throws -> (
-    URLRequest, [Upload]
-) {
-    var urlRequest = URLRequest(url: ideasURL)
+/// Builds a request for cloud inference or for server enrichment of an
+/// extraction produced by Apple's on-device model.
+private func makeRequest(url: URL, body: Data) -> URLRequest {
+    var urlRequest = URLRequest(url: url)
     urlRequest.httpMethod = "POST"
     urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
     urlRequest.setValue("text/event-stream", forHTTPHeaderField: "Accept")
     if let userID = supabase.auth.currentUser?.id {
         urlRequest.setValue(userID.uuidString, forHTTPHeaderField: "X-User-Id")
     }
-    urlRequest.httpBody = try JSONEncoder().encode(entries)
-    return (urlRequest, entries)
+    urlRequest.httpBody = body
+    return urlRequest
 }
 
 /// Streams ideas from POST /ideas (SSE) and yields each `ItemWrapper` as it arrives. Finishes when the server sends the "done" event.
@@ -100,9 +97,27 @@ func uploadImagesStreaming(
                     return results
                 }
 
-                let (urlRequest, _) = try makeEntriesAndRequest(
-                    entries: entries
+                let providerRaw = UserDefaults.standard.string(
+                    forKey: InferenceProvider.defaultsKey
                 )
+                let provider = InferenceProvider(rawValue: providerRaw ?? "") ?? .cloud
+                let urlRequest: URLRequest
+                switch provider {
+                case .cloud:
+                    urlRequest = makeRequest(
+                        url: backendBaseURL.appendingPathComponent("ideas"),
+                        body: try JSONEncoder().encode(entries)
+                    )
+                case .appleFoundationModels:
+                    guard LocalScreenshotInference.isAvailable else {
+                        throw ScreenshotInferenceError.appleModelUnavailable
+                    }
+                    let extracted = try await LocalScreenshotInference.extract(entries)
+                    urlRequest = makeRequest(
+                        url: backendBaseURL.appendingPathComponent("ideas/extracted"),
+                        body: try JSONEncoder().encode(extracted)
+                    )
+                }
                 let (bytes, response) = try await URLSession.shared.bytes(
                     for: urlRequest
                 )
@@ -190,6 +205,14 @@ func uploadImagesStreaming(
                 continuation.finish(throwing: error)
             }
         }
+    }
+}
+
+enum ScreenshotInferenceError: LocalizedError {
+    case appleModelUnavailable
+
+    var errorDescription: String? {
+        "Apple Intelligence isn't available on this iPhone. Choose Kindling Cloud in settings or finish enabling Apple Intelligence."
     }
 }
 

@@ -328,6 +328,7 @@ struct AccountView: View {
             settingsSection(title: "preferences") {
                 settingsCard {
                     transportTypeRow
+                    inferenceProviderRow
                     galleryAccessRow
                 }
             }
@@ -671,6 +672,42 @@ struct AccountView: View {
         settingsRow(label: "edit iPhone gallery access", value: "Edit", tint: .primary) {
             editGalleryAccess()
         }
+    }
+
+    private var inferenceProviderRow: some View {
+        @Bindable var settings = userSettings
+        return Menu {
+            Picker("screenshot inference", selection: $settings.inferenceProvider) {
+                Label("kindling cloud", systemImage: "cloud.fill")
+                    .tag(InferenceProvider.cloud)
+                Label("on this iPhone", systemImage: "iphone.gen3")
+                    .tag(InferenceProvider.appleFoundationModels)
+                    .disabled(!LocalScreenshotInference.isAvailable)
+            }
+            if !LocalScreenshotInference.isAvailable {
+                Text("Apple Intelligence is unavailable")
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Text("screenshot inference")
+                    .font(.system(size: 16, weight: .medium))
+                    .tracking(-0.4)
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 8)
+                Text(userSettings.inferenceProvider.label)
+                    .font(.system(size: 16, weight: .medium))
+                    .tracking(-0.4)
+                    .foregroundStyle(figmaGray)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(figmaGray)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 42)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Choose cloud processing or private on-device Apple Intelligence")
     }
 
     private func settingsActionButton(
