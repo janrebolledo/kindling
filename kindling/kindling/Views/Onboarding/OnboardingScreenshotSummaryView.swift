@@ -21,6 +21,16 @@ struct OnboardingScreenshotSummaryView: View {
         }
         return "\(String(format: "%.1f", totalSizeGB)) gbs"
     }
+
+    private var processingTransitionAnimation: Animation {
+        reduceMotion ? .easeOut(duration: 0.12) : OnboardingMotion.step(false)
+    }
+
+    private var processingTransition: AnyTransition {
+        reduceMotion
+            ? .opacity
+            : .opacity.combined(with: .scale(scale: 0.97))
+    }
     
     private struct PolaroidItem {
         let rotation: Double
@@ -88,17 +98,20 @@ struct OnboardingScreenshotSummaryView: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 56)
                         .background(Color.gray, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                        .transition(processingTransition)
                     } else {
                         OnboardingPrimaryButton(title: "see what we found →") {
                             withAnimation(OnboardingMotion.step(reduceMotion)) {
                                 onContinue()
                             }
                         }
+                        .transition(processingTransition)
                     }
 
                     OnboardingPrivacyNote()
                 }
                 .padding(.bottom, 16)
+                .animation(processingTransitionAnimation, value: isProcessing)
             }
             .padding(.horizontal, 48)
         }

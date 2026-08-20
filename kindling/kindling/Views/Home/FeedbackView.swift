@@ -11,6 +11,7 @@ private struct FeedbackSubmission: Encodable {
 
 struct FeedbackView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var message = ""
     @State private var isSubmitting = false
@@ -22,13 +23,25 @@ struct FeedbackView: View {
         !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isSubmitting
     }
 
+    private var feedbackTransitionAnimation: Animation {
+        reduceMotion ? .easeOut(duration: 0.12) : AnimationConstants.springFast
+    }
+
+    private var feedbackTransition: AnyTransition {
+        reduceMotion
+            ? .opacity
+            : .opacity.combined(with: .scale(scale: 0.97))
+    }
+
     var body: some View {
         NavigationStack {
             Group {
                 if submitted {
                     submittedView
+                        .transition(feedbackTransition)
                 } else {
                     formView
+                        .transition(feedbackTransition)
                 }
             }
             .navigationTitle("feedback")
@@ -144,7 +157,9 @@ struct FeedbackView: View {
                 .from("contact_submissions")
                 .insert(submission)
                 .execute()
-            submitted = true
+            withAnimation(feedbackTransitionAnimation) {
+                submitted = true
+            }
         } catch {
             errorMessage = "couldn’t send that. check your connection and try again."
         }

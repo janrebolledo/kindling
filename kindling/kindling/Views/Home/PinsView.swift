@@ -95,6 +95,7 @@ private enum SheetSectionDestination: Hashable {
     case nomnomnom
     case nearby
     case events
+    case selectedIdea(Int)
 }
 
 @Observable
@@ -128,6 +129,7 @@ private final class PinsLocationManager: NSObject, CLLocationManagerDelegate {
 
 struct PinsView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(UserSettings.self) private var userSettings
     @Environment(ScreenshotIndexingController.self) private var screenshotIndexing
 
@@ -145,6 +147,8 @@ struct PinsView: View {
     @State private var detailIdea: CollectionItemWrapper?
     @State private var isShowingIdeaInSheet = false
     @State private var sectionDestination: SheetSectionDestination?
+    @State private var sectionPageProgress: CGFloat = 0
+    @State private var sectionDragStartProgress: CGFloat?
     @State private var isDiscoverySheetPresented = true
     @State private var isSettingsSheetPresented = false
     @State private var discoveryDetent: PresentationDetent = .fraction(0.55)
@@ -197,13 +201,6 @@ struct PinsView: View {
             ZStack(alignment: .top) {
                 map
 
-                if let selectedIdea {
-                    VStack {
-                        Spacer()
-                        selectedPreview(selectedIdea.item)
-                    }
-                }
-
                 topChrome
             }
             .ignoresSafeArea(edges: .bottom)
@@ -243,11 +240,15 @@ struct PinsView: View {
             if newValue == nil {
                 if !isShowingIdeaInSheet {
                     discoveryDetent = .fraction(0.55)
+                    dismissSectionPage()
                 }
                 isDiscoverySheetPresented = true
             } else {
                 isShowingIdeaInSheet = false
-                isDiscoverySheetPresented = false
+                isDiscoverySheetPresented = true
+                if let newValue {
+                    openSectionPage(.selectedIdea(newValue))
+                }
             }
         }
         .onChange(of: isShowingIdeaInSheet) { _, isShowing in
@@ -287,22 +288,22 @@ struct PinsView: View {
 
     private func mapPin(_ mapped: MappedIdea) -> some View {
         let isSelected = selectedIdeaID == mapped.id
+        let glassStyle: Glass = isSelected ? .identity : .regular
         return VStack(spacing: 0) {
-            if isSelected {
-                pinEmoji(mapped, isSelected: true)
-                    .background(Color.white, in: Circle())
-                    .overlay(Circle().stroke(Color.white, lineWidth: 3))
-                    .frame(width: 48, height: 48)
-            } else {
-                pinEmoji(mapped, isSelected: false)
-                    .glassEffect(.regular, in: Circle())
-                    .frame(width: 48, height: 48)
-            }
+            pinEmoji(mapped, isSelected: isSelected)
+                .background(isSelected ? Color.white : Color.clear, in: Circle())
+                .glassEffect(glassStyle, in: Circle())
+                .overlay(
+                    Circle().stroke(Color.white, lineWidth: isSelected ? 3 : 0)
+                )
+                .frame(width: 48, height: 48)
+                .scaleEffect(isSelected ? 1 : 0.9)
 
             Image(systemName: "arrowtriangle.down.fill")
                 .font(.system(size: 10))
                 .foregroundStyle(isSelected ? Color.white : Color.white.opacity(0.72))
                 .offset(y: -2)
+                .opacity(isSelected ? 1 : 0)
         }
         .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
         .animation(.spring(response: 0.3, dampingFraction: 0.82), value: isSelected)
@@ -376,50 +377,48 @@ struct PinsView: View {
     }
 
     private var sheetContent: some View {
-        ZStack {
-            Color(uiColor: .systemBackground)
-                .opacity(isDiscoverySheetTranslucent ? 0.72 : 1)
+        NavigationStack {
+            ZStack {
+                Color(uiColor: .systemBackground)
+                    .opacity(isDiscoverySheetTranslucent ? 0.72 : 1)
                 .ignoresSafeArea()
 
-            NavigationStack {
-                discoverySheet
-                    .background(Color.clear)
-                    .toolbarVisibility(.hidden, for: .navigationBar)
-                    .navigationDestination(isPresented: $isShowingIdeaInSheet) {
-                        if let detailIdea {
-                            IdeaView(
-                                card: detailIdea,
-                                function: { _ in await loadCollections() },
-                                allowsDeletion: true
-                            )
-                            .navigationTransition(
-                                .zoom(sourceID: transitionID(for: detailIdea), in: ideaTransition)
-                            )
-                            .toolbarVisibility(.visible, for: .navigationBar)
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        HStack(spacing: 0) {
+                            discoverySheet
+                                .frame(width: proxy.size.width)
+
+                            if let sectionDestination {
+                                sectionPage(sectionDestination)
+                                    .frame(width: proxy.size.width)
+                            } else {
+                                Color.clear
+                                    .frame(width: proxy.size.width)
+                            }
                         }
+                        .offset(x: -proxy.size.width * sectionPageProgress)
                     }
-                    .navigationDestination(item: $sectionDestination) { destination in
-                        switch destination {
-                        case .nomnomnom:
-                            SectionDetailView(
-                                title: "#nomnomnom",
-                                subtitle: subtitle(for: allNomnomnomItems),
-                                items: allNomnomnomItems
-                            )
-                        case .nearby:
-                            SectionDetailView(
-                                title: "Things Near You",
-                                subtitle: "places near you",
-                                items: filteredLocationItems
-                            )
-                        case .events:
-                            SectionDetailView(
-                                title: "events this week",
-                                subtitle: "what’s happening this week",
-                                items: filteredEventItems
-                            )
-                        }
-                    }
+                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
+                    .clipped()
+                    .contentShape(Rectangle())
+                    .simultaneousGesture(sectionPageGesture(width: proxy.size.width))
+                }
+            }
+            .background(Color.clear)
+            .toolbarVisibility(.hidden, for: .navigationBar)
+            .navigationDestination(isPresented: $isShowingIdeaInSheet) {
+                if let detailIdea {
+                    IdeaView(
+                        card: detailIdea,
+                        function: { _ in await loadCollections() },
+                        allowsDeletion: true
+                    )
+                    .navigationTransition(
+                        .zoom(sourceID: transitionID(for: detailIdea), in: ideaTransition)
+                    )
+                    .toolbarVisibility(.visible, for: .navigationBar)
+                }
             }
         }
         .sheet(isPresented: $isSettingsSheetPresented) {
@@ -437,6 +436,140 @@ struct PinsView: View {
         discoveryDetent != .large
     }
 
+    private var sheetNavigationAnimation: Animation {
+        reduceMotion
+            ? .linear(duration: 0.01)
+            : .timingCurve(0.32, 0.72, 0, 1, duration: 0.28)
+    }
+
+    private var sectionGestureSettleAnimation: Animation {
+        reduceMotion
+            ? .linear(duration: 0.01)
+            : .spring(response: 0.3, dampingFraction: 0.8)
+    }
+
+    @ViewBuilder
+    private func sectionPage(_ destination: SheetSectionDestination) -> some View {
+        switch destination {
+        case .nomnomnom:
+            SectionDetailView(
+                title: "#nomnomnom",
+                subtitle: subtitle(for: allNomnomnomItems),
+                items: allNomnomnomItems,
+                onBack: dismissSectionPage
+            )
+        case .nearby:
+            SectionDetailView(
+                title: "Things Near You",
+                subtitle: "places near you",
+                items: filteredLocationItems,
+                onBack: dismissSectionPage
+            )
+        case .events:
+            SectionDetailView(
+                title: "events this week",
+                subtitle: "what’s happening this week",
+                items: filteredEventItems,
+                onBack: dismissSectionPage
+            )
+        case .selectedIdea(let ideaID):
+            if let item = allLocationItems.first(where: {
+                ($0.ideas?.id ?? $0.idea_id) == ideaID
+            }) {
+                selectedIdeaPage(item)
+            } else {
+                Color.clear
+            }
+        }
+    }
+
+    private func selectedIdeaPage(_ item: CollectionItemWrapper) -> some View {
+        VStack(spacing: 0) {
+            ZStack {
+                Text(item.ideas?.name ?? "selected place")
+                    .font(.system(size: 17, weight: .semibold))
+                    .tracking(-0.35)
+                    .lineLimit(1)
+
+                HStack {
+                    Button(action: dismissSectionPage) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 16, weight: .semibold))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("Back to discovery")
+
+                    Spacer()
+                }
+            }
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 12)
+            .padding(.top, 10)
+            .padding(.bottom, 12)
+
+            ScrollView {
+                selectedPreview(item)
+                    .padding(.top, 16)
+                    .padding(.bottom, 48)
+            }
+            .scrollIndicators(.hidden)
+        }
+        .background((colorScheme == .dark ? Color.black : Color.white).ignoresSafeArea())
+    }
+
+    private func dismissSectionPage() {
+        withAnimation(sheetNavigationAnimation) {
+            sectionPageProgress = 0
+        }
+    }
+
+    private func openSectionPage(_ destination: SheetSectionDestination) {
+        sectionDestination = destination
+        withAnimation(sheetNavigationAnimation) {
+            sectionPageProgress = 1
+        }
+    }
+
+    private func sectionPageGesture(width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 12)
+            .onChanged { value in
+                guard value.startLocation.x < 32,
+                      sectionDestination != nil,
+                      abs(value.translation.width) > abs(value.translation.height)
+                else { return }
+
+                if sectionDragStartProgress == nil {
+                    sectionDragStartProgress = sectionPageProgress
+                }
+
+                let startProgress = sectionDragStartProgress ?? sectionPageProgress
+                let translation = value.translation.width
+
+                // A left drag opens the next page from home; a right drag
+                // returns from the detail page. Keep the track attached to the
+                // finger and ignore movement toward an unavailable boundary.
+                if startProgress <= 0, translation >= 0 { return }
+                if startProgress >= 1, translation <= 0 { return }
+
+                sectionPageProgress = min(
+                    1,
+                    max(0, startProgress - translation / max(width, 1))
+                )
+            }
+            .onEnded { value in
+                defer { sectionDragStartProgress = nil }
+                guard let startProgress = sectionDragStartProgress,
+                      sectionDestination != nil else { return }
+
+                let projectedProgress = startProgress
+                    - value.predictedEndTranslation.width / max(width, 1)
+                withAnimation(sectionGestureSettleAnimation) {
+                    sectionPageProgress = projectedProgress > 0.5 ? 1 : 0
+                }
+            }
+    }
+
     private var discoverySheet: some View {
         GeometryReader { proxy in
             ScrollView(.vertical) {
@@ -448,21 +581,21 @@ struct PinsView: View {
                         discoverySection(
                             title: "#nomnomnom",
                             items: nomnomnomItems,
-                            action: { sectionDestination = .nomnomnom }
+                            action: { openSectionPage(.nomnomnom) }
                         )
                     }
 
                     discoverySection(
                         title: "Things Near You",
                         items: filteredLocationItems,
-                        action: { sectionDestination = .nearby }
+                        action: { openSectionPage(.nearby) }
                     )
 
                     if !filteredEventItems.isEmpty {
                         discoverySection(
                             title: "events this week",
                             items: filteredEventItems,
-                            action: { sectionDestination = .events }
+                            action: { openSectionPage(.events) }
                         )
                     }
                 }

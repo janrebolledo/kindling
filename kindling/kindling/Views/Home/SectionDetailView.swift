@@ -22,6 +22,7 @@ struct SectionDetailView: View {
     let title: String
     let subtitle: String
     let items: [CollectionItemWrapper]
+    var onBack: (() -> Void)? = nil
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
@@ -88,7 +89,7 @@ struct SectionDetailView: View {
 
             HStack {
                 Button {
-                    dismiss()
+                    goBack()
                 } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 16, weight: .semibold))
@@ -153,7 +154,7 @@ struct SectionDetailView: View {
                 .multilineTextAlignment(.center)
 
             Button {
-                dismiss()
+                goBack()
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "chevron.left")
@@ -171,6 +172,14 @@ struct SectionDetailView: View {
     }
 
     // MARK: - Filtering
+
+    private func goBack() {
+        if let onBack {
+            onBack()
+        } else {
+            dismiss()
+        }
+    }
 
     private var availableFilters: [SectionFilter] {
         var result: [SectionFilter] = []

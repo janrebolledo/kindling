@@ -8,6 +8,7 @@
 import CoreLocation
 import MapKit
 import Observation
+import os
 import Photos
 import Supabase
 import SwiftUI
@@ -20,11 +21,13 @@ struct IdeaView: View {
     var card: CardData
     var mapItem: MKMapItem?
     var etaString: String?
+    var openStreetMapHours: OpenStreetMapHours?
     var transportType: TransportType = .driving
     var function: (ItemWrapper?) async -> Void
     var allowsDeletion = true
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var localImage: UIImage?
     @State private var screenshotDate: Date?
     @State private var showQuickLook = false
@@ -32,6 +35,7 @@ struct IdeaView: View {
     @State private var isDeletingFromDevice = false
     @State private var showShareSheet = false
     @State private var resolvedMapItem: MKMapItem?
+    @State private var resolvedOpenStreetMapHours: OpenStreetMapHours?
     @State private var polaroidRotation = Double.random(in: -6...6)
 
     private var venueTitle: String {
@@ -40,6 +44,10 @@ struct IdeaView: View {
 
     private var placeMapItem: MKMapItem? {
         mapItem ?? resolvedMapItem
+    }
+
+    private var placeHours: OpenStreetMapHours? {
+        openStreetMapHours ?? resolvedOpenStreetMapHours
     }
 
     private var locationText: String {
@@ -84,7 +92,15 @@ struct IdeaView: View {
                 .padding(.bottom, 8)
 
                 // Status row
-                if card.ideas?.locationTypeLabel != nil || card.ideas?.duration != nil {
+                if let status = placeHours?.status {
+                    HStack(spacing: 8) {
+                        Text(status.isOpen ? "Open" : "Closed").fontWeight(.medium)
+                        Text(status.detail)
+                    }
+                    .font(.system(size: 16))
+                    .tracking(-0.4)
+                    .foregroundStyle(.secondary)
+                } else if card.ideas?.locationTypeLabel != nil || card.ideas?.duration != nil {
                     HStack(spacing: 8) {
                         if let locationType = card.ideas?.locationTypeLabel {
                             Text(locationType).fontWeight(.medium)
@@ -98,13 +114,6 @@ struct IdeaView: View {
                     .foregroundStyle(.secondary)
                 }
 
-                if let placeMapItem {
-                    MapKitPlaceDetailsButton(
-                        mapItem: placeMapItem,
-                        foregroundColor: .primary
-                    )
-                    .padding(.top, 12)
-                }
             }
             .padding(.top, 6)
             .padding(.horizontal, 24)
@@ -136,6 +145,39 @@ struct IdeaView: View {
                 .background(pillBackground)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .padding(.horizontal, 16)
+                .padding(.bottom, 32)
+            }
+
+            if let placeHours {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("hours")
+                        .font(.system(size: 14, weight: .medium))
+                        .tracking(-0.35)
+                        .foregroundStyle(.secondary)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(placeHours.rows) { row in
+                            HStack(alignment: .top) {
+                                Text(row.day)
+                                    .font(.body)
+                                    .foregroundStyle(.primary)
+                                    .frame(width: 127, alignment: .leading)
+                                Text(row.hours)
+                                    .font(.body)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    Link(destination: placeHours.sourceURL) {
+                        Text("OpenStreetMap contributors ↗")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 28)
                 .padding(.bottom, 32)
             }
 
@@ -221,6 +263,7 @@ struct IdeaView: View {
         }
         .task(id: card.ideas?.place_id) {
             await resolveMapItemIfNeeded()
+            await resolveOpenStreetMapHoursIfNeeded()
         }
         .sheet(isPresented: $showShareSheet) {
             IdeaShareSheet(items: [shareURL])
@@ -236,12 +279,17 @@ struct IdeaView: View {
                 if let mediaUrl = card.ideas?.media_url,
                     let url = URL(string: mediaUrl)
                 {
-                    AsyncImage(url: url) { phase in
+                    let transaction = Transaction(
+                        animation: reduceMotion ? .easeOut(duration: 0.12) : .easeOut(duration: 0.2)
+                    )
+
+                    AsyncImage(url: url, transaction: transaction) { phase in
                         switch phase {
                         case .success(let image):
                             image
                                 .resizable()
                                 .aspectRatio(contentMode: .fill)
+                                .transition(.opacity)
                         default:
                             placeholderImage(geometry: geometry)
                         }
@@ -318,6 +366,35 @@ struct IdeaView: View {
 
         guard !Task.isCancelled else { return }
         resolvedMapItem = item
+    }
+
+    private func resolveOpenStreetMapHoursIfNeeded() async {
+        guard placeHours == nil else {
+            openStreetMapLogger.debug("IdeaView skipped OSM lookup because hours are already loaded")
+            return
+        }
+        guard let mapItem = placeMapItem else {
+            openStreetMapLogger.debug("IdeaView skipped OSM lookup because MapKit item is unavailable")
+            return
+        }
+        guard let name = mapItem.name else {
+            openStreetMapLogger.debug("IdeaView skipped OSM lookup because MapKit item has no name")
+            return
+        }
+        let coordinate = mapItem.location.coordinate
+        guard CLLocationCoordinate2DIsValid(coordinate) else {
+            openStreetMapLogger.debug("IdeaView skipped OSM lookup because coordinate is invalid")
+            return
+        }
+
+        resolvedOpenStreetMapHours = await OpenStreetMapHoursService.shared.lookup(
+            name: name,
+            latitude: coordinate.latitude,
+            longitude: coordinate.longitude
+        )
+        openStreetMapLogger.debug(
+            "IdeaView OSM lookup finished has_hours=\(resolvedOpenStreetMapHours != nil, privacy: .public)"
+        )
     }
 
     @ViewBuilder
@@ -464,51 +541,6 @@ struct IdeaView: View {
             return formatter.string(from: date)
         }
         return "unknown"
-    }
-}
-
-struct MapKitPlaceDetailsButton: View {
-    let mapItem: MKMapItem
-    let foregroundColor: Color
-
-    @State private var isPresented = false
-
-    var body: some View {
-        Button {
-            isPresented = true
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "clock")
-                Text("hours in Maps")
-                Image(systemName: "arrow.up.right")
-                    .font(.system(size: 11, weight: .semibold))
-            }
-            .font(.system(size: 13, weight: .medium))
-            .tracking(-0.25)
-            .foregroundStyle(foregroundColor)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("View hours in Apple Maps")
-        .sheet(isPresented: $isPresented) {
-            MapKitPlaceDetailsView(mapItem: mapItem)
-                .ignoresSafeArea(edges: .bottom)
-                .presentationDragIndicator(.visible)
-        }
-    }
-}
-
-private struct MapKitPlaceDetailsView: UIViewControllerRepresentable {
-    let mapItem: MKMapItem
-
-    func makeUIViewController(context: Context) -> MKMapItemDetailViewController {
-        MKMapItemDetailViewController(mapItem: mapItem, displaysMap: false)
-    }
-
-    func updateUIViewController(
-        _ viewController: MKMapItemDetailViewController,
-        context: Context
-    ) {
-        viewController.mapItem = mapItem
     }
 }
 

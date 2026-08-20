@@ -68,7 +68,7 @@ private func makeRequest(url: URL, body: Data) -> URLRequest {
     return urlRequest
 }
 
-private let screenshotUploadLogger = Logger(
+private nonisolated let screenshotUploadLogger = Logger(
     subsystem: Bundle.main.bundleIdentifier ?? "kindling",
     category: "ScreenshotUpload"
 )

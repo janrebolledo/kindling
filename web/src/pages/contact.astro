@@ -69,7 +69,7 @@ const contactEmail = 'contact@janrebolledo.com';
             </button>
             <p class='text-center text-[13px] leading-[1.35] tracking-[-0.26px] text-muted'>or email <a class='underline decoration-solid underline-offset-2 hover:text-black' href={`mailto:${contactEmail}`}>{contactEmail}</a></p>
           </div>
-          <p id='contact-status' class='contact-status' role='status' aria-live='polite' hidden></p>
+          <p id='contact-status' class='contact-status' role='status' aria-live='polite' hidden data-visible='false'></p>
       </form>
     </main>
 
@@ -116,6 +116,14 @@ const contactEmail = 'contact@janrebolledo.com';
     font-size: 13px;
     line-height: 1.35;
     letter-spacing: -0.26px;
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+    transition: opacity 160ms ease-out, transform 160ms ease-out;
+  }
+
+  .contact-status[data-visible='true'] {
+    opacity: 1;
+    transform: none;
   }
 
   .contact-status[data-state='error'] {
@@ -126,6 +134,11 @@ const contactEmail = 'contact@janrebolledo.com';
   @media (prefers-reduced-motion: reduce) {
     .contact-field {
       transition: none;
+    }
+
+    .contact-status {
+      transform: none;
+      transition: opacity 160ms ease-out;
     }
   }
 </style>
@@ -138,6 +151,17 @@ const contactEmail = 'contact@janrebolledo.com';
   const status = document.querySelector<HTMLElement>('#contact-status');
   const submit = form?.querySelector<HTMLButtonElement>('button[type="submit"]');
   const contactEmail = 'contact@janrebolledo.com';
+
+  const showStatus = (state: 'success' | 'error', message: string) => {
+    if (!status) return;
+
+    status.dataset.state = state;
+    status.textContent = message;
+    status.hidden = false;
+    requestAnimationFrame(() => {
+      status.dataset.visible = 'true';
+    });
+  };
 
   document.querySelectorAll<HTMLElement>('[data-squircle]').forEach((element) => {
     const radius = Number(element.dataset.squircleRadius ?? 24);
@@ -192,11 +216,7 @@ const contactEmail = 'contact@janrebolledo.com';
       if (!valid) {
         const firstInvalid = form.querySelector<HTMLInputElement | HTMLTextAreaElement>('[aria-invalid="true"]');
         firstInvalid?.focus();
-        if (status) {
-          status.hidden = false;
-          status.dataset.state = 'error';
-          status.textContent = 'take another look at the highlighted field.';
-        }
+        showStatus('error', 'take another look at the highlighted field.');
         return;
       }
 
@@ -219,18 +239,10 @@ const contactEmail = 'contact@janrebolledo.com';
           message,
         });
 
-        if (status) {
-          status.hidden = false;
-          status.dataset.state = 'success';
-          status.textContent = `thanks — your message is on its way. we’ll get back to you soon.`;
-        }
+        showStatus('success', `thanks — your message is on its way. we’ll get back to you soon.`);
         form.reset();
       } catch {
-        if (status) {
-          status.hidden = false;
-          status.dataset.state = 'error';
-          status.textContent = `something went wrong. please try again or email ${contactEmail}.`;
-        }
+        showStatus('error', `something went wrong. please try again or email ${contactEmail}.`);
       } finally {
         if (submit) {
           const label = submit.querySelector('span');

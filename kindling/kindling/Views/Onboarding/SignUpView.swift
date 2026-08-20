@@ -12,6 +12,16 @@ struct SignUpView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    private var errorTransitionAnimation: Animation {
+        .easeOut(duration: 0.12)
+    }
+
+    private var errorTransition: AnyTransition {
+        reduceMotion
+            ? .opacity
+            : .opacity.combined(with: .offset(y: -4))
+    }
+
     var body: some View {
         ZStack(alignment: .top) {
             Color(.systemBackground).ignoresSafeArea()
@@ -54,6 +64,7 @@ struct SignUpView: View {
                             .foregroundStyle(Color(red: 222 / 255, green: 51 / 255, blue: 43 / 255))
                             .multilineTextAlignment(.center)
                             .padding(.bottom, 4)
+                            .transition(errorTransition)
                     }
 
                     OnboardingPrimaryButton(
@@ -83,7 +94,9 @@ struct SignUpView: View {
     func continueButtonTapped() {
         Task {
             isLoading = true
-            errorMessage = nil
+            withAnimation(errorTransitionAnimation) {
+                errorMessage = nil
+            }
             defer { isLoading = false }
             do {
                 try await appleSignIn.signIn()
@@ -94,7 +107,9 @@ struct SignUpView: View {
                 {
                     return
                 }
-                errorMessage = error.localizedDescription.lowercased()
+                withAnimation(errorTransitionAnimation) {
+                    errorMessage = error.localizedDescription.lowercased()
+                }
             }
         }
     }

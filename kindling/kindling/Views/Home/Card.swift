@@ -6,6 +6,7 @@
 //
 import CoreLocation
 import MapKit
+import os
 import SwiftUI
 
 struct Card: View {
@@ -13,6 +14,7 @@ struct Card: View {
     @State var sheetPresented: Bool = false
     @State private var mapItem: MKMapItem?
     @State private var etaString: String?
+    @State private var openStreetMapHours: OpenStreetMapHours?
     @State private var locationManager = CardLocationManager()
     @State private var isNearViewport = false
     @Environment(UserSettings.self) private var userSettings
@@ -80,6 +82,7 @@ struct Card: View {
             guard shouldLoadMapItem else { return }
             applyCachedDirections()
             await fetchMapData()
+            await fetchOpenStreetMapHours()
 
             guard shouldFetchDirections else { return }
             if mapItem != nil, etaString != nil { return }
@@ -108,6 +111,7 @@ struct Card: View {
                 card: card,
                 mapItem: mapItem,
                 etaString: etaString,
+                openStreetMapHours: openStreetMapHours,
                 transportType: userSettings.transportType,
                 function: function ?? { _ in },
                 allowsDeletion: allowsDeletion
@@ -166,21 +170,10 @@ struct Card: View {
 
                     locationEtaRow(fontSize: 14, color: .black)
 
-                    if let mapItem {
-                        MapKitPlaceDetailsButton(mapItem: mapItem, foregroundColor: .black)
-                    }
-
-                    HStack(spacing: 8) {
-                        if let locationType = card.ideas?.locationTypeLabel {
-                            Text(locationType).fontWeight(.medium)
-                        }
-                        if let duration = card.ideas?.duration {
-                            Text(duration)
-                        }
-                    }
-                    .font(.system(size: 14))
-                    .tracking(-0.35)
-                    .foregroundStyle(.black.opacity(0.5))
+                    openStreetMapStatusOrFallbackRow(
+                        fontSize: 14,
+                        color: .black.opacity(0.5)
+                    )
                 }
             }
             .padding(16)
@@ -209,21 +202,10 @@ struct Card: View {
 
                 locationEtaRow(fontSize: 14, color: .secondary)
 
-                if let mapItem {
-                    MapKitPlaceDetailsButton(mapItem: mapItem, foregroundColor: .secondary)
-                }
-
-                HStack(spacing: 8) {
-                    if let locationType = card.ideas?.locationTypeLabel {
-                        Text(locationType).fontWeight(.medium)
-                    }
-                    if let duration = card.ideas?.duration {
-                        Text(duration)
-                    }
-                }
-                .font(.system(size: 14))
-                .tracking(-0.35)
-                .foregroundStyle(.primary.opacity(0.5))
+                openStreetMapStatusOrFallbackRow(
+                    fontSize: 14,
+                    color: .primary.opacity(0.5)
+                )
             }
             .padding(8)
         }
@@ -336,6 +318,71 @@ struct Card: View {
         guard !Task.isCancelled, let item else { return }
         mapItem = item
         directionsCache.store(mapItem: item, for: ideaID)
+    }
+
+    private func fetchOpenStreetMapHours() async {
+        guard openStreetMapHours == nil else {
+            openStreetMapLogger.debug("Card skipped OSM lookup because hours are already loaded")
+            return
+        }
+        guard let mapItem else {
+            openStreetMapLogger.debug("Card skipped OSM lookup because MapKit item is unavailable")
+            return
+        }
+        guard let name = mapItem.name else {
+            openStreetMapLogger.debug("Card skipped OSM lookup because MapKit item has no name")
+            return
+        }
+        let coordinate = mapItem.location.coordinate
+        guard CLLocationCoordinate2DIsValid(coordinate) else {
+            openStreetMapLogger.debug("Card skipped OSM lookup because coordinate is invalid")
+            return
+        }
+
+        openStreetMapHours = await OpenStreetMapHoursService.shared.lookup(
+            name: name,
+            latitude: coordinate.latitude,
+            longitude: coordinate.longitude
+        )
+        openStreetMapLogger.debug(
+            "Card OSM lookup finished has_hours=\(openStreetMapHours != nil, privacy: .public)"
+        )
+    }
+
+    @ViewBuilder
+    private func openStreetMapStatusRow(fontSize: CGFloat, color: some ShapeStyle) -> some View {
+        if let status = openStreetMapHours?.status {
+            HStack(spacing: 8) {
+                Text(status.isOpen ? "Open" : "Closed").fontWeight(.medium)
+                Text(status.detail)
+            }
+            .font(.system(size: fontSize))
+            .tracking(-0.35)
+            .foregroundStyle(color)
+            .lineLimit(1)
+        }
+    }
+
+    @ViewBuilder
+    private func openStreetMapStatusOrFallbackRow(
+        fontSize: CGFloat,
+        color: some ShapeStyle
+    ) -> some View {
+        if openStreetMapHours?.status != nil {
+            openStreetMapStatusRow(fontSize: fontSize, color: color)
+        } else {
+            HStack(spacing: 8) {
+                if let locationType = card.ideas?.locationTypeLabel {
+                    Text(locationType).fontWeight(.medium)
+                }
+                if let duration = card.ideas?.duration {
+                    Text(duration)
+                }
+            }
+            .font(.system(size: fontSize))
+            .tracking(-0.35)
+            .foregroundStyle(color)
+        }
     }
 
     private func fetchETA() async {

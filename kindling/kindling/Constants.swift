@@ -16,7 +16,7 @@ enum LayoutConstants {
     static let heroHeight: CGFloat = 500
 }
 
-struct OpenStatus {
+struct OpenStatus: Sendable {
     let isOpen: Bool
     let detail: String
 }
