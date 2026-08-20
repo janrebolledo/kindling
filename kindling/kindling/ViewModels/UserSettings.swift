@@ -5,13 +5,41 @@
 //  Created by Jan Rebolledo on 6/16/26.
 //
 
+import Foundation
 import Observation
 import Supabase
+
+enum InferenceProvider: String, CaseIterable, Identifiable {
+    case cloud
+    case appleFoundationModels
+
+    static let defaultsKey = "inferenceProvider"
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .cloud: return "kindling cloud"
+        case .appleFoundationModels: return "on this iPhone"
+        }
+    }
+}
 
 @Observable
 class UserSettings {
     var transportType: TransportType = .driving
     var displayName: String = "you"
+    var inferenceProvider: InferenceProvider = {
+        guard let raw = UserDefaults.standard.string(forKey: InferenceProvider.defaultsKey)
+        else { return .cloud }
+        return InferenceProvider(rawValue: raw) ?? .cloud
+    }() {
+        didSet {
+            UserDefaults.standard.set(
+                inferenceProvider.rawValue,
+                forKey: InferenceProvider.defaultsKey
+            )
+        }
+    }
 
     func reset() {
         transportType = .driving
