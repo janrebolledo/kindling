@@ -5,6 +5,7 @@
 //  Created by Jan Rebolledo on 6/16/26.
 //
 
+import Foundation
 import Observation
 import Supabase
 
