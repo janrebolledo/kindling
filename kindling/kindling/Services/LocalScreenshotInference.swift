@@ -1,0 +1,124 @@
+import Foundation
+import FoundationModels
+
+@Generable
+private enum LocalExtractionStatus {
+    case success
+    case skipped
+    case sensitive
+}
+
+@Generable
+private struct LocalExtractedItem {
+    @Guide(description: "Short display name for the activity or venue")
+    var name: String?
+    @Guide(description: "Exact restaurant, cafe, attraction, or event venue")
+    var venue: String?
+    @Guide(description: "City, neighborhood, or region")
+    var location: String?
+    @Guide(description: "Street address if explicitly present")
+    var address: String?
+    @Guide(description: "Date in YYYY-MM-DD format if present")
+    var date: String?
+    @Guide(description: "Time as written, if present")
+    var time: String?
+    @Guide(description: "One of: activity, event, food")
+    var tag: String
+    @Guide(description: "Specific activity category, such as restaurant or hike")
+    var activityType: String?
+    @Guide(description: "A single emoji representing the activity")
+    var activityEmoji: String?
+    @Guide(description: "One concise factual sentence describing the idea")
+    var description: String?
+    @Guide(description: "The most useful recommendation or quoted detail")
+    var highlights: String?
+    @Guide(description: "Short OCR excerpts that support the highlight")
+    var highlightSources: [String]?
+}
+
+@Generable
+private struct LocalExtraction {
+    var status: LocalExtractionStatus
+    @Guide(description: "Why content was skipped or marked sensitive")
+    var reason: String?
+    var item: LocalExtractedItem?
+}
+
+struct LocalExtractionResult: Encodable {
+    let id: String
+    let data: LocalExtractionData
+}
+
+struct LocalExtractionData: Encodable {
+    let status: String
+    let reason: String?
+    let item: LocalExtractionItem?
+}
+
+struct LocalExtractionItem: Encodable {
+    let name: String?
+    let venue: String?
+    let location: String?
+    let address: String?
+    let date: String?
+    let time: String?
+    let tag: String
+    let activity_type: String?
+    let activity_emoji: String?
+    let description: String?
+    let highlights: String?
+    let highlights_sources: [String]?
+}
+
+enum LocalScreenshotInference {
+    static var isAvailable: Bool {
+        if case .available = SystemLanguageModel.default.availability { return true }
+        return false
+    }
+
+    static func extract(_ screenshots: [Upload]) async throws -> [LocalExtractionResult] {
+        let session = LanguageModelSession(instructions: """
+            You organize screenshot OCR into saveable outing ideas. Extract only restaurants,
+            cafes, events, attractions, or activities the user may want to visit. Mark financial,
+            medical, authentication, or other private content sensitive. Skip content without a
+            useful idea. Never invent a venue, address, date, or time. Use null when absent.
+            """)
+
+        var results: [LocalExtractionResult] = []
+        results.reserveCapacity(screenshots.count)
+        for screenshot in screenshots {
+            let response = try await session.respond(
+                to: "Analyze this OCR text:\n\(screenshot.text)",
+                generating: LocalExtraction.self
+            )
+            let output = response.content
+            let item = output.item.map {
+                LocalExtractionItem(
+                    name: $0.name,
+                    venue: $0.venue,
+                    location: $0.location,
+                    address: $0.address,
+                    date: $0.date,
+                    time: $0.time,
+                    tag: ["activity", "event", "food"].contains($0.tag) ? $0.tag : "activity",
+                    activity_type: $0.activityType,
+                    activity_emoji: $0.activityEmoji,
+                    description: $0.description,
+                    highlights: $0.highlights,
+                    highlights_sources: $0.highlightSources
+                )
+            }
+            results.append(
+                LocalExtractionResult(
+                    id: screenshot.id,
+                    data: LocalExtractionData(
+                        status: String(describing: output.status),
+                        reason: output.reason,
+                        item: item
+                    )
+                )
+            )
+        }
+        return results
+    }
+}

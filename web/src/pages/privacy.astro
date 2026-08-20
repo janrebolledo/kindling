@@ -12,7 +12,7 @@ import Logo from '../components/Logo.astro';
       <Logo />
     </a>
     <h1 class="text-[32px] font-medium tracking-[-0.8px]">privacy</h1>
-    <p class="mt-2 text-[16px] tracking-[-0.4px] text-muted">last updated Aug 19, 2026</p>
+    <p class="mt-2 text-[16px] tracking-[-0.4px] text-muted">last updated Aug 20, 2026</p>
     <div class="mt-8 space-y-4 text-[16px] leading-relaxed tracking-[-0.4px] text-black/80">
       <p>
         kindling is made by jan rebolledo. this page is the whole policy: what the app uses,
@@ -26,10 +26,12 @@ import Logo from '../components/Logo.astro';
         your phone. we never upload them.
       </p>
       <p>
-        that text is sent to google’s gemini so it can find places and events, and pull out
-        details like tips. we keep those bits on your saved places. we don’t keep the full
-        screenshot text. google may use that text to improve gemini and their other products,
-        per their
+        by default, that text is sent to google’s gemini so it can find places and events, and
+        pull out details like tips. you can instead choose “on this iphone” in settings to use
+        apple’s foundation model without sending the screenshot text to kindling or google. in
+        that mode, kindling receives only the extracted place or event details needed to look it
+        up and save it. we don’t keep the full screenshot text. google may use text processed in
+        cloud mode to improve gemini and their other products, per their
         <a
           class="underline decoration-solid underline-offset-2"
           href="https://ai.google.dev/gemini-api/terms">gemini terms</a
@@ -75,8 +77,9 @@ import Logo from '../components/Logo.astro';
 
       <h2 class="pt-4 text-[20px] font-medium tracking-[-0.5px] text-black">who else sees data</h2>
       <p>
-        apple (sign in and Maps features), supabase (account and saved places), google gemini
-        (screenshot text, to find places), and cloudflare (hosts the app). kindling no longer
+        apple (sign in, on-device foundation models, and Maps features), supabase (account and
+        saved places), google gemini (screenshot text in cloud mode, to find places), and
+        cloudflare (hosts the app). kindling no longer
         sends saved-place data to Google Maps. supabase, gemini, and cloudflare are required
         under their terms to protect this data. we keep logs for up to 7 days to debug the app.
         they don’t contain screenshot images or the full screenshot text — just technical info
