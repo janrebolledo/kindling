@@ -132,44 +132,16 @@ async function createMapsAuthToken(credentials: AppleMapsCredentials): Promise<s
 async function getMapsAccessToken(credentials: AppleMapsCredentials): Promise<string> {
   const now = Date.now();
   if (cachedToken && cachedToken.expiresAt > now + 30_000) {
-    log('apple_maps.token_cache_hit', {
-      expires_in_ms: cachedToken.expiresAt - now,
-    });
     return cachedToken.value;
   }
 
-  if (tokenRequest) {
-    log('apple_maps.token_request_joined');
-    return tokenRequest;
-  }
+  if (tokenRequest) return tokenRequest;
 
   tokenRequest = (async () => {
     const started = Date.now();
-    log('apple_maps.token_request_start', {
-      team_id: credentials.APPLE_MAPS_TEAM_ID,
-      key_id: credentials.APPLE_MAPS_KEY_ID,
-      team_id_configured: Boolean(credentials.APPLE_MAPS_TEAM_ID),
-      key_id_configured: Boolean(credentials.APPLE_MAPS_KEY_ID),
-      private_key_configured: Boolean(credentials.APPLE_MAPS_PRIVATE_KEY),
-      private_key_chars: credentials.APPLE_MAPS_PRIVATE_KEY.length,
-      private_key_has_pem_header: credentials.APPLE_MAPS_PRIVATE_KEY.includes(
-        '-----BEGIN PRIVATE KEY-----',
-      ),
-      private_key_has_pem_footer: credentials.APPLE_MAPS_PRIVATE_KEY.includes(
-        '-----END PRIVATE KEY-----',
-      ),
-      private_key_literal_newline_escapes:
-        (credentials.APPLE_MAPS_PRIVATE_KEY.match(/\\n/g) ?? []).length,
-      private_key_actual_newlines:
-        (credentials.APPLE_MAPS_PRIVATE_KEY.match(/\n/g) ?? []).length,
-    });
 
     try {
       const authToken = await createMapsAuthToken(credentials);
-      log('apple_maps.auth_token_created', {
-        jwt_part_lengths: authToken.split('.').map((part) => part.length),
-        ms: Date.now() - started,
-      });
       const response = await fetch('https://maps-api.apple.com/v1/token', {
         headers: {
           Authorization: `Bearer ${authToken}`,
@@ -179,13 +151,6 @@ async function getMapsAccessToken(credentials: AppleMapsCredentials): Promise<st
       });
       if (!response.ok) {
         const bodyPreview = await responseBodyPreview(response);
-        log('apple_maps.token_response', {
-          status: response.status,
-          status_text: response.statusText,
-          content_type: responseContentType(response),
-          body_preview: bodyPreview,
-          ms: Date.now() - started,
-        });
         throw new Error(
           `Apple Maps token request failed with ${response.status}`
           + (bodyPreview ? `: ${bodyPreview}` : ''),
@@ -193,13 +158,6 @@ async function getMapsAccessToken(credentials: AppleMapsCredentials): Promise<st
       }
 
       const token = (await response.json()) as AppleTokenResponse;
-      log('apple_maps.token_response', {
-        status: response.status,
-        content_type: responseContentType(response),
-        has_access_token: Boolean(token.accessToken),
-        expires_in_seconds: token.expiresInSeconds ?? null,
-        ms: Date.now() - started,
-      });
       if (!token.accessToken) {
         throw new Error('Apple Maps token response was missing accessToken');
       }

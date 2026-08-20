@@ -11,6 +11,7 @@ import Observation
 import Photos
 import Supabase
 import SwiftUI
+import UIKit
 
 private let pillBackground = Color("raisedSurface")
 private let destructiveRed = Color(red: 1.0, green: 56 / 255, blue: 60 / 255)
@@ -30,10 +31,15 @@ struct IdeaView: View {
     @State private var isDeletingFromCollection = false
     @State private var isDeletingFromDevice = false
     @State private var showShareSheet = false
+    @State private var resolvedMapItem: MKMapItem?
     @State private var polaroidRotation = Double.random(in: -6...6)
 
     private var venueTitle: String {
-        mapItem?.name ?? card.ideas?.name ?? "Untitled"
+        placeMapItem?.name ?? card.ideas?.name ?? "Untitled"
+    }
+
+    private var placeMapItem: MKMapItem? {
+        mapItem ?? resolvedMapItem
     }
 
     private var locationText: String {
@@ -90,6 +96,14 @@ struct IdeaView: View {
                     .font(.system(size: 16))
                     .tracking(-0.4)
                     .foregroundStyle(.secondary)
+                }
+
+                if let placeMapItem {
+                    MapKitPlaceDetailsButton(
+                        mapItem: placeMapItem,
+                        foregroundColor: .primary
+                    )
+                    .padding(.top, 12)
                 }
             }
             .padding(.top, 6)
@@ -205,6 +219,9 @@ struct IdeaView: View {
                 screenshotDate = result.firstObject?.creationDate
             }
         }
+        .task(id: card.ideas?.place_id) {
+            await resolveMapItemIfNeeded()
+        }
         .sheet(isPresented: $showShareSheet) {
             IdeaShareSheet(items: [shareURL])
         }
@@ -252,7 +269,7 @@ struct IdeaView: View {
     @ViewBuilder
     private var mapSection: some View {
         ZStack(alignment: .bottom) {
-            if let coordinate = mapItem?.location.coordinate {
+            if let coordinate = placeMapItem?.location.coordinate {
                 Map(interactionModes: []) {
                     Marker(venueTitle, coordinate: coordinate)
                 }
@@ -262,7 +279,7 @@ struct IdeaView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 24))
 
                 Button {
-                    mapItem?.openInMaps()
+                    placeMapItem?.openInMaps()
                 } label: {
                     Text("open in Maps ↗")
                         .font(.system(size: 16, weight: .medium))
@@ -284,6 +301,23 @@ struct IdeaView: View {
         }
         .frame(height: 203)
         .clipShape(RoundedRectangle(cornerRadius: 24))
+    }
+
+    private func resolveMapItemIfNeeded() async {
+        guard mapItem == nil, resolvedMapItem == nil,
+              let placeID = card.ideas?.place_id,
+              let identifier = MKMapItem.Identifier(rawValue: placeID)
+        else { return }
+
+        let request = MKMapItemRequest(mapItemIdentifier: identifier)
+        let item = await withCheckedContinuation { continuation in
+            request.getMapItem { mapItem, _ in
+                continuation.resume(returning: mapItem)
+            }
+        }
+
+        guard !Task.isCancelled else { return }
+        resolvedMapItem = item
     }
 
     @ViewBuilder
@@ -430,6 +464,51 @@ struct IdeaView: View {
             return formatter.string(from: date)
         }
         return "unknown"
+    }
+}
+
+struct MapKitPlaceDetailsButton: View {
+    let mapItem: MKMapItem
+    let foregroundColor: Color
+
+    @State private var isPresented = false
+
+    var body: some View {
+        Button {
+            isPresented = true
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "clock")
+                Text("hours in Maps")
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .font(.system(size: 13, weight: .medium))
+            .tracking(-0.25)
+            .foregroundStyle(foregroundColor)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("View hours in Apple Maps")
+        .sheet(isPresented: $isPresented) {
+            MapKitPlaceDetailsView(mapItem: mapItem)
+                .ignoresSafeArea(edges: .bottom)
+                .presentationDragIndicator(.visible)
+        }
+    }
+}
+
+private struct MapKitPlaceDetailsView: UIViewControllerRepresentable {
+    let mapItem: MKMapItem
+
+    func makeUIViewController(context: Context) -> MKMapItemDetailViewController {
+        MKMapItemDetailViewController(mapItem: mapItem, displaysMap: false)
+    }
+
+    func updateUIViewController(
+        _ viewController: MKMapItemDetailViewController,
+        context: Context
+    ) {
+        viewController.mapItem = mapItem
     }
 }
 

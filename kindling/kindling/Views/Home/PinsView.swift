@@ -292,10 +292,11 @@ struct PinsView: View {
                 pinEmoji(mapped, isSelected: true)
                     .background(Color.white, in: Circle())
                     .overlay(Circle().stroke(Color.white, lineWidth: 3))
+                    .frame(width: 48, height: 48)
             } else {
                 pinEmoji(mapped, isSelected: false)
                     .glassEffect(.regular, in: Circle())
-                    .overlay(Circle().stroke(Color.white, lineWidth: 3))
+                    .frame(width: 48, height: 48)
             }
 
             Image(systemName: "arrowtriangle.down.fill")
@@ -632,22 +633,18 @@ struct PinsView: View {
             $0.id == (item.ideas?.id ?? item.idea_id)
         }?.mapName
 
-        return Button {
-            showIdeaInSheet(item)
-        } label: {
-            Card(
-                card: item,
-                mapName: mapName,
-                loadsMapData: false,
-                allowsDetailPresentation: false,
-                animatesImageLoading: false
-            )
-            .frame(maxWidth: 340)
-            .padding(12)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-            .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
-        }
-        .buttonStyle(.plain)
+        return Card(
+            card: item,
+            mapName: mapName,
+            tapAction: { showIdeaInSheet(item) },
+            loadsMapData: false,
+            allowsDetailPresentation: false,
+            animatesImageLoading: false
+        )
+        .frame(maxWidth: 340)
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
         .padding(.horizontal, 18)
         .padding(.bottom, 8)
         .transition(.move(edge: .bottom).combined(with: .opacity))

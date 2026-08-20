@@ -23,6 +23,7 @@ struct Card: View {
     var function: ((ItemWrapper?) async -> Void)?
     var card: CardData
     var mapName: String? = nil
+    var tapAction: (() -> Void)? = nil
     var loadsMapData = true
     var allowsDetailPresentation = true
     var allowsDeletion = true
@@ -75,12 +76,14 @@ struct Card: View {
                 }
             }
         }
-        .task(id: directionsTaskID) {
-            guard shouldFetchDirections else { return }
+        .task(id: mapDataTaskID) {
+            guard shouldLoadMapItem else { return }
             applyCachedDirections()
+            await fetchMapData()
+
+            guard shouldFetchDirections else { return }
             if mapItem != nil, etaString != nil { return }
             locationManager.requestLocation()
-            await fetchMapData()
             await fetchETA()
         }
         .onChange(of: locationManager.location) { _, _ in
@@ -94,7 +97,9 @@ struct Card: View {
             applyCachedDirections()
         }
         .onTapGesture {
-            if allowsDetailPresentation {
+            if let tapAction {
+                tapAction()
+            } else if allowsDetailPresentation {
                 sheetPresented = true
             }
         }
@@ -161,6 +166,10 @@ struct Card: View {
 
                     locationEtaRow(fontSize: 14, color: .black)
 
+                    if let mapItem {
+                        MapKitPlaceDetailsButton(mapItem: mapItem, foregroundColor: .black)
+                    }
+
                     HStack(spacing: 8) {
                         if let locationType = card.ideas?.locationTypeLabel {
                             Text(locationType).fontWeight(.medium)
@@ -199,6 +208,10 @@ struct Card: View {
                     .foregroundStyle(.primary)
 
                 locationEtaRow(fontSize: 14, color: .secondary)
+
+                if let mapItem {
+                    MapKitPlaceDetailsButton(mapItem: mapItem, foregroundColor: .secondary)
+                }
 
                 HStack(spacing: 8) {
                     if let locationType = card.ideas?.locationTypeLabel {
@@ -272,8 +285,12 @@ struct Card: View {
         loadsMapData && isNearViewport
     }
 
-    private var directionsTaskID: String {
-        "\(shouldFetchDirections)-\(userSettings.transportType.rawValue)"
+    private var shouldLoadMapItem: Bool {
+        card.ideas?.place_id != nil && (isNearViewport || !loadsMapData)
+    }
+
+    private var mapDataTaskID: String {
+        "\(shouldLoadMapItem)-\(shouldFetchDirections)-\(userSettings.transportType.rawValue)"
     }
 
     private func applyCachedDirections() {
