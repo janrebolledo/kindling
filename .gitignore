@@ -13,3 +13,4 @@ node_modules/
 supabase/*
 !supabase/migrations/
 !supabase/migrations/*.sql
+kindling/kindling.xcodeproj/project.xcworkspace/xcuserdata/janrebolledo.xcuserdatad/UserInterfaceState.xcuserstate
