@@ -208,7 +208,7 @@ struct PinsView: View {
             .sheet(isPresented: $isDiscoverySheetPresented) {
                 sheetContent
                     .presentationDetents(
-                        [.fraction(0.55), .large],
+                        [.height(110), .fraction(0.55), .large],
                         selection: $discoveryDetent
                     )
                     .presentationDragIndicator(.visible)
@@ -599,6 +599,9 @@ struct PinsView: View {
                         )
                     }
                 }
+                .opacity(isDiscoverySheetCollapsed ? 0 : 1)
+                .allowsHitTesting(!isDiscoverySheetCollapsed)
+                .accessibilityHidden(isDiscoverySheetCollapsed)
                 .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .top)
                 .padding(.top, 20)
                 .padding(.bottom, 60)
@@ -616,6 +619,10 @@ struct PinsView: View {
                     .padding(.bottom, 12)
             }
         }
+    }
+
+    private var isDiscoverySheetCollapsed: Bool {
+        discoveryDetent == .height(110)
     }
 
     private var filteredLocationItems: [CollectionItemWrapper] {
