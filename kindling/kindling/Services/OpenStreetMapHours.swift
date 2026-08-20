@@ -82,9 +82,7 @@ actor OpenStreetMapHoursService {
         }
 
         openStreetMapLogger.debug(
-            "Lookup started venue=\(name, privacy: .private(mask: .hash)) "
-                + "latitude=\(latitude, privacy: .private(mask: .hash)) "
-                + "longitude=\(longitude, privacy: .private(mask: .hash))"
+            "Lookup started venue=\(name, privacy: .private(mask: .hash)) latitude=\(latitude, privacy: .private(mask: .hash)) longitude=\(longitude, privacy: .private(mask: .hash))"
         )
 
         await waitForRateLimit()
@@ -124,8 +122,7 @@ actor OpenStreetMapHoursService {
                 return !hours.isEmpty
             }
             openStreetMapLogger.debug(
-                "Nominatim returned places=\(places.count) "
-                    + "places_with_hours=\(placesWithHours.count)"
+                "Nominatim returned places=\(places.count) places_with_hours=\(placesWithHours.count)"
             )
             guard let place = bestMatch(
                 places,
@@ -153,8 +150,7 @@ actor OpenStreetMapHoursService {
             )
             cache[key] = hours
             openStreetMapLogger.info(
-                "Hours resolved venue=\(name, privacy: .private(mask: .hash)) "
-                    + "raw_hours=\(rawHours, privacy: .public)"
+                "Hours resolved venue=\(name, privacy: .private(mask: .hash)) raw_hours=\(rawHours, privacy: .public)"
             )
             return hours
         } catch {
@@ -235,9 +231,7 @@ actor OpenStreetMapHoursService {
             }
             .first.map { match in
                 openStreetMapLogger.debug(
-                    "Candidate matched name=\(match.0.name ?? "unknown", privacy: .private(mask: .hash)) "
-                        + "distance_meters=\(match.1, privacy: .public) "
-                        + "name_match=\(match.2, privacy: .public)"
+                    "Candidate matched name=\(match.0.name ?? "unknown", privacy: .private(mask: .hash)) distance_meters=\(match.1, privacy: .public) name_match=\(match.2, privacy: .public)"
                 )
                 return match.0
             }
