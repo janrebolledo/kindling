@@ -83,7 +83,7 @@ class ScreenshotManager {
 func loadImage(
     from id: String,
     targetSize: CGSize = PHImageManagerMaximumSize,
-
+    resizeMode: PHImageRequestOptionsResizeMode = .none
 ) async throws -> UIImage? {
     let fetchOptions = PHFetchOptions()
     let fetchResult = PHAsset.fetchAssets(
@@ -99,6 +99,7 @@ func loadImage(
     let options = PHImageRequestOptions()
     options.isSynchronous = false
     options.deliveryMode = .highQualityFormat
+    options.resizeMode = resizeMode
 
     return try await withCheckedThrowingContinuation { continuation in
         PHImageManager.default().requestImage(

@@ -37,9 +37,6 @@ struct IdeaView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var localImage: UIImage?
     @State private var savedScreenshots: [SavedScreenshot] = []
-    @State private var selectedScreenshotIndex = 0
-    @State private var screenshotDragOffset: CGFloat = 0
-    @State private var isCyclingScreenshot = false
     @State private var imageRequestToken = UUID()
     @State private var screenshotDate: Date?
     @State private var showQuickLook = false
@@ -194,14 +191,6 @@ struct IdeaView: View {
                         }
                     }
 
-                    if let sourceURL = placeHours.sourceURL {
-                        Link(destination: sourceURL) {
-                            Text("Google Maps ↗")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 28)
@@ -298,9 +287,6 @@ struct IdeaView: View {
             imageRequestToken = requestToken
             localImage = nil
             savedScreenshots = []
-            selectedScreenshotIndex = 0
-            screenshotDragOffset = 0
-            isCyclingScreenshot = false
             screenshotDate = nil
 
             for localID in card.screenshotLocalIDs {
@@ -479,9 +465,11 @@ struct IdeaView: View {
                 .buttonStyle(.plain)
                 .background(pillBackground)
                 .clipShape(Capsule())
-                .disabled(localImage == nil)
+                .disabled(savedScreenshots.isEmpty && localImage == nil)
                 .sheet(isPresented: $showQuickLook) {
-                    if let image = selectedScreenshot?.image ?? localImage {
+                    if !savedScreenshots.isEmpty {
+                        ImagePreviewSheet(images: savedScreenshots.map(\.image))
+                    } else if let image = localImage {
                         ImagePreviewSheet(image: image)
                     }
                 }
@@ -519,75 +507,22 @@ struct IdeaView: View {
                     polaroid(image: localImage, index: 0)
                 } else {
                     ForEach(Array(savedScreenshots.enumerated()), id: \.element.id) { index, screenshot in
-                        let distance = screenshotStackDistance(for: index)
                         polaroid(image: screenshot.image, index: index)
-                            .scaleEffect(distance == 0 ? 1 : 1 - CGFloat(min(distance, 3)) * 0.04)
-                            .opacity(distance > 3 ? 0 : 1)
-                            .offset(
-                                x: distance == 0 ? screenshotDragOffset : CGFloat(min(distance, 3)) * 5,
-                                y: distance == 0 ? 0 : CGFloat(min(distance, 3)) * 2
-                            )
-                            .zIndex(distance == 0 ? 10 : Double(-distance))
+                            .scaleEffect(1 - CGFloat(min(index, 3)) * 0.04)
+                            .opacity(index > 3 ? 0 : 1)
+                            .offset(x: CGFloat(min(index, 3)) * 5, y: CGFloat(min(index, 3)) * 2)
+                            .zIndex(Double(-index))
                     }
                 }
             }
             .frame(width: 190, height: 210)
             .contentShape(Rectangle())
             .onTapGesture {
-                if savedScreenshots.count > 1 {
-                    cycleScreenshot(direction: 1)
-                } else if localImage != nil {
+                if !savedScreenshots.isEmpty || localImage != nil {
                     showQuickLook = true
                 }
             }
-            .gesture(
-                DragGesture(minimumDistance: 8)
-                    .onChanged { value in
-                        guard savedScreenshots.count > 1, !isCyclingScreenshot else { return }
-                        screenshotDragOffset = value.translation.width
-                    }
-                    .onEnded { value in
-                        guard savedScreenshots.count > 1, !isCyclingScreenshot else { return }
-                        let isHorizontal = abs(value.translation.width) > abs(value.translation.height)
-                        guard isHorizontal else {
-                            withAnimation(.spring(response: 0.25, dampingFraction: 0.86)) {
-                                screenshotDragOffset = 0
-                            }
-                            return
-                        }
-
-                        if abs(value.translation.width) > 45 {
-                            cycleScreenshot(direction: value.translation.width < 0 ? 1 : -1)
-                        } else {
-                            withAnimation(.spring(response: 0.25, dampingFraction: 0.86)) {
-                                screenshotDragOffset = 0
-                            }
-                        }
-                    }
-            )
-
-            if savedScreenshots.count > 1 {
-                HStack(spacing: 14) {
-                    cycleButton(direction: -1, systemName: "chevron.left")
-                    Text("\(selectedScreenshotIndex + 1) / \(savedScreenshots.count)")
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .frame(minWidth: 42)
-                    cycleButton(direction: 1, systemName: "chevron.right")
-                }
-                .transition(.opacity)
-            }
         }
-        .animation(
-            reduceMotion ? .easeOut(duration: 0.12) : .spring(response: 0.34, dampingFraction: 0.86),
-            value: selectedScreenshotIndex
-        )
-    }
-
-    private func screenshotStackDistance(for index: Int) -> Int {
-        guard !savedScreenshots.isEmpty else { return 0 }
-        return (index - selectedScreenshotIndex + savedScreenshots.count)
-            % savedScreenshots.count
     }
 
     private func polaroid(image: UIImage?, index: Int) -> some View {
@@ -612,20 +547,6 @@ struct IdeaView: View {
         .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 4)
         .rotationEffect(.degrees(polaroidRotation(for: index)))
         .offset(x: CGFloat(index % 3 - 1) * 4, y: CGFloat(index % 3 - 1) * 2)
-    }
-
-    private func cycleButton(direction: Int, systemName: String) -> some View {
-        Button {
-            cycleScreenshot(direction: direction)
-        } label: {
-            Image(systemName: systemName)
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(.primary)
-                .frame(width: 30, height: 30)
-                .background(.ultraThinMaterial, in: Circle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(direction < 0 ? "Previous screenshot" : "Next screenshot")
     }
 
     // MARK: - Helpers
@@ -683,48 +604,10 @@ struct IdeaView: View {
     private var savedDateText: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d, yyyy"
-        if let date = selectedScreenshot?.date ?? screenshotDate {
-            return formatter.string(from: date)
+        if let screenshotDate {
+            return formatter.string(from: screenshotDate)
         }
         return "unknown"
-    }
-
-    private var selectedScreenshot: SavedScreenshot? {
-        guard savedScreenshots.indices.contains(selectedScreenshotIndex) else { return nil }
-        return savedScreenshots[selectedScreenshotIndex]
-    }
-
-    private func cycleScreenshot(direction: Int) {
-        guard savedScreenshots.count > 1, !isCyclingScreenshot else { return }
-
-        isCyclingScreenshot = true
-        let outgoingOffset: CGFloat = direction > 0 ? -230 : 230
-        let incomingOffset = -outgoingOffset
-        let animation: Animation = reduceMotion
-            ? .easeOut(duration: 0.12)
-            : .spring(response: 0.28, dampingFraction: 0.88)
-
-        withAnimation(animation) {
-            screenshotDragOffset = outgoingOffset
-        }
-
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 180_000_000)
-            guard !Task.isCancelled else { return }
-
-            var transaction = Transaction()
-            transaction.animation = nil
-            withTransaction(transaction) {
-                selectedScreenshotIndex = (selectedScreenshotIndex + direction + savedScreenshots.count)
-                    % savedScreenshots.count
-                screenshotDragOffset = incomingOffset
-            }
-
-            withAnimation(animation) {
-                screenshotDragOffset = 0
-                isCyclingScreenshot = false
-            }
-        }
     }
 
     private func polaroidRotation(for index: Int) -> Double {
@@ -813,30 +696,49 @@ private struct SheetScrollOwnership: UIViewRepresentable {
 }
 
 struct ImagePreviewSheet: View {
-    let image: UIImage
+    let images: [UIImage]
     @Environment(\.dismiss) private var dismiss
 
+    @State private var selectedIndex: Int
     @State private var scale: CGFloat = 1
     @State private var lastScale: CGFloat = 1
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
     @State private var allowsPan = false
 
+    init(image: UIImage) {
+        self.init(images: [image])
+    }
+
+    init(images: [UIImage], initialIndex: Int = 0) {
+        self.images = images.isEmpty ? [UIImage()] : images
+        _selectedIndex = State(
+            initialValue: min(max(initialIndex, 0), max(self.images.count - 1, 0))
+        )
+    }
+
     var body: some View {
         NavigationStack {
-            GeometryReader { geo in
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: geo.size.width, height: geo.size.height)
-                    .scaleEffect(scale)
-                    .offset(offset)
-                    .gesture(magnificationGesture)
-                    .simultaneousGesture(panGesture, including: allowsPan ? .all : .none)
-                    .onTapGesture(count: 2, perform: resetZoom)
-                    .animation(.interactiveSpring, value: scale)
+            TabView(selection: $selectedIndex) {
+                ForEach(Array(images.enumerated()), id: \.offset) { index, image in
+                    GeometryReader { geo in
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: geo.size.width, height: geo.size.height)
+                            .scaleEffect(scale)
+                            .offset(offset)
+                            .gesture(magnificationGesture)
+                            .simultaneousGesture(panGesture, including: allowsPan ? .all : .none)
+                            .onTapGesture(count: 2, perform: resetZoom)
+                            .animation(.interactiveSpring, value: scale)
+                    }
+                    .tag(index)
+                }
             }
+            .tabViewStyle(.page(indexDisplayMode: images.count > 1 ? .always : .never))
             .ignoresSafeArea()
+            .onChange(of: selectedIndex) { _, _ in resetZoom() }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Done") { dismiss() }
@@ -844,8 +746,11 @@ struct ImagePreviewSheet: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     ShareLink(
-                        item: Image(uiImage: image),
-                        preview: SharePreview("Screenshot", image: Image(uiImage: image))
+                        item: Image(uiImage: images[selectedIndex]),
+                        preview: SharePreview(
+                            "Screenshot",
+                            image: Image(uiImage: images[selectedIndex])
+                        )
                     )
                 }
             }

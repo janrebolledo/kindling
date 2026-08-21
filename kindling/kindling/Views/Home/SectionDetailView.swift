@@ -23,8 +23,8 @@ struct SectionDetailView: View {
     let subtitle: String
     let items: [SavedIdea]
     var onBack: (() -> Void)? = nil
+    var onSelect: ((SavedIdea) -> Void)? = nil
 
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -44,7 +44,12 @@ struct SectionDetailView: View {
 
                 LazyVStack(spacing: 20) {
                     ForEach(filteredItems) { item in
-                        Card(card: item)
+                        Card(
+                            card: item,
+                            tapAction: { onSelect?(item) },
+                            loadsMapData: false,
+                            allowsDetailPresentation: false
+                        )
                     }
                 }
                 .padding(.horizontal, 16)
@@ -58,7 +63,9 @@ struct SectionDetailView: View {
         }
         .scrollIndicators(.hidden)
         .scrollEdgeEffectStyle(.soft, for: .top)
-        .background((colorScheme == .dark ? Color.black : Color.white).ignoresSafeArea())
+        .background {
+            KindlingTranslucentSheetBackground()
+        }
         .toolbarVisibility(.hidden, for: .navigationBar)
         .background { InteractivePopGestureEnabler() }
         .safeAreaBar(edge: .top, spacing: 0) {
@@ -70,41 +77,46 @@ struct SectionDetailView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .font(.system(size: 32, weight: .medium))
+                .tracking(-0.8)
+                .foregroundStyle(.primary)
+
             Text(subtitle)
                 .font(.system(size: 16))
                 .tracking(-0.4)
                 .foregroundStyle(.primary)
-                .padding(.top, 16)
+                .padding(.top, 8)
         }
         .padding(.horizontal, 24)
-        .padding(.top, 8)
+        .padding(.top, 6)
+        .padding(.bottom, 8)
     }
 
     private var pageHeader: some View {
-        ZStack {
-            Text(title)
-                .font(.system(size: 17, weight: .semibold))
-                .tracking(-0.35)
-                .lineLimit(1)
-
-            HStack {
-                Button {
-                    goBack()
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .semibold))
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .accessibilityLabel("Back")
-
-                Spacer()
+        HStack {
+            Button {
+                goBack()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 44, height: 44)
+                    .background(.regularMaterial, in: Circle())
+                    .overlay {
+                        Circle()
+                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                    }
+                    .contentShape(Circle())
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Back")
+
+            Spacer()
         }
-        .foregroundStyle(.primary)
-        .padding(.horizontal, 12)
-        .padding(.top, 10)
-        .padding(.bottom, 12)
+        .padding(.horizontal, 20)
+        .padding(.top, 8)
+        .padding(.bottom, 8)
     }
 
     // MARK: - Filters

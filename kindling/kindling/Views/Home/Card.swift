@@ -5,6 +5,7 @@
 //  Created by Jan Rebolledo on 1/23/26.
 //
 import CoreLocation
+import Photos
 import os
 import SwiftUI
 
@@ -16,12 +17,13 @@ struct Card: View {
     @State private var etaString: String?
     @State private var isFetchingETA = false
     @State private var googlePlaceHours: GooglePlaceHours?
-    @State private var locationManager = CardLocationManager()
+    @State private var locationManager: CardLocationManager?
     @State private var isNearViewport = false
     @Environment(UserSettings.self) private var userSettings
     @Environment(DirectionsCache.self) private var directionsCache
 
     private let directionsPreloadCount = 2
+    private let thumbnailSize = CGSize(width: 600, height: 600)
 
     var function: ((ItemWrapper?) async -> Void)?
     var card: CardData
@@ -68,13 +70,17 @@ struct Card: View {
             if isEvent { eventCard } else { locationCard }
         }
         .contentShape(RoundedRectangle(cornerRadius: 20))
-        .onGeometryChange(for: CGRect.self) { proxy in
-            proxy.frame(in: .global)
-        } action: { frame in
-            updateViewportProximity(frame)
+        .if(loadsMapData) {
+            $0.onGeometryChange(for: CGRect.self) { proxy in
+                proxy.frame(in: .global)
+            } action: { frame in
+                updateViewportProximity(frame)
+            }
         }
         .onAppear {
-            applyCachedDirections()
+            if loadsMapData {
+                applyCachedDirections()
+            }
         }
         .task(id: imageLoadID) {
             let requestToken = UUID()
@@ -82,7 +88,11 @@ struct Card: View {
             image = nil
             guard !card.local_id.isEmpty else { return }
 
-            let loadedImage = try? await loadImage(from: card.local_id)
+            let loadedImage = try? await loadImage(
+                from: card.local_id,
+                targetSize: thumbnailSize,
+                resizeMode: .fast
+            )
             guard !Task.isCancelled, imageRequestToken == requestToken else { return }
 
             if animatesImageLoading {
@@ -101,10 +111,10 @@ struct Card: View {
 
             guard shouldFetchDirections else { return }
             if placeDetails != nil, etaString != nil { return }
-            locationManager.requestLocation()
+            requestLocationIfNeeded()
             await fetchETA()
         }
-        .onChange(of: locationManager.location) { _, _ in
+        .onChange(of: locationManager?.location) { _, _ in
             if shouldFetchDirections { Task { await fetchETA() } }
         }
         .onChange(of: placeDetails?.id) { _, _ in
@@ -301,7 +311,7 @@ struct Card: View {
     }
 
     private var shouldLoadPlaceData: Bool {
-        card.ideas?.place_id != nil && (isNearViewport || !loadsMapData)
+        loadsMapData && card.ideas?.place_id != nil && isNearViewport
     }
 
     private var mapDataTaskID: String {
@@ -337,6 +347,14 @@ struct Card: View {
         guard placeDetails == nil, let placeID = card.ideas?.place_id else { return }
         placeDetails = await GooglePlacesService.shared.details(for: placeID)
         googlePlaceHours = placeDetails?.hours
+    }
+
+    private func requestLocationIfNeeded() {
+        guard loadsMapData else { return }
+        if locationManager == nil {
+            locationManager = CardLocationManager()
+        }
+        locationManager?.requestLocation()
     }
 
     @ViewBuilder
@@ -384,13 +402,13 @@ struct Card: View {
 
         do {
             try Task.checkCancellation()
-            locationManager.requestLocation()
+            requestLocationIfNeeded()
 
             // Authorization can finish after requestLocation() returns. Wait
             // briefly for the delegate callback before giving up; the
             // location change observer will retry when a later fix arrives.
             for _ in 0..<30 {
-                if let origin = locationManager.location?.coordinate {
+                if let origin = locationManager?.location?.coordinate {
                     etaString = await GooglePlacesService.shared.route(
                         from: origin,
                         to: destination,

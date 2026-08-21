@@ -7,6 +7,7 @@
 
 import Foundation
 import CoreLocation
+import Photos
 import Supabase
 import SwiftUI
 
@@ -101,7 +102,11 @@ private struct DiscoveryIdeaImage: View {
 
             guard !item.local_id.isEmpty else { return }
 
-            let loadedImage = try? await loadImage(from: item.local_id)
+            let loadedImage = try? await loadImage(
+                from: item.local_id,
+                targetSize: CGSize(width: 600, height: 600),
+                resizeMode: .fast
+            )
             guard !Task.isCancelled, imageRequestToken == requestToken else { return }
             localImage = loadedImage
         }
@@ -128,25 +133,55 @@ private struct DiscoveryIdeaImage: View {
     }
 }
 
-private struct DiscoverySheetBackground: View {
+struct KindlingTranslucentSheetBackground: View {
+    var opacity: Double = 0.72
+
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                RadialGradient(
-                    stops: [
-                        .init(color: Color(red: 202 / 255, green: 53 / 255, blue: 0).opacity(0.16), location: 0),
-                        .init(color: Color(red: 228 / 255, green: 95 / 255, blue: 2 / 255).opacity(0.15), location: 0.25),
-                        .init(color: Color(red: 255 / 255, green: 137 / 255, blue: 4 / 255).opacity(0.10), location: 0.5),
-                        .init(color: .clear, location: 1),
-                    ],
-                    center: UnitPoint(x: 0.5, y: 0.58),
-                    startRadius: 0,
-                    endRadius: max(proxy.size.width, proxy.size.height) * 0.58
-                )
-                .frame(width: proxy.size.width, height: proxy.size.height)
+                if opacity < 1 {
+                    Rectangle()
+                        .fill(.regularMaterial)
+                }
+
+                Color(uiColor: .systemBackground)
+                    .opacity(opacity)
+
+                if opacity < 1 {
+                    // Keep the map legible through the surface while adding a
+                    // quiet charcoal/warm-gray tint that belongs to kindling.
+                    LinearGradient(
+                        colors: colorScheme == .dark
+                            ? [
+                                Color.white.opacity(0.04),
+                                Color.black.opacity(0.12),
+                                Color(red: 104 / 255, green: 77 / 255, blue: 57 / 255).opacity(0.08),
+                            ]
+                            : [
+                                Color.white.opacity(0.22),
+                                Color.black.opacity(0.04),
+                                Color(red: 154 / 255, green: 111 / 255, blue: 76 / 255).opacity(0.06),
+                            ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+
+                    RadialGradient(
+                        colors: [
+                            Color(red: 208 / 255, green: 122 / 255, blue: 66 / 255).opacity(0.08),
+                            .clear,
+                        ],
+                        center: UnitPoint(x: 0.82, y: 0.66),
+                        startRadius: 0,
+                        endRadius: max(proxy.size.width, proxy.size.height) * 0.72
+                    )
+                }
             }
+            .frame(width: proxy.size.width, height: proxy.size.height)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea()
     }
 }
 
@@ -156,6 +191,11 @@ private enum SheetSectionDestination: Hashable, Identifiable {
     case events
 
     var id: Self { self }
+}
+
+private enum SheetDestination: Hashable {
+    case section(SheetSectionDestination)
+    case idea(Int)
 }
 
 @Observable
@@ -207,8 +247,7 @@ struct PinsView: View {
     @State private var mapHeight: CGFloat = 0
     @State private var isLoading = true
     @State private var detailIdea: SavedIdea?
-    @State private var isShowingIdeaInSheet = false
-    @State private var sectionDestination: SheetSectionDestination?
+    @State private var sheetPath: [SheetDestination] = []
     @State private var isDiscoverySheetPresented = true
     @State private var isSettingsSheetPresented = false
     @State private var discoveryDetent: PresentationDetent = .fraction(0.55)
@@ -295,21 +334,22 @@ struct PinsView: View {
         }
         .onChange(of: selectedIdeaID) { _, newValue in
             if newValue == nil {
-                if !isShowingIdeaInSheet {
-                    discoveryDetent = .fraction(0.55)
-                    dismissSectionPage()
-                }
+                discoveryDetent = .fraction(0.55)
                 isDiscoverySheetPresented = true
             } else {
                 if let newValue {
+                    // Map markers are keyed by the idea id. `collection_items.id`
+                    // is a different identity, so matching on `$0.id` can open
+                    // the wrong screenshot/card (or the previously selected
+                    // one) when those sequences happen to overlap.
                     if let item = allLocationItems.first(where: { $0.id == newValue }) {
                         showIdeaInSheet(item)
                     }
                 }
             }
         }
-        .onChange(of: isShowingIdeaInSheet) { _, isShowing in
-            if !isShowing {
+        .onChange(of: sheetPath) { _, path in
+            if path.isEmpty {
                 discoveryDetent = .fraction(0.55)
             }
         }
@@ -462,11 +502,11 @@ struct PinsView: View {
     }
 
     private var sheetContent: some View {
-        NavigationStack {
+        NavigationStack(path: $sheetPath) {
             ZStack {
-                Color(uiColor: .systemBackground)
-                    .opacity(isDiscoverySheetTranslucent ? 0.72 : 1)
-                .ignoresSafeArea()
+                KindlingTranslucentSheetBackground(
+                    opacity: isDiscoverySheetTranslucent ? 0.72 : 1
+                )
 
                 discoverySheet
             }
@@ -475,20 +515,28 @@ struct PinsView: View {
             // changing the sheet's safe-area geometry mid-transition.
             .ignoresSafeArea(edges: .top)
             .background(Color.clear)
+            .scrollContentBackground(.hidden)
             .toolbarVisibility(.visible, for: .navigationBar)
             .toolbarBackground(.hidden, for: .navigationBar)
-            .navigationDestination(item: $sectionDestination) { destination in
-                sectionPage(destination)
-            }
-            .navigationDestination(isPresented: $isShowingIdeaInSheet) {
-                if let detailIdea {
-                    IdeaView(
-                        card: detailIdea,
-                        function: { _ in await loadCollections() },
-                        allowsDeletion: true,
-                        isPreview: isDiscoverySheetTranslucent
-                    )
-                    .toolbarVisibility(.visible, for: .navigationBar)
+            .navigationDestination(for: SheetDestination.self) { destination in
+                switch destination {
+                case .section(let section):
+                    sectionPage(section)
+                case .idea(let ideaID):
+                    if let detailIdea {
+                        IdeaView(
+                            card: detailIdea,
+                            function: { _ in await loadCollections() },
+                            allowsDeletion: true,
+                            isPreview: isDiscoverySheetTranslucent
+                        )
+                        // `detailIdea` is separate state from the navigation
+                        // path. Force SwiftUI to give each idea a fresh view
+                        // state so its screenshot loader cannot retain the
+                        // image from the prior selection.
+                        .id(ideaID)
+                        .toolbarVisibility(.visible, for: .navigationBar)
+                    }
                 }
             }
         }
@@ -515,31 +563,35 @@ struct PinsView: View {
                 title: "#nomnomnom",
                 subtitle: subtitle(for: allNomnomnomItems),
                 items: allNomnomnomItems,
-                onBack: dismissSectionPage
+                onBack: dismissSectionPage,
+                onSelect: showIdeaInSheet
             )
         case .nearby:
             SectionDetailView(
                 title: "Things Near You",
                 subtitle: "places near you",
                 items: filteredLocationItems,
-                onBack: dismissSectionPage
+                onBack: dismissSectionPage,
+                onSelect: showIdeaInSheet
             )
         case .events:
             SectionDetailView(
                 title: "events this week",
                 subtitle: "what’s happening this week",
                 items: filteredEventItems,
-                onBack: dismissSectionPage
+                onBack: dismissSectionPage,
+                onSelect: showIdeaInSheet
             )
         }
     }
 
     private func dismissSectionPage() {
-        sectionDestination = nil
+        guard case .section = sheetPath.last else { return }
+        sheetPath.removeLast()
     }
 
     private func openSectionPage(_ destination: SheetSectionDestination) {
-        sectionDestination = destination
+        sheetPath.append(.section(destination))
     }
 
     private var discoverySheet: some View {
@@ -577,11 +629,9 @@ struct PinsView: View {
                 .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .top)
                 .padding(.top, 20)
                 .padding(.bottom, 16)
-                .background {
-                    DiscoverySheetBackground()
-                }
             }
             .frame(maxWidth: .infinity)
+            .background(Color.clear)
             .scrollDisabled(discoveryDetent != .large)
             .scrollIndicators(.hidden)
             .scrollEdgeEffectStyle(.soft, for: .top)
@@ -739,7 +789,14 @@ struct PinsView: View {
     private func showIdeaInSheet(_ item: SavedIdea) {
         detailIdea = item
         isDiscoverySheetPresented = true
-        isShowingIdeaInSheet = true
+        let ideaID = item.id
+        if case .idea(let currentID) = sheetPath.last {
+            if currentID != ideaID {
+                sheetPath[sheetPath.count - 1] = .idea(ideaID)
+            }
+        } else {
+            sheetPath.append(.idea(ideaID))
+        }
     }
 
     private func focusOnMap(_ item: SavedIdea) {

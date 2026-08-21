@@ -21,9 +21,8 @@ struct OpenStatus: Sendable {
     let detail: String
 }
 
-private let timeRegex = try! NSRegularExpression(pattern: #"\d{1,2}(?::\d{2})?\s*[AaPp][Mm]"#)
-
-private func extractTimes(from str: String) -> (open: String, close: String)? {
+private nonisolated func extractTimes(from str: String) -> (open: String, close: String)? {
+    let timeRegex = try! NSRegularExpression(pattern: #"\d{1,2}(?::\d{2})?\s*[AaPp][Mm]"#)
     let range = NSRange(str.startIndex..., in: str)
     let matches = timeRegex.matches(in: str, range: range)
     guard matches.count >= 2,

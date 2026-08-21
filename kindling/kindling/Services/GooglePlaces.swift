@@ -24,8 +24,7 @@ nonisolated struct GooglePlaceDetails: Codable, Sendable {
         guard !weekdayDescriptions.isEmpty else { return nil }
         return GooglePlaceHours(
             weekdayDescriptions: weekdayDescriptions,
-            openNow: openNow,
-            sourceURL: googleMapsUri.flatMap(URL.init(string:))
+            openNow: openNow
         )
     }
 }
@@ -33,8 +32,6 @@ nonisolated struct GooglePlaceDetails: Codable, Sendable {
 nonisolated struct GooglePlaceHours: Sendable {
     let weekdayDescriptions: [String]
     let openNow: Bool?
-    let sourceURL: URL?
-
     var rows: [GooglePlaceHoursRow] {
         weekdayDescriptions.enumerated().map { index, description in
             let pieces = description.split(separator: ":", maxSplits: 1)
