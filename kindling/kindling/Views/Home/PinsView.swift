@@ -6,7 +6,7 @@
 //
 
 import Foundation
-import MapKit
+import CoreLocation
 import Supabase
 import SwiftUI
 
@@ -103,10 +103,12 @@ private struct DiscoverySheetBackground: View {
     }
 }
 
-private enum SheetSectionDestination: Hashable {
+private enum SheetSectionDestination: Hashable, Identifiable {
     case nomnomnom
     case nearby
     case events
+
+    var id: Self { self }
 }
 
 @Observable
@@ -148,24 +150,20 @@ struct PinsView: View {
     @State private var mappedIdeas: [MappedIdea] = []
     @State private var resolvingIdeaIDs = Set<Int>()
     @State private var failedIdeaIDs = Set<Int>()
-    @State private var mapKitRequestTimes: [Date] = []
     @State private var locationManager = PinsLocationManager()
     @State private var searchText = ""
     @State private var selectedIdeaID: Int?
-    @State private var cameraPosition: MapCameraPosition = .automatic
+    @State private var mapCenter: CLLocationCoordinate2D?
+    @State private var mapZoom: Float = 10
     @State private var hasSetInitialCamera = false
     @State private var mapHeight: CGFloat = 0
     @State private var isLoading = true
     @State private var detailIdea: CollectionItemWrapper?
     @State private var isShowingIdeaInSheet = false
     @State private var sectionDestination: SheetSectionDestination?
-    @State private var sectionPageProgress: CGFloat = 0
-    @State private var sectionDragStartProgress: CGFloat?
     @State private var isDiscoverySheetPresented = true
     @State private var isSettingsSheetPresented = false
     @State private var discoveryDetent: PresentationDetent = .fraction(0.55)
-    @Namespace private var mapScope
-    @Namespace private var ideaTransition
 
     private var query: String {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -237,8 +235,8 @@ struct PinsView: View {
             locationManager.requestLocation()
             await loadCollections()
             await screenshotIndexing.scan()
-            // Refresh ideas created by the scan, then resolve only a bounded
-            // batch of Apple Place IDs for the map.
+            // Refresh ideas created by the scan, then resolve a bounded batch
+            // of Google Place IDs for the map.
             await loadCollections()
             await resolveMissingPlaces()
         }
@@ -246,17 +244,9 @@ struct PinsView: View {
             guard let newLocation, !hasSetInitialCamera, selectedIdeaID == nil else { return }
             centerMapOnUser(newLocation.coordinate)
         }
-        .onChange(of: cameraPosition) { _, newPosition in
-            // MapUserLocationButton changes the camera to .userLocation
-            // directly. Reapply the app's top-space framing after MapKit
-            // finishes that recentering.
-            guard newPosition.followsUserLocation,
-                  let coordinate = locationManager.location?.coordinate else { return }
-            centerMapOnUser(coordinate)
-        }
         .onChange(of: searchText) { _, _ in
             selectedIdeaID = nil
-            cameraPosition = .automatic
+            mapCenter = nil
         }
         .onChange(of: selectedIdeaID) { _, newValue in
             if newValue == nil {
@@ -284,33 +274,26 @@ struct PinsView: View {
     }
 
     private var map: some View {
-        Map(position: $cameraPosition, selection: $selectedIdeaID, scope: mapScope) {
-            ForEach(visibleIdeas) { mapped in
-                Annotation(
-                    mapped.displayName,
-                    coordinate: mapped.coordinate,
-                    anchor: .bottom
-                ) {
-                    mapPin(mapped)
-                }
-                .tag(mapped.id)
-            }
-            UserAnnotation()
-        }
-        .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
-        .mapControls {
-            MapCompass()
-            MapScaleView()
-        }
+        GoogleMapView(
+            markers: visibleIdeas.map {
+                GoogleMapMarkerData(
+                    id: $0.id,
+                    coordinate: $0.coordinate,
+                    title: $0.displayName,
+                    emoji: $0.item.ideas?.location_emoji ?? "✦"
+                )
+            },
+            center: mapCenter,
+            zoom: mapZoom,
+            selectedID: selectedIdeaID,
+            onSelect: { selectedIdeaID = $0 }
+        )
         .background {
             GeometryReader { proxy in
                 Color.clear
                     .onAppear { mapHeight = proxy.size.height }
                     .onChange(of: proxy.size) { _, size in mapHeight = size.height }
             }
-        }
-        .onMapCameraChange(frequency: .onEnd) { _ in
-            Task { await resolveMissingPlaces() }
         }
         .ignoresSafeArea()
         .accessibilityLabel("Map of saved ideas")
@@ -323,7 +306,21 @@ struct PinsView: View {
 
                 HStack {
                     Spacer()
-                    MapUserLocationButton(scope: mapScope)
+                    Button {
+                        if let coordinate = locationManager.location?.coordinate {
+                            centerMapOnUser(coordinate)
+                        } else {
+                            locationManager.requestLocation()
+                        }
+                    } label: {
+                        Image(systemName: "location.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.primary)
+                            .frame(width: 42, height: 42)
+                            .background(.regularMaterial, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Center map on your location")
                         .padding(.trailing, 16)
                         .padding(.bottom, mapUserLocationButtonBottomPadding(for: proxy.size.height))
                 }
@@ -429,30 +426,13 @@ struct PinsView: View {
                     .opacity(isDiscoverySheetTranslucent ? 0.72 : 1)
                 .ignoresSafeArea()
 
-                GeometryReader { proxy in
-                    ZStack(alignment: .leading) {
-                        HStack(spacing: 0) {
-                            discoverySheet
-                                .frame(width: proxy.size.width)
-
-                            if let sectionDestination {
-                                sectionPage(sectionDestination)
-                                    .frame(width: proxy.size.width)
-                            } else {
-                                Color.clear
-                                    .frame(width: proxy.size.width)
-                            }
-                        }
-                        .offset(x: -proxy.size.width * sectionPageProgress)
-                    }
-                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
-                    .clipped()
-                    .contentShape(Rectangle())
-                    .simultaneousGesture(sectionPageGesture(width: proxy.size.width))
-                }
+                discoverySheet
             }
             .background(Color.clear)
             .toolbarVisibility(.hidden, for: .navigationBar)
+            .navigationDestination(item: $sectionDestination) { destination in
+                sectionPage(destination)
+            }
             .navigationDestination(isPresented: $isShowingIdeaInSheet) {
                 if let detailIdea {
                     IdeaView(
@@ -460,9 +440,6 @@ struct PinsView: View {
                         function: { _ in await loadCollections() },
                         allowsDeletion: true,
                         isPreview: isDiscoverySheetTranslucent
-                    )
-                    .navigationTransition(
-                        .zoom(sourceID: transitionID(for: detailIdea), in: ideaTransition)
                     )
                     .toolbarVisibility(.visible, for: .navigationBar)
                 }
@@ -482,18 +459,6 @@ struct PinsView: View {
 
     private var isDiscoverySheetTranslucent: Bool {
         discoveryDetent != .large
-    }
-
-    private var sheetNavigationAnimation: Animation {
-        reduceMotion
-            ? .linear(duration: 0.01)
-            : .timingCurve(0.32, 0.72, 0, 1, duration: 0.28)
-    }
-
-    private var sectionGestureSettleAnimation: Animation {
-        reduceMotion
-            ? .linear(duration: 0.01)
-            : .spring(response: 0.3, dampingFraction: 0.8)
     }
 
     private var discoverySheetPromotionGesture: some Gesture {
@@ -542,55 +507,11 @@ struct PinsView: View {
     }
 
     private func dismissSectionPage() {
-        withAnimation(sheetNavigationAnimation) {
-            sectionPageProgress = 0
-        }
+        sectionDestination = nil
     }
 
     private func openSectionPage(_ destination: SheetSectionDestination) {
         sectionDestination = destination
-        withAnimation(sheetNavigationAnimation) {
-            sectionPageProgress = 1
-        }
-    }
-
-    private func sectionPageGesture(width: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 12)
-            .onChanged { value in
-                guard value.startLocation.x < 32,
-                      sectionDestination != nil,
-                      abs(value.translation.width) > abs(value.translation.height)
-                else { return }
-
-                if sectionDragStartProgress == nil {
-                    sectionDragStartProgress = sectionPageProgress
-                }
-
-                let startProgress = sectionDragStartProgress ?? sectionPageProgress
-                let translation = value.translation.width
-
-                // A left drag opens the next page from home; a right drag
-                // returns from the detail page. Keep the track attached to the
-                // finger and ignore movement toward an unavailable boundary.
-                if startProgress <= 0, translation >= 0 { return }
-                if startProgress >= 1, translation <= 0 { return }
-
-                sectionPageProgress = min(
-                    1,
-                    max(0, startProgress - translation / max(width, 1))
-                )
-            }
-            .onEnded { value in
-                defer { sectionDragStartProgress = nil }
-                guard let startProgress = sectionDragStartProgress,
-                      sectionDestination != nil else { return }
-
-                let projectedProgress = startProgress
-                    - value.predictedEndTranslation.width / max(width, 1)
-                withAnimation(sectionGestureSettleAnimation) {
-                    sectionPageProgress = projectedProgress > 0.5 ? 1 : 0
-                }
-            }
     }
 
     private var discoverySheet: some View {
@@ -786,10 +707,6 @@ struct PinsView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .matchedTransitionSource(
-            id: transitionID(for: item),
-            in: ideaTransition
-        )
     }
 
     private func showIdeaInSheet(_ item: CollectionItemWrapper) {
@@ -835,18 +752,17 @@ struct PinsView: View {
         Task { @MainActor in
             defer { resolvingIdeaIDs.remove(ideaID) }
 
-            guard let mapItem = await resolveMapItem(for: item) else {
+            guard let place = await resolvePlace(for: item) else {
                 showIdeaInSheet(item)
                 return
             }
 
-            let coordinate = mapItem.location.coordinate
-            guard CLLocationCoordinate2DIsValid(coordinate) else {
+            guard let coordinate = place.coordinate else {
                 showIdeaInSheet(item)
                 return
             }
 
-            let mapped = MappedIdea(item: item, coordinate: coordinate, mapName: mapItem.name)
+            let mapped = MappedIdea(item: item, coordinate: coordinate, mapName: place.name)
             if !mappedIdeas.contains(where: { $0.id == ideaID }) {
                 mappedIdeas.append(mapped)
             }
@@ -863,24 +779,13 @@ struct PinsView: View {
         presenting item: CollectionItemWrapper?
     ) {
         withAnimation(.easeInOut(duration: 0.45)) {
-            cameraPosition = .region(
-                MKCoordinateRegion(
-                    center: mapped.coordinate,
-                    latitudinalMeters: 1_200,
-                    longitudinalMeters: 1_200
-                )
-            )
+            mapCenter = mapped.coordinate
+            mapZoom = 14
             selectedIdeaID = mapped.id
         }
 
         // Keep the direct navigation path while the map recenters underneath it.
         showIdeaInSheet(item ?? mapped.item)
-    }
-
-    private func transitionID(for item: CollectionItemWrapper) -> String {
-        // Collection-item IDs identify the rendered source, whereas an idea can
-        // appear in multiple collections and therefore have multiple sources.
-        "idea-image-\(item.id)"
     }
 
     private func loadCollections() async {
@@ -907,7 +812,7 @@ struct PinsView: View {
 
         mappedIdeas = allLocationItems.compactMap { item in
             let id = item.ideas?.id ?? item.idea_id
-            // Coordinates are MapKit response data and stay in memory only.
+            // Coordinates are Google Places response data and stay in memory only.
             // Keep a successfully resolved pin visible while a collection
             // refresh is happening.
             guard let (coordinate, mapName) = previous[id] else { return nil }
@@ -932,57 +837,37 @@ struct PinsView: View {
             defer { resolvingIdeaIDs.remove(ideaID) }
             resolvedThisPass += 1
 
-            // A small gap plus a six-item batch prevents a map refresh from
-            // creating the burst of requests that caused the throttle error.
+            // A small gap plus a six-item batch keeps the map responsive while
+            // Google Place details are resolving.
             if resolvedThisPass > 1 {
                 try? await Task.sleep(nanoseconds: 200_000_000)
             }
 
-            let cutoff = Date().addingTimeInterval(-60)
-            mapKitRequestTimes.removeAll { $0 < cutoff }
-            guard mapKitRequestTimes.count < 40 else { return }
-            mapKitRequestTimes.append(Date())
-
-            guard let mapItem = await resolveMapItem(for: item) else {
+            guard let place = await resolvePlace(for: item) else {
                 failedIdeaIDs.insert(ideaID)
                 continue
             }
-            let coordinate = mapItem.location.coordinate
-            guard CLLocationCoordinate2DIsValid(coordinate) else {
+            guard let coordinate = place.coordinate else {
                 failedIdeaIDs.insert(ideaID)
                 continue
             }
 
             mappedIdeas.append(
-                MappedIdea(item: item, coordinate: coordinate, mapName: mapItem.name)
+                MappedIdea(item: item, coordinate: coordinate, mapName: place.name)
             )
         }
     }
 
-    private func resolveMapItem(for item: CollectionItemWrapper) async -> MKMapItem? {
-        let idea = item.ideas
-        if let placeID = idea?.place_id,
-           let identifier = MKMapItem.Identifier(rawValue: placeID) {
-            let request = MKMapItemRequest(mapItemIdentifier: identifier)
-            return await withCheckedContinuation { continuation in
-                request.getMapItem { mapItem, _ in
-                    continuation.resume(returning: mapItem)
-                }
-            }
-        }
-        return nil
+    private func resolvePlace(for item: CollectionItemWrapper) async -> GooglePlaceDetails? {
+        guard let placeID = item.ideas?.place_id else { return nil }
+        return await GooglePlacesService.shared.details(for: placeID)
     }
 
     private func centerMapOnUser(_ coordinate: CLLocationCoordinate2D) {
         hasSetInitialCamera = true
         withAnimation(.easeInOut(duration: 0.45)) {
-            cameraPosition = .region(
-                MKCoordinateRegion(
-                    center: initialCameraCenter(for: coordinate),
-                    latitudinalMeters: 24_140,
-                    longitudinalMeters: 24_140
-                )
-            )
+            mapCenter = initialCameraCenter(for: coordinate)
+            mapZoom = 10
         }
     }
 
@@ -1005,8 +890,10 @@ struct PinsView: View {
         // 400 points higher, centered in the map area above the discovery sheet.
         let effectiveMapHeight = mapHeight > 0 ? Double(mapHeight) : 844
         let verticalOffsetMeters = 24_140 * 400 / effectiveMapHeight
-        let mapPoint = MKMapPoint(coordinate)
-        let offset = verticalOffsetMeters * MKMapPointsPerMeterAtLatitude(coordinate.latitude)
-        return MKMapPoint(x: mapPoint.x, y: mapPoint.y + offset).coordinate
+        // Google Maps handles the visual insets independently; keep this
+        // centered on the user's actual location instead of projecting it
+        // map-point projection.
+        _ = verticalOffsetMeters
+        return coordinate
     }
 }

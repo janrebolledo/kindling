@@ -1,29 +1,51 @@
-import { createPrivateKey, createSign } from 'node:crypto';
 import type { MapsPlace } from './types';
 import { log, logError } from './log';
+
+export type GoogleMapsCredentials = {
+  GOOGLE_MAPS_API_KEY: string;
+  PUBLIC_API_URL?: string;
+};
 
 export type PlacesLookup = {
   place: MapsPlace;
   image: string | null;
 };
 
-type AppleMapsCredentials = {
-  APPLE_MAPS_TEAM_ID: string;
-  APPLE_MAPS_KEY_ID: string;
-  APPLE_MAPS_PRIVATE_KEY: string;
+export type PlaceDetails = {
+  id: string;
+  name: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  formattedAddress: string | null;
+  weekdayDescriptions: string[];
+  openNow: boolean | null;
+  photoUrl: string | null;
+  photoAttributions: string[];
+  googleMapsUri: string | null;
 };
 
-type ApplePlace = {
+type GooglePlaceSearchResponse = {
+  places?: Array<{
+    id?: string;
+    photos?: Array<{ name?: string }>;
+  }>;
+};
+
+type GooglePlaceResponse = {
   id?: string;
-};
-
-type AppleSearchResponse = {
-  results?: ApplePlace[];
-};
-
-type AppleTokenResponse = {
-  accessToken?: string;
-  expiresInSeconds?: number;
+  displayName?: { text?: string };
+  location?: { latitude?: number; longitude?: number };
+  formattedAddress?: string;
+  regularOpeningHours?: { weekdayDescriptions?: string[] };
+  currentOpeningHours?: {
+    openNow?: boolean;
+    weekdayDescriptions?: string[];
+  };
+  photos?: Array<{
+    name?: string;
+    authorAttributions?: Array<{ displayName?: string; uri?: string }>;
+  }>;
+  googleMapsUri?: string;
 };
 
 export type PlacesLookupContext = {
@@ -31,8 +53,16 @@ export type PlacesLookupContext = {
   venue?: string | null;
 };
 
-let cachedToken: { value: string; expiresAt: number } | null = null;
-let tokenRequest: Promise<string> | null = null;
+function publicAPIBaseURL(credentials: GoogleMapsCredentials): string {
+  return (credentials.PUBLIC_API_URL ?? 'https://api.getkindl.ing').replace(/\/$/, '');
+}
+
+export function photoURL(
+  placeId: string,
+  credentials: GoogleMapsCredentials,
+): string {
+  return `${publicAPIBaseURL(credentials)}/places/${encodeURIComponent(placeId)}/photo`;
+}
 
 function responseContentType(response: Response): string | null {
   return response.headers.get('content-type');
@@ -41,8 +71,7 @@ function responseContentType(response: Response): string | null {
 async function responseBodyPreview(response: Response): Promise<string | null> {
   try {
     const body = await response.text();
-    if (!body) return null;
-    return body.replace(/\s+/g, ' ').slice(0, 500);
+    return body ? body.replace(/\s+/g, ' ').slice(0, 500) : null;
   } catch {
     return null;
   }
@@ -58,163 +87,36 @@ async function queryFingerprint(query: string): Promise<string> {
   ).join('').slice(0, 16);
 }
 
-function base64url(value: Uint8Array | string): string {
-  const bytes = typeof value === 'string' ? new TextEncoder().encode(value) : value;
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
-}
-
-function readDerLength(bytes: Uint8Array, offset: number): {
-  length: number;
-  nextOffset: number;
-} {
-  const first = bytes[offset];
-  if (first < 0x80) return { length: first, nextOffset: offset + 1 };
-
-  const byteCount = first & 0x7f;
-  let length = 0;
-  for (let index = 0; index < byteCount; index += 1) {
-    length = (length << 8) | bytes[offset + 1 + index];
-  }
-  return { length, nextOffset: offset + 1 + byteCount };
-}
-
-function derToJoseSignature(der: Uint8Array): Uint8Array {
-  let offset = 0;
-  if (der[offset++] !== 0x30) throw new Error('ECDSA signature was not a DER sequence');
-  const sequenceLength = readDerLength(der, offset);
-  offset = sequenceLength.nextOffset;
-  if (sequenceLength.length > der.length - offset) {
-    throw new Error('ECDSA DER signature length was invalid');
-  }
-
-  if (der[offset++] !== 0x02) throw new Error('ECDSA signature was missing r');
-  const rLength = readDerLength(der, offset);
-  offset = rLength.nextOffset;
-  const r = der.slice(offset, offset + rLength.length);
-  offset += rLength.length;
-
-  if (der[offset++] !== 0x02) throw new Error('ECDSA signature was missing s');
-  const sLength = readDerLength(der, offset);
-  offset = sLength.nextOffset;
-  const s = der.slice(offset, offset + sLength.length);
-
-  const jose = new Uint8Array(64);
-  jose.set(r.slice(-32), 32 - Math.min(r.length, 32));
-  jose.set(s.slice(-32), 64 - Math.min(s.length, 32));
-  return jose;
-}
-
-async function createMapsAuthToken(credentials: AppleMapsCredentials): Promise<string> {
-  const now = Math.floor(Date.now() / 1000);
-  const header = base64url(JSON.stringify({
-    alg: 'ES256',
-    kid: credentials.APPLE_MAPS_KEY_ID,
-    typ: 'JWT',
-  }));
-  const payload = base64url(JSON.stringify({
-    iss: credentials.APPLE_MAPS_TEAM_ID,
-    iat: now,
-    exp: now + 300,
-    scope: 'server_api',
-  }));
-  const signingInput = `${header}.${payload}`;
-  const signer = createSign('SHA256');
-  signer.update(signingInput);
-  signer.end();
-  const derSignature = signer.sign(
-    createPrivateKey(credentials.APPLE_MAPS_PRIVATE_KEY.replaceAll('\\n', '\n')),
-  );
-  return `${signingInput}.${base64url(derToJoseSignature(derSignature))}`;
-}
-
-async function getMapsAccessToken(credentials: AppleMapsCredentials): Promise<string> {
-  const now = Date.now();
-  if (cachedToken && cachedToken.expiresAt > now + 30_000) {
-    return cachedToken.value;
-  }
-
-  if (tokenRequest) return tokenRequest;
-
-  tokenRequest = (async () => {
-    const started = Date.now();
-
-    try {
-      const authToken = await createMapsAuthToken(credentials);
-      const response = await fetch('https://maps-api.apple.com/v1/token', {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          Accept: 'application/json',
-          'User-Agent': 'kindling-api',
-        },
-      });
-      if (!response.ok) {
-        const bodyPreview = await responseBodyPreview(response);
-        throw new Error(
-          `Apple Maps token request failed with ${response.status}`
-          + (bodyPreview ? `: ${bodyPreview}` : ''),
-        );
-      }
-
-      const token = (await response.json()) as AppleTokenResponse;
-      if (!token.accessToken) {
-        throw new Error('Apple Maps token response was missing accessToken');
-      }
-
-      cachedToken = {
-        value: token.accessToken,
-        expiresAt: now + Math.max((token.expiresInSeconds ?? 0) - 30, 30) * 1000,
-      };
-      return token.accessToken;
-    } catch (err) {
-      logError('apple_maps.token_request_failed', err, {
-        ms: Date.now() - started,
-      });
-      throw err;
-    }
-  })();
-
-  try {
-    return await tokenRequest;
-  } finally {
-    tokenRequest = null;
-  }
-}
-
-function toMapsPlace(place: ApplePlace): MapsPlace | null {
-  return place.id ? { id: place.id } : null;
+function googleHeaders(
+  credentials: GoogleMapsCredentials,
+  fieldMask: string,
+): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    'X-Goog-Api-Key': credentials.GOOGLE_MAPS_API_KEY,
+    'X-Goog-FieldMask': fieldMask,
+  };
 }
 
 export async function lookupPlace(
   query: string,
-  credentials: AppleMapsCredentials,
+  credentials: GoogleMapsCredentials,
   context: PlacesLookupContext = {},
 ): Promise<PlacesLookup | null> {
   const started = Date.now();
   const fingerprint = await queryFingerprint(query);
-  const logContext = {
-    ...context,
-    query_fingerprint: fingerprint,
-    query_length: query.length,
-  };
+  const logContext = { ...context, query_fingerprint: fingerprint, query_length: query.length };
 
   try {
-    const token = await getMapsAccessToken(credentials);
-    const url = new URL('https://maps-api.apple.com/v1/search');
-    url.searchParams.set('q', query);
-    url.searchParams.set('resultTypeFilter', 'poi');
-    url.searchParams.set('lang', 'en-US');
-    log('apple_maps.search_request', logContext);
-    const response = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/json',
-        'User-Agent': 'kindling-api',
-      },
+    log('google_places.search_request', logContext);
+    const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: googleHeaders(credentials, 'places.id,places.photos'),
+      body: JSON.stringify({ textQuery: query, maxResultCount: 1 }),
     });
+
     if (!response.ok) {
-      log('apple_maps.search_response', {
+      log('google_places.search_response', {
         ...logContext,
         status: response.status,
         status_text: response.statusText,
@@ -225,36 +127,89 @@ export async function lookupPlace(
       return null;
     }
 
-    const data = (await response.json()) as AppleSearchResponse;
-    const results = Array.isArray(data.results) ? data.results : [];
-    const placesWithId = results.filter((result) => Boolean(result?.id)).length;
-    log('apple_maps.search_response', {
+    const data = (await response.json()) as GooglePlaceSearchResponse;
+    const result = data.places?.[0];
+    const placeId = result?.id;
+    log('google_places.search_response', {
       ...logContext,
       status: response.status,
-      content_type: responseContentType(response),
-      result_count: results.length,
-      places_with_id: placesWithId,
-      top_level_keys: Object.keys(data),
-      first_result_keys: results[0] && typeof results[0] === 'object'
-        ? Object.keys(results[0])
-        : [],
+      result_count: data.places?.length ?? 0,
+      has_photo: Boolean(result?.photos?.[0]?.name),
       ms: Date.now() - started,
     });
-    const place = results.map(toMapsPlace).find((result) => result != null) ?? null;
-    if (place == null) {
-      log('apple_maps.search_miss', {
-        ...logContext,
-        result_count: results.length,
-        places_with_id: placesWithId,
-        ms: Date.now() - started,
-      });
-    }
-    return place ? { place, image: null } : null;
+
+    return placeId
+      ? {
+          place: { id: placeId },
+          image: result?.photos?.[0]?.name ? photoURL(placeId, credentials) : null,
+        }
+      : null;
   } catch (err) {
-    logError('apple_maps.search_failed', err, {
-      ...logContext,
-      ms: Date.now() - started,
-    });
+    logError('google_places.search_failed', err, { ...logContext, ms: Date.now() - started });
     return null;
   }
+}
+
+export async function getPlaceDetails(
+  placeId: string,
+  credentials: GoogleMapsCredentials,
+): Promise<PlaceDetails | null> {
+  const response = await fetch(
+    `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`,
+    {
+      headers: googleHeaders(
+        credentials,
+        'id,displayName,location,formattedAddress,regularOpeningHours,currentOpeningHours,photos,googleMapsUri',
+      ),
+    },
+  );
+
+  if (!response.ok) return null;
+  const place = (await response.json()) as GooglePlaceResponse;
+  if (!place.id) return null;
+
+  return {
+    id: place.id,
+    name: place.displayName?.text ?? null,
+    latitude: place.location?.latitude ?? null,
+    longitude: place.location?.longitude ?? null,
+    formattedAddress: place.formattedAddress ?? null,
+    weekdayDescriptions:
+      place.regularOpeningHours?.weekdayDescriptions
+      ?? place.currentOpeningHours?.weekdayDescriptions
+      ?? [],
+    openNow: place.currentOpeningHours?.openNow ?? null,
+    photoUrl: place.photos?.[0]?.name ? photoURL(place.id, credentials) : null,
+    photoAttributions: (place.photos?.[0]?.authorAttributions ?? [])
+      .map((attribution) => attribution.displayName ?? attribution.uri ?? '')
+      .filter(Boolean),
+    googleMapsUri: place.googleMapsUri ?? null,
+  };
+}
+
+export async function fetchPlacePhoto(
+  placeId: string,
+  credentials: GoogleMapsCredentials,
+): Promise<Response | null> {
+  const response = await fetch(
+    `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`,
+    { headers: googleHeaders(credentials, 'photos') },
+  );
+  if (!response.ok) return null;
+
+  const place = (await response.json()) as GooglePlaceResponse;
+  const photoName = place.photos?.[0]?.name;
+  if (!photoName) return null;
+
+  const photoResponse = await fetch(
+    `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=1200`,
+    { headers: { 'X-Goog-Api-Key': credentials.GOOGLE_MAPS_API_KEY } },
+  );
+  if (!photoResponse.ok || !photoResponse.body) return null;
+
+  const headers = new Headers();
+  const contentType = photoResponse.headers.get('content-type');
+  if (contentType) headers.set('Content-Type', contentType);
+  headers.set('Cache-Control', 'public, max-age=86400');
+  return new Response(photoResponse.body, { status: 200, headers });
 }

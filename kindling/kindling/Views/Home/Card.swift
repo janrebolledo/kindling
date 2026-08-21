@@ -5,7 +5,6 @@
 //  Created by Jan Rebolledo on 1/23/26.
 //
 import CoreLocation
-import MapKit
 import os
 import SwiftUI
 
@@ -13,9 +12,10 @@ struct Card: View {
     @State var image: UIImage? = nil
     @State private var imageRequestToken = UUID()
     @State var sheetPresented: Bool = false
-    @State private var mapItem: MKMapItem?
+    @State private var placeDetails: GooglePlaceDetails?
     @State private var etaString: String?
-    @State private var openStreetMapHours: OpenStreetMapHours?
+    @State private var isFetchingETA = false
+    @State private var googlePlaceHours: GooglePlaceHours?
     @State private var locationManager = CardLocationManager()
     @State private var isNearViewport = false
     @Environment(UserSettings.self) private var userSettings
@@ -33,11 +33,16 @@ struct Card: View {
     var animatesImageLoading = false
 
     private var venueTitle: String {
-        mapName ?? mapItem?.name ?? card.ideas?.name ?? "Untitled"
+        mapName ?? placeDetails?.name ?? card.ideas?.name ?? "Untitled"
     }
 
     private var imageLoadID: String {
         "\(card.id)-\(card.local_id)-\(card.ideas?.media_url ?? "remote")"
+    }
+
+    private var googleMapsMediaURL: URL? {
+        let value = placeDetails?.photoUrl ?? card.ideas?.media_url
+        return value.flatMap(URL.init(string:))
     }
 
     private var isEvent: Bool {
@@ -75,7 +80,7 @@ struct Card: View {
             let requestToken = UUID()
             imageRequestToken = requestToken
             image = nil
-            guard card.ideas?.media_url == nil, !card.local_id.isEmpty else { return }
+            guard !card.local_id.isEmpty else { return }
 
             let loadedImage = try? await loadImage(from: card.local_id)
             guard !Task.isCancelled, imageRequestToken == requestToken else { return }
@@ -89,20 +94,20 @@ struct Card: View {
             }
         }
         .task(id: mapDataTaskID) {
-            guard shouldLoadMapItem else { return }
+            guard shouldLoadPlaceData else { return }
             applyCachedDirections()
-            await fetchMapData()
-            await fetchOpenStreetMapHours()
+            await fetchPlaceDetails()
+            googlePlaceHours = placeDetails?.hours
 
             guard shouldFetchDirections else { return }
-            if mapItem != nil, etaString != nil { return }
+            if placeDetails != nil, etaString != nil { return }
             locationManager.requestLocation()
             await fetchETA()
         }
         .onChange(of: locationManager.location) { _, _ in
             if shouldFetchDirections { Task { await fetchETA() } }
         }
-        .onChange(of: mapItem) { _, _ in
+        .onChange(of: placeDetails?.id) { _, _ in
             if shouldFetchDirections { Task { await fetchETA() } }
         }
         .onChange(of: userSettings.transportType) { _, _ in
@@ -119,9 +124,9 @@ struct Card: View {
         .sheet(isPresented: $sheetPresented) {
             IdeaView(
                 card: card,
-                mapItem: mapItem,
+                placeDetails: placeDetails,
                 etaString: etaString,
-                openStreetMapHours: openStreetMapHours,
+                googlePlaceHours: googlePlaceHours,
                 transportType: userSettings.transportType,
                 function: function ?? { _ in },
                 allowsDeletion: allowsDeletion
@@ -180,7 +185,7 @@ struct Card: View {
 
                     locationEtaRow(fontSize: 14, color: .black)
 
-                    openStreetMapStatusOrFallbackRow(
+                    googlePlaceStatusOrFallbackRow(
                         fontSize: 14,
                         color: .black.opacity(0.5)
                     )
@@ -212,7 +217,7 @@ struct Card: View {
 
                 locationEtaRow(fontSize: 14, color: .secondary)
 
-                openStreetMapStatusOrFallbackRow(
+                googlePlaceStatusOrFallbackRow(
                     fontSize: 14,
                     color: .primary.opacity(0.5)
                 )
@@ -226,7 +231,7 @@ struct Card: View {
 
     @ViewBuilder
     private var cardImage: some View {
-        if let mediaUrl = card.ideas?.media_url, let url = URL(string: mediaUrl) {
+        if let url = googleMapsMediaURL {
             let transaction = Transaction(
                 animation: animatesImageLoading
                     ? .easeOut(duration: 0.2)
@@ -241,7 +246,13 @@ struct Card: View {
                         .scaledToFill()
                         .transition(.opacity)
                 default:
-                    Color.gray.opacity(0.15)
+                    if let image {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        Color.gray.opacity(0.15)
+                    }
                 }
             }
         } else if let image {
@@ -277,18 +288,15 @@ struct Card: View {
         loadsMapData && isNearViewport
     }
 
-    private var shouldLoadMapItem: Bool {
+    private var shouldLoadPlaceData: Bool {
         card.ideas?.place_id != nil && (isNearViewport || !loadsMapData)
     }
 
     private var mapDataTaskID: String {
-        "\(shouldLoadMapItem)-\(shouldFetchDirections)-\(userSettings.transportType.rawValue)"
+        "\(shouldLoadPlaceData)-\(shouldFetchDirections)-\(userSettings.transportType.rawValue)"
     }
 
     private func applyCachedDirections() {
-        if mapItem == nil, let cached = directionsCache.mapItem(for: ideaID) {
-            mapItem = cached
-        }
         if etaString == nil, let cached = directionsCache.eta(for: ideaID, transport: userSettings.transportType) {
             etaString = cached
         }
@@ -313,55 +321,15 @@ struct Card: View {
         return scene?.keyWindow?.bounds ?? scene?.windows.first?.bounds ?? .zero
     }
 
-    private func fetchMapData() async {
-        if mapItem != nil { return }
-        guard let placeID = card.ideas?.place_id,
-              let identifier = MKMapItem.Identifier(rawValue: placeID)
-        else { return }
-
-        let request = MKMapItemRequest(mapItemIdentifier: identifier)
-        let item = await withCheckedContinuation { continuation in
-            request.getMapItem { mapItem, _ in
-                continuation.resume(returning: mapItem)
-            }
-        }
-        guard !Task.isCancelled, let item else { return }
-        mapItem = item
-        directionsCache.store(mapItem: item, for: ideaID)
-    }
-
-    private func fetchOpenStreetMapHours() async {
-        guard openStreetMapHours == nil else {
-            openStreetMapLogger.debug("Card skipped OSM lookup because hours are already loaded")
-            return
-        }
-        guard let mapItem else {
-            openStreetMapLogger.debug("Card skipped OSM lookup because MapKit item is unavailable")
-            return
-        }
-        guard let name = mapItem.name else {
-            openStreetMapLogger.debug("Card skipped OSM lookup because MapKit item has no name")
-            return
-        }
-        let coordinate = mapItem.location.coordinate
-        guard CLLocationCoordinate2DIsValid(coordinate) else {
-            openStreetMapLogger.debug("Card skipped OSM lookup because coordinate is invalid")
-            return
-        }
-
-        openStreetMapHours = await OpenStreetMapHoursService.shared.lookup(
-            name: name,
-            latitude: coordinate.latitude,
-            longitude: coordinate.longitude
-        )
-        openStreetMapLogger.debug(
-            "Card OSM lookup finished has_hours=\(openStreetMapHours != nil, privacy: .public)"
-        )
+    private func fetchPlaceDetails() async {
+        guard placeDetails == nil, let placeID = card.ideas?.place_id else { return }
+        placeDetails = await GooglePlacesService.shared.details(for: placeID)
+        googlePlaceHours = placeDetails?.hours
     }
 
     @ViewBuilder
-    private func openStreetMapStatusRow(fontSize: CGFloat, color: some ShapeStyle) -> some View {
-        if let status = openStreetMapHours?.status {
+    private func googlePlaceStatusRow(fontSize: CGFloat, color: some ShapeStyle) -> some View {
+        if let status = googlePlaceHours?.status {
             HStack(spacing: 8) {
                 Text(status.isOpen ? "Open" : "Closed").fontWeight(.medium)
                 Text(status.detail)
@@ -374,12 +342,12 @@ struct Card: View {
     }
 
     @ViewBuilder
-    private func openStreetMapStatusOrFallbackRow(
+    private func googlePlaceStatusOrFallbackRow(
         fontSize: CGFloat,
         color: some ShapeStyle
     ) -> some View {
-        if openStreetMapHours?.status != nil {
-            openStreetMapStatusRow(fontSize: fontSize, color: color)
+        if googlePlaceHours?.status != nil {
+            googlePlaceStatusRow(fontSize: fontSize, color: color)
         } else {
             HStack(spacing: 8) {
                 if let locationType = card.ideas?.locationTypeLabel {
@@ -396,21 +364,33 @@ struct Card: View {
     }
 
     private func fetchETA() async {
-        guard etaString == nil else { return }
-        guard let destination = mapItem, locationManager.location != nil else { return }
-        let request = MKDirections.Request()
-        request.source = MKMapItem.forCurrentLocation()
-        request.destination = destination
-        request.transportType = userSettings.transportType.mkTransportType
+        guard etaString == nil, !isFetchingETA,
+              let destination = placeDetails?.coordinate else { return }
+
+        isFetchingETA = true
+        defer { isFetchingETA = false }
+
         do {
             try Task.checkCancellation()
-            let response = try await MKDirections(request: request).calculate()
+            locationManager.requestLocation()
+
+            // Authorization can finish after requestLocation() returns. Wait
+            // briefly for the delegate callback before giving up; the
+            // location change observer will retry when a later fix arrives.
+            for _ in 0..<30 {
+                if let origin = locationManager.location?.coordinate {
+                    etaString = await GooglePlacesService.shared.route(
+                        from: origin,
+                        to: destination,
+                        transportType: userSettings.transportType
+                    )
+                    break
+                }
+                try await Task.sleep(nanoseconds: 100_000_000)
+                try Task.checkCancellation()
+            }
+
             try Task.checkCancellation()
-            guard let route = response.routes.first else { return }
-            let interval = route.expectedTravelTime
-            let h = Int(interval) / 3600
-            let m = (Int(interval) % 3600) / 60
-            etaString = h > 0 ? "\(h)h \(m)m" : "\(m)m"
             if let etaString {
                 directionsCache.store(eta: etaString, for: ideaID, transport: userSettings.transportType)
             }
@@ -435,6 +415,14 @@ private final class CardLocationManager: NSObject, CLLocationManagerDelegate {
 
     func requestLocation() {
         manager.requestWhenInUseAuthorization()
+        guard manager.authorizationStatus == .authorizedWhenInUse
+                || manager.authorizationStatus == .authorizedAlways else { return }
+        manager.requestLocation()
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        guard manager.authorizationStatus == .authorizedWhenInUse
+                || manager.authorizationStatus == .authorizedAlways else { return }
         manager.requestLocation()
     }
 

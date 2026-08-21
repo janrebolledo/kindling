@@ -6,7 +6,6 @@
 //
 
 import CoreLocation
-import MapKit
 import Observation
 import os
 import Photos
@@ -19,15 +18,16 @@ private let destructiveRed = Color(red: 1.0, green: 56 / 255, blue: 60 / 255)
 
 struct IdeaView: View {
     var card: CardData
-    var mapItem: MKMapItem?
+    var placeDetails: GooglePlaceDetails?
     var etaString: String?
-    var openStreetMapHours: OpenStreetMapHours?
+    var googlePlaceHours: GooglePlaceHours?
     var transportType: TransportType = .driving
     var function: (ItemWrapper?) async -> Void
     var allowsDeletion = true
     var isPreview = false
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var localImage: UIImage?
     @State private var imageRequestToken = UUID()
@@ -36,20 +36,20 @@ struct IdeaView: View {
     @State private var isDeletingFromCollection = false
     @State private var isDeletingFromDevice = false
     @State private var showShareSheet = false
-    @State private var resolvedMapItem: MKMapItem?
-    @State private var resolvedOpenStreetMapHours: OpenStreetMapHours?
+    @State private var resolvedPlaceDetails: GooglePlaceDetails?
+    @State private var resolvedGooglePlaceHours: GooglePlaceHours?
     @State private var polaroidRotation = Double.random(in: -6...6)
 
     private var venueTitle: String {
-        placeMapItem?.name ?? card.ideas?.name ?? "Untitled"
+        placeDetails?.name ?? resolvedPlaceDetails?.name ?? card.ideas?.name ?? "Untitled"
     }
 
-    private var placeMapItem: MKMapItem? {
-        mapItem ?? resolvedMapItem
+    private var resolvedPlace: GooglePlaceDetails? {
+        placeDetails ?? resolvedPlaceDetails
     }
 
-    private var placeHours: OpenStreetMapHours? {
-        openStreetMapHours ?? resolvedOpenStreetMapHours
+    private var placeHours: GooglePlaceHours? {
+        googlePlaceHours ?? resolvedGooglePlaceHours
     }
 
     private var locationText: String {
@@ -62,6 +62,11 @@ struct IdeaView: View {
 
     private var imageLoadID: String {
         "\(card.id)-\(card.local_id)-\(card.ideas?.media_url ?? "remote")"
+    }
+
+    private var googleMapsMediaURL: URL? {
+        let value = resolvedPlace?.photoUrl ?? card.ideas?.media_url
+        return value.flatMap(URL.init(string:))
     }
 
     var body: some View {
@@ -179,11 +184,13 @@ struct IdeaView: View {
                         }
                     }
 
-                    Link(destination: placeHours.sourceURL) {
-                        Text("OpenStreetMap contributors ↗")
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundStyle(.secondary)
+                    if let sourceURL = placeHours.sourceURL {
+                        Link(destination: sourceURL) {
+                            Text("Google Maps ↗")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -275,16 +282,14 @@ struct IdeaView: View {
             let result = PHAsset.fetchAssets(withLocalIdentifiers: [card.local_id], options: nil)
             screenshotDate = result.firstObject?.creationDate
 
-            guard card.ideas?.media_url == nil else { return }
-
             let loadedImage = try? await loadImage(from: card.local_id)
             guard !Task.isCancelled, imageRequestToken == requestToken else { return }
 
             localImage = loadedImage
         }
         .task(id: card.ideas?.place_id) {
-            await resolveMapItemIfNeeded()
-            await resolveOpenStreetMapHoursIfNeeded()
+            await resolvePlaceDetailsIfNeeded()
+            resolvedGooglePlaceHours = resolvedPlace?.hours
         }
         .sheet(isPresented: $showShareSheet) {
             IdeaShareSheet(items: [shareURL])
@@ -297,9 +302,7 @@ struct IdeaView: View {
     private var heroSection: some View {
         GeometryReader { geometry in
             Group {
-                if let mediaUrl = card.ideas?.media_url,
-                    let url = URL(string: mediaUrl)
-                {
+                if let url = googleMapsMediaURL {
                     let transaction = Transaction(
                         animation: reduceMotion ? .easeOut(duration: 0.12) : .easeOut(duration: 0.2)
                     )
@@ -312,7 +315,13 @@ struct IdeaView: View {
                                 .aspectRatio(contentMode: .fill)
                                 .transition(.opacity)
                         default:
-                            placeholderImage(geometry: geometry)
+                            if let localImage {
+                                Image(uiImage: localImage)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                            } else {
+                                placeholderImage(geometry: geometry)
+                            }
                         }
                     }
                     .frame(width: geometry.size.width, height: displayedHeroHeight)
@@ -342,17 +351,20 @@ struct IdeaView: View {
     @ViewBuilder
     private var mapSection: some View {
         ZStack(alignment: .bottom) {
-            if let coordinate = placeMapItem?.location.coordinate {
-                Map(interactionModes: []) {
-                    Marker(venueTitle, coordinate: coordinate)
-                }
-                .mapControlVisibility(.hidden)
-                .allowsHitTesting(false)
-                .frame(height: 203)
-                .clipShape(RoundedRectangle(cornerRadius: 24))
+            if let coordinate = resolvedPlace?.coordinate {
+                GoogleMapView(
+                    coordinate: coordinate,
+                    title: venueTitle,
+                    isInteractive: false
+                )
+                    .allowsHitTesting(false)
+                    .frame(height: 203)
+                    .clipShape(RoundedRectangle(cornerRadius: 24))
 
                 Button {
-                    placeMapItem?.openInMaps()
+                    if let url = resolvedPlace?.googleMapsUri.flatMap(URL.init(string:)) {
+                        openURL(url)
+                    }
                 } label: {
                     Text("open in Maps ↗")
                         .font(.system(size: 16, weight: .medium))
@@ -376,50 +388,19 @@ struct IdeaView: View {
         .clipShape(RoundedRectangle(cornerRadius: 24))
     }
 
-    private func resolveMapItemIfNeeded() async {
-        guard mapItem == nil, resolvedMapItem == nil,
-              let placeID = card.ideas?.place_id,
-              let identifier = MKMapItem.Identifier(rawValue: placeID)
-        else { return }
-
-        let request = MKMapItemRequest(mapItemIdentifier: identifier)
-        let item = await withCheckedContinuation { continuation in
-            request.getMapItem { mapItem, _ in
-                continuation.resume(returning: mapItem)
-            }
-        }
-
-        guard !Task.isCancelled else { return }
-        resolvedMapItem = item
+    private func resolvePlaceDetailsIfNeeded() async {
+        guard placeDetails == nil, resolvedPlaceDetails == nil,
+              let placeID = card.ideas?.place_id else { return }
+        resolvedPlaceDetails = await GooglePlacesService.shared.details(for: placeID)
+        resolvedGooglePlaceHours = resolvedPlaceDetails?.hours
     }
 
-    private func resolveOpenStreetMapHoursIfNeeded() async {
+    private func resolveGooglePlaceHoursIfNeeded() async {
         guard placeHours == nil else {
-            openStreetMapLogger.debug("IdeaView skipped OSM lookup because hours are already loaded")
             return
         }
-        guard let mapItem = placeMapItem else {
-            openStreetMapLogger.debug("IdeaView skipped OSM lookup because MapKit item is unavailable")
-            return
-        }
-        guard let name = mapItem.name else {
-            openStreetMapLogger.debug("IdeaView skipped OSM lookup because MapKit item has no name")
-            return
-        }
-        let coordinate = mapItem.location.coordinate
-        guard CLLocationCoordinate2DIsValid(coordinate) else {
-            openStreetMapLogger.debug("IdeaView skipped OSM lookup because coordinate is invalid")
-            return
-        }
-
-        resolvedOpenStreetMapHours = await OpenStreetMapHoursService.shared.lookup(
-            name: name,
-            latitude: coordinate.latitude,
-            longitude: coordinate.longitude
-        )
-        openStreetMapLogger.debug(
-            "IdeaView OSM lookup finished has_hours=\(resolvedOpenStreetMapHours != nil, privacy: .public)"
-        )
+        await resolvePlaceDetailsIfNeeded()
+        resolvedGooglePlaceHours = resolvedPlace?.hours
     }
 
     @ViewBuilder
@@ -582,7 +563,7 @@ private struct IdeaShareSheet: UIViewControllerRepresentable {
     ) {}
 }
 
-/// Keeps sheet dismiss attached to the idea scroller. MapKit would otherwise
+/// Keeps sheet dismiss attached to the idea scroller. The map would otherwise
 /// steal the pan, so pulling down at the top rubber-bands instead of dragging
 /// the sheet away.
 ///
@@ -619,32 +600,8 @@ private struct SheetScrollOwnership: UIViewRepresentable {
         }
 
         private func claimPrimaryScroller() {
-            guard let primary = enclosingScrollView() else { return }
-            disableMapScrolling(in: primary)
-        }
-
-        private func enclosingScrollView() -> UIScrollView? {
-            var view: UIView? = self
-            while let current = view {
-                if let scrollView = current as? UIScrollView {
-                    return scrollView
-                }
-                view = current.superview
-            }
-            return nil
-        }
-
-        private func disableMapScrolling(in view: UIView) {
-            if let mapView = view as? MKMapView {
-                mapView.isScrollEnabled = false
-                mapView.isZoomEnabled = false
-                mapView.isRotateEnabled = false
-                mapView.isPitchEnabled = false
-                return
-            }
-            for subview in view.subviews {
-                disableMapScrolling(in: subview)
-            }
+            // GoogleMapView is non-interactive in this screen, so the parent
+            // ScrollView retains ownership without reaching into map internals.
         }
 
     }

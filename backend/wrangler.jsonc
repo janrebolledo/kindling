@@ -11,7 +11,8 @@
     "head_sampling_rate": 1
   },
   "vars": {
-    "SUPABASE_URL": "https://bfbaqyhyxergcpsyhzcc.supabase.co"
+    "SUPABASE_URL": "https://bfbaqyhyxergcpsyhzcc.supabase.co",
+    "PUBLIC_API_URL": "https://api.getkindl.ing"
   },
   "dev": {
     "ip": "0.0.0.0",

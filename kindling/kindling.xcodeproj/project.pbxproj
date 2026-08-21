@@ -13,6 +13,7 @@
 		ACC4E0772F189B350067658A /* Realtime in Frameworks */ = {isa = PBXBuildFile; productRef = ACC4E0762F189B350067658A /* Realtime */; };
 		ACC4E0792F189B350067658A /* Storage in Frameworks */ = {isa = PBXBuildFile; productRef = ACC4E0782F189B350067658A /* Storage */; };
 		ACC4E07B2F189B350067658A /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = ACC4E07A2F189B350067658A /* Supabase */; };
+		GMS4E07D2F189B350067658A /* GoogleMaps in Frameworks */ = {isa = PBXBuildFile; productRef = GMS4E07C2F189B350067658A /* GoogleMaps */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -51,6 +52,7 @@
 				ACC4E0712F189B350067658A /* Auth in Frameworks */,
 				ACC4E0792F189B350067658A /* Storage in Frameworks */,
 				ACC4E0772F189B350067658A /* Realtime in Frameworks */,
+				GMS4E07D2F189B350067658A /* GoogleMaps in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -99,6 +101,7 @@
 				ACC4E0762F189B350067658A /* Realtime */,
 				ACC4E0782F189B350067658A /* Storage */,
 				ACC4E07A2F189B350067658A /* Supabase */,
+				GMS4E07C2F189B350067658A /* GoogleMaps */,
 			);
 			productName = kindling;
 			productReference = ACC4DFB52F1887F20067658A /* kindling - screenshot gallery.app */;
@@ -130,6 +133,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				ACC4E06F2F189B350067658A /* XCRemoteSwiftPackageReference "supabase-swift" */,
+				GMS4E07B2F189B350067658A /* XCRemoteSwiftPackageReference "ios-maps-sdk" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = ACC4DFB62F1887F20067658A /* Products */;
@@ -296,6 +300,7 @@
 				DEVELOPMENT_TEAM = FDX72WZH23;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = kindling/Info.plist;
+				GOOGLE_MAPS_API_KEY = "";
 				INFOPLIST_KEY_CFBundleDisplayName = kindling;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -333,6 +338,7 @@
 				DEVELOPMENT_TEAM = FDX72WZH23;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = kindling/Info.plist;
+				GOOGLE_MAPS_API_KEY = "";
 				INFOPLIST_KEY_CFBundleDisplayName = kindling;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -391,6 +397,14 @@
 				minimumVersion = 2.5.1;
 			};
 		};
+		GMS4E07B2F189B350067658A /* XCRemoteSwiftPackageReference "ios-maps-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/googlemaps/ios-maps-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 11.0.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -423,6 +437,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = ACC4E06F2F189B350067658A /* XCRemoteSwiftPackageReference "supabase-swift" */;
 			productName = Supabase;
+		};
+		GMS4E07C2F189B350067658A /* GoogleMaps */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = GMS4E07B2F189B350067658A /* XCRemoteSwiftPackageReference "ios-maps-sdk" */;
+			productName = GoogleMaps;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

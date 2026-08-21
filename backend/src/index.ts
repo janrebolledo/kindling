@@ -5,6 +5,7 @@ import { createAI, createSupabase } from './clients';
 import { userFromBearerToken, wipeAccount } from './deleteAccount';
 import { processEntry } from './ideas';
 import { log, logError } from './log';
+import { fetchPlacePhoto, getPlaceDetails } from './places';
 import { getSharedIdea, recordShareOpen } from './share';
 import type { Screenshot } from './types';
 import { parseScreenshot } from './utils/parseScreenshot';
@@ -18,6 +19,12 @@ type ItemLog = {
   idea_id?: number;
   place_id?: string | null;
   error?: string;
+};
+
+type RouteRequest = {
+  origin?: { latitude?: number; longitude?: number };
+  destination?: { latitude?: number; longitude?: number };
+  travelMode?: 'DRIVE' | 'WALK' | 'BICYCLE' | 'TRANSIT';
 };
 
 const app = new Hono<{ Bindings: CloudflareBindings }>();
@@ -34,6 +41,69 @@ app.use(
 );
 
 app.get('/health', (c) => c.json({ ok: true }));
+
+app.get('/places/:id', async (c) => {
+  const place = await getPlaceDetails(c.req.param('id'), {
+    GOOGLE_MAPS_API_KEY: c.env.GOOGLE_MAPS_API_KEY,
+    PUBLIC_API_URL: c.env.PUBLIC_API_URL,
+  });
+  if (!place) return c.json({ error: 'Place not found' }, 404);
+  c.header('Cache-Control', 'public, max-age=300');
+  return c.json(place);
+});
+
+app.get('/places/:id/photo', async (c) => {
+  const photo = await fetchPlacePhoto(c.req.param('id'), {
+    GOOGLE_MAPS_API_KEY: c.env.GOOGLE_MAPS_API_KEY,
+    PUBLIC_API_URL: c.env.PUBLIC_API_URL,
+  });
+  return photo ?? c.json({ error: 'Photo not found' }, 404);
+});
+
+app.post('/routes', async (c) => {
+  const user = await userFromBearerToken(
+    createSupabase(c.env),
+    c.req.header('Authorization'),
+  );
+  if (user == null) return c.json({ error: 'Unauthorized' }, 401);
+
+  const body = await c.req.json<RouteRequest>();
+  const origin = body.origin;
+  const destination = body.destination;
+  if (
+    origin?.latitude == null || origin.longitude == null
+    || destination?.latitude == null || destination.longitude == null
+  ) {
+    return c.json({ error: 'Origin and destination are required' }, 400);
+  }
+
+  const travelMode = body.travelMode ?? 'DRIVE';
+  const response = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': c.env.GOOGLE_MAPS_API_KEY,
+      'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters',
+    },
+    body: JSON.stringify({
+      origin: { location: { latLng: origin } },
+      destination: { location: { latLng: destination } },
+      travelMode,
+      ...(travelMode === 'DRIVE' ? { routingPreference: 'TRAFFIC_AWARE' } : {}),
+    }),
+  });
+
+  if (!response.ok) {
+    log('google_routes.request_failed', { status: response.status });
+    return c.json({ error: 'Route unavailable' }, 502);
+  }
+
+  const data = await response.json() as {
+    routes?: Array<{ duration?: string; distanceMeters?: number }>;
+  };
+  const route = data.routes?.[0];
+  return route ? c.json(route) : c.json({ error: 'Route unavailable' }, 404);
+});
 
 app.get('/share/:id', async (c) => {
   const id = Number(c.req.param('id'));
@@ -101,10 +171,9 @@ async function streamExtractedIdeas(
   started: number,
 ) {
   const supabase = createSupabase(c.env);
-  const appleMaps = {
-    APPLE_MAPS_TEAM_ID: c.env.APPLE_MAPS_TEAM_ID,
-    APPLE_MAPS_KEY_ID: c.env.APPLE_MAPS_KEY_ID,
-    APPLE_MAPS_PRIVATE_KEY: c.env.APPLE_MAPS_PRIVATE_KEY,
+  const googleMaps = {
+    GOOGLE_MAPS_API_KEY: c.env.GOOGLE_MAPS_API_KEY,
+    PUBLIC_API_URL: c.env.PUBLIC_API_URL,
   };
 
   return streamSSE(c, async (stream) => {
@@ -127,7 +196,7 @@ async function streamExtractedIdeas(
             return;
           }
 
-          const result = await processEntry(supabase, appleMaps, entry);
+          const result = await processEntry(supabase, googleMaps, entry);
           if (result.status === 'dropped') {
             summary.dropped += 1;
             summary.items.push({

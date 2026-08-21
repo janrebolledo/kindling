@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import MapKit
 import Photos
 import PhotosUI
 import Supabase
@@ -39,13 +38,6 @@ enum TransportType: String, CaseIterable, Identifiable {
         }
     }
 
-    var mkTransportType: MKDirectionsTransportType {
-        switch self {
-        case .driving: return .automobile
-        case .cycling: return .walking
-        case .transit: return .transit
-        }
-    }
 }
 
 struct TransportPreferencePayload: Encodable {
@@ -91,8 +83,6 @@ struct AccountView: View {
     @State private var showDiscardDialog = false
     @State private var showSignOutConfirm = false
     @State private var showFeedback = false
-    @State private var analytics: UserAnalytics?
-
     @State private var isPhotoPickerPresented = false
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
     @State private var showUploadError = false
@@ -309,10 +299,6 @@ struct AccountView: View {
         VStack(spacing: 64) {
             screenshotIndexingView
 
-            if let analytics {
-                analyticsView(analytics)
-            }
-
             settingsSection(title: "account") {
                 VStack(spacing: 24) {
                     settingsCard {
@@ -387,100 +373,9 @@ struct AccountView: View {
         .frame(maxWidth: .infinity)
     }
 
-    private func analyticsView(_ analytics: UserAnalytics) -> some View {
-        settingsSection(title: "your kindling") {
-            VStack(spacing: 0) {
-                analyticsRow(
-                    label: "screenshots processed",
-                    value: analytics.screenshotsProcessed
-                )
-                analyticsDivider
-                analyticsRow(label: "ideas made", value: analytics.ideasMade)
-                analyticsDivider
-                analyticsRow(
-                    label: "parse success rate",
-                    value: String(format: "%.0f%%", analytics.parseSuccessRate * 100)
-                )
-                analyticsDivider
-                analyticsRow(
-                    label: "ideas / screenshot",
-                    value: String(format: "%.1f", analytics.ideasPerScreenshot)
-                )
-                analyticsDivider
-                analyticsRow(label: "ideas shared", value: analytics.ideasShared)
-                analyticsDivider
-                analyticsRow(label: "ideas deleted", value: analytics.ideasDeleted)
-                analyticsDivider
-                analyticsRow(label: "share link opens", value: analytics.shareLinkOpens)
-
-                if !analytics.sharedIdeaIDs.isEmpty {
-                    analyticsDivider
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("shared idea ids")
-                            .font(.system(size: 12, weight: .medium))
-                            .tracking(-0.2)
-                            .foregroundStyle(figmaGray)
-                        Text(
-                            analytics.sharedIdeaIDs
-                                .map(String.init)
-                                .joined(separator: ", ")
-                        )
-                        .font(.system(size: 14, weight: .medium, design: .monospaced))
-                        .tracking(-0.2)
-                        .foregroundStyle(.primary)
-                        .textSelection(.enabled)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 12)
-                }
-            }
-            .padding(6)
-            .background(Color("raisedSurface"), in: RoundedRectangle(cornerRadius: 24))
-        }
-    }
-
-    private var analyticsDivider: some View {
-        Rectangle()
-            .fill(Color.primary.opacity(0.08))
-            .frame(height: 1)
-            .padding(.horizontal, 8)
-    }
-
-    private func analyticsRow(label: String, value: Int) -> some View {
-        analyticsRow(label: label, value: "\(value)")
-    }
-
-    private func analyticsRow(label: String, value: String) -> some View {
-        HStack(spacing: 10) {
-            Text(label)
-                .font(.system(size: 16, weight: .medium))
-                .tracking(-0.4)
-                .foregroundStyle(.primary)
-
-            Spacer(minLength: 8)
-
-            Text(value)
-                .font(.system(size: 16, weight: .medium))
-                .tracking(-0.4)
-                .foregroundStyle(figmaGray)
-        }
-        .padding(.horizontal, 8)
-        .frame(height: 42)
-    }
-
-    private func loadAnalytics() async {
-        do {
-            analytics = try await UserAnalyticsService.load()
-        } catch {
-            print("Could not load user analytics: \(error)")
-        }
-    }
-
     private func loadAccountData() async {
         await loadPreference()
         await screenshotIndexing.refreshProgress()
-        await loadAnalytics()
     }
 
     private var displayNamePage: some View {

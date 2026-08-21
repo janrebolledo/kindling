@@ -54,16 +54,16 @@ import Logo from '../components/Logo.astro';
 
       <h2 class="pt-4 text-[20px] font-medium tracking-[-0.5px] text-black">saved places</h2>
       <p>
-        places you save — a title, description, category, event details, a photo, and an Apple
-        Maps place identifier — live with your account. kindling does not store Apple Maps place
-        details such as addresses, hours, venue names, or pricing. that’s your list, not a
-        copy of your screenshots.
+        places you save — a title, description, category, event details, a photo, and a Google
+        Places identifier — live with your account. kindling retrieves current place details such
+        as the address, hours, venue name, photos, and route estimates from Google when needed.
+        that’s your list, not a copy of your screenshots.
       </p>
 
       <h2 class="pt-4 text-[20px] font-medium tracking-[-0.5px] text-black">location</h2>
       <p>
-        if you allow it, kindling uses your location on your phone with Apple Maps to estimate
-        travel time. we don’t send your live location to our servers.
+        if you allow it, kindling uses your location on your phone to request a route estimate
+        from Google Routes through kindling’s API. we don’t store your live location.
       </p>
       <p>
         you can turn off photo or location access anytime in ios settings → kindling.
@@ -77,11 +77,10 @@ import Logo from '../components/Logo.astro';
 
       <h2 class="pt-4 text-[20px] font-medium tracking-[-0.5px] text-black">who else sees data</h2>
       <p>
-        apple (sign in, on-device foundation models, and Maps features), supabase (account and
-        saved places), google gemini (screenshot text in cloud mode, to find places), and
-        cloudflare (hosts the app). kindling no longer
-        sends saved-place data to Google Maps. supabase, gemini, and cloudflare are required
-        under their terms to protect this data. we keep logs for up to 7 days to debug the app.
+        apple (sign in and on-device foundation models), supabase (account and saved places),
+        google (Places and Routes, plus Gemini for screenshot text in cloud mode), and cloudflare
+        (hosts the app). supabase, google, gemini, and cloudflare are required under their terms
+        to protect this data. we keep logs for up to 7 days to debug the app.
         they don’t contain screenshot images or the full screenshot text — just technical info
         like error messages, and sometimes venue names. we don’t use analytics or ad trackers.
       </p>

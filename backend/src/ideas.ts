@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { lookupPlace } from './places';
+import { lookupPlace, type GoogleMapsCredentials } from './places';
 import type { ExtractedItem, ExtractionResult } from './utils/parseScreenshot';
 import type { DraftCollectionItem, Idea, MapsPlace } from './types';
 
@@ -15,7 +15,7 @@ function cleanSearchPart(value: string | null | undefined): string {
 
 /**
  * OCR-derived context is useful for ranking, but it is not always searchable
- * as a single phrase. For example, an Apple Maps card can expose a mall name
+ * as a single phrase. For example, a map card can expose a mall name
  * without the city, or include a noisy address fragment. Keep the full query
  * first, then relax only the context so a real venue is not dropped outright.
  */
@@ -107,7 +107,7 @@ async function getOrCreateIdeaForPlace(
 
 export async function processEntry(
   supabase: SupabaseClient,
-  appleMaps: Parameters<typeof lookupPlace>[1],
+  googleMaps: GoogleMapsCredentials,
   entry: ExtractionResult,
 ): Promise<ProcessResult> {
   const { id, data } = entry;
@@ -124,7 +124,7 @@ export async function processEntry(
   const venue = item.venue!;
   let mapsData: Awaited<ReturnType<typeof lookupPlace>> = null;
   for (const query of buildPlaceQueries(item)) {
-    mapsData = await lookupPlace(query, appleMaps, {
+    mapsData = await lookupPlace(query, googleMaps, {
       entry_id: id,
       venue,
     });
@@ -150,7 +150,7 @@ export async function processEntry(
 
   return {
     status: 'dropped',
-    reason: 'apple_maps_miss',
+    reason: 'google_places_miss',
     venue,
   };
 }

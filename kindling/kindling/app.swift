@@ -5,6 +5,7 @@
 //  Created by Jan Rebolledo on 1/14/26.
 //
 
+import GoogleMaps
 import Supabase
 import SwiftUI
 
@@ -59,6 +60,19 @@ struct AppEntry: App {
                     }
                 }
             }
+        }
+    }
+
+    init() {
+        let configuredKey = [
+            Bundle.main.object(forInfoDictionaryKey: "GOOGLE_MAPS_API_KEY") as? String,
+            ProcessInfo.processInfo.environment["GOOGLE_MAPS_API_KEY"],
+        ]
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .first { !$0.isEmpty && !$0.contains("$(") }
+
+        if let key = configuredKey {
+            GMSServices.provideAPIKey(key)
         }
     }
 }
