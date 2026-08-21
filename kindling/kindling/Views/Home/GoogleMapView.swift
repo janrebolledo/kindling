@@ -11,6 +11,8 @@ struct GoogleMapMarkerData: Identifiable {
 }
 
 struct GoogleMapView: UIViewRepresentable {
+    @Environment(\.colorScheme) private var colorScheme
+
     let markers: [GoogleMapMarkerData]
     let center: CLLocationCoordinate2D?
     let zoom: Float
@@ -29,7 +31,10 @@ struct GoogleMapView: UIViewRepresentable {
         )
         let mapView = GMSMapView(frame: .zero, camera: camera)
         mapView.delegate = context.coordinator
-        mapView.settings.compassButton = true
+        mapView.mapStyle = GMSMapStyle(jsonString: AppleMapsMapStyle.json(for: colorScheme))
+        // Apple Maps keeps orientation chrome out of the way until it is useful.
+        // The map remains rotatable; we just avoid a permanently visible compass.
+        mapView.settings.compassButton = false
         mapView.settings.myLocationButton = false
         mapView.isMyLocationEnabled = true
         mapView.mapType = .normal
@@ -38,6 +43,7 @@ struct GoogleMapView: UIViewRepresentable {
 
     func updateUIView(_ mapView: GMSMapView, context: Context) {
         context.coordinator.onSelect = onSelect
+        mapView.mapStyle = GMSMapStyle(jsonString: AppleMapsMapStyle.json(for: colorScheme))
         mapView.clear()
 
         for markerData in markers {
@@ -80,6 +86,66 @@ struct GoogleMapView: UIViewRepresentable {
             return true
         }
     }
+}
+
+private enum AppleMapsMapStyle {
+    static func json(for colorScheme: ColorScheme) -> String {
+        colorScheme == .dark ? dark : light
+    }
+
+    // A restrained palette inspired by Apple Maps: warm neutral land, cool
+    // water, quiet labels, and clear white roads. This only changes Google's
+    // presentation layer; map data, gestures, attribution, and place search
+    // remain Google's.
+    private static let light = """
+    [
+      {"featureType":"all","elementType":"geometry","stylers":[{"color":"#f3f2ee"}]},
+      {"featureType":"all","elementType":"labels.text.fill","stylers":[{"color":"#687078"}]},
+      {"featureType":"all","elementType":"labels.text.stroke","stylers":[{"color":"#f3f2ee"},{"weight":2}]},
+      {"featureType":"administrative","elementType":"geometry.stroke","stylers":[{"color":"#d7d9d6"},{"weight":1}]},
+      {"featureType":"administrative.land_parcel","elementType":"geometry.stroke","stylers":[{"color":"#e2e2de"}]},
+      {"featureType":"landscape.natural","elementType":"geometry.fill","stylers":[{"color":"#e5efe1"}]},
+      {"featureType":"landscape.natural.landcover","elementType":"geometry.fill","stylers":[{"color":"#e5efe1"}]},
+      {"featureType":"poi","elementType":"geometry.fill","stylers":[{"color":"#e1eddd"}]},
+      {"featureType":"poi.park","elementType":"geometry.fill","stylers":[{"color":"#d8ead7"}]},
+      {"featureType":"poi","elementType":"labels.icon","stylers":[{"visibility":"off"}]},
+      {"featureType":"road","elementType":"geometry.fill","stylers":[{"color":"#ffffff"}]},
+      {"featureType":"road","elementType":"geometry.stroke","stylers":[{"color":"#dedfdb"},{"weight":0.7}]},
+      {"featureType":"road.highway","elementType":"geometry.fill","stylers":[{"color":"#f6d98e"}]},
+      {"featureType":"road.highway","elementType":"geometry.stroke","stylers":[{"color":"#e4c477"},{"weight":1}]},
+      {"featureType":"road.arterial","elementType":"geometry.fill","stylers":[{"color":"#ffffff"}]},
+      {"featureType":"road.local","elementType":"geometry.fill","stylers":[{"color":"#fbfbf9"}]},
+      {"featureType":"transit","elementType":"geometry.fill","stylers":[{"color":"#e8dfe0"}]},
+      {"featureType":"transit","elementType":"labels.icon","stylers":[{"visibility":"off"}]},
+      {"featureType":"water","elementType":"geometry.fill","stylers":[{"color":"#d5e8f4"}]},
+      {"featureType":"water","elementType":"labels.text.fill","stylers":[{"color":"#718995"}]}
+    ]
+    """
+
+    private static let dark = """
+    [
+      {"featureType":"all","elementType":"geometry","stylers":[{"color":"#202426"}]},
+      {"featureType":"all","elementType":"labels.text.fill","stylers":[{"color":"#c3c9cc"}]},
+      {"featureType":"all","elementType":"labels.text.stroke","stylers":[{"color":"#202426"},{"weight":2}]},
+      {"featureType":"administrative","elementType":"geometry.stroke","stylers":[{"color":"#3b4144"},{"weight":1}]},
+      {"featureType":"administrative.land_parcel","elementType":"geometry.stroke","stylers":[{"color":"#303639"}]},
+      {"featureType":"landscape.natural","elementType":"geometry.fill","stylers":[{"color":"#27312d"}]},
+      {"featureType":"landscape.natural.landcover","elementType":"geometry.fill","stylers":[{"color":"#27312d"}]},
+      {"featureType":"poi","elementType":"geometry.fill","stylers":[{"color":"#29342f"}]},
+      {"featureType":"poi.park","elementType":"geometry.fill","stylers":[{"color":"#263a30"}]},
+      {"featureType":"poi","elementType":"labels.icon","stylers":[{"visibility":"off"}]},
+      {"featureType":"road","elementType":"geometry.fill","stylers":[{"color":"#343a3d"}]},
+      {"featureType":"road","elementType":"geometry.stroke","stylers":[{"color":"#454b4e"},{"weight":0.7}]},
+      {"featureType":"road.highway","elementType":"geometry.fill","stylers":[{"color":"#5b5947"}]},
+      {"featureType":"road.highway","elementType":"geometry.stroke","stylers":[{"color":"#736e50"},{"weight":1}]},
+      {"featureType":"road.arterial","elementType":"geometry.fill","stylers":[{"color":"#3b4144"}]},
+      {"featureType":"road.local","elementType":"geometry.fill","stylers":[{"color":"#303638"}]},
+      {"featureType":"transit","elementType":"geometry.fill","stylers":[{"color":"#4a3d40"}]},
+      {"featureType":"transit","elementType":"labels.icon","stylers":[{"visibility":"off"}]},
+      {"featureType":"water","elementType":"geometry.fill","stylers":[{"color":"#182c37"}]},
+      {"featureType":"water","elementType":"labels.text.fill","stylers":[{"color":"#9db5c0"}]}
+    ]
+    """
 }
 
 extension GoogleMapView {
