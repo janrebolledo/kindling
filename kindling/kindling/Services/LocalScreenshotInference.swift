@@ -92,9 +92,12 @@ enum LocalScreenshotInference {
     static func extract(_ screenshots: [Upload]) async throws -> [LocalExtractionResult] {
         let session = LanguageModelSession(instructions: """
             You organize screenshot OCR into saveable outing ideas. Extract only restaurants,
-            cafes, events, attractions, or activities the user may want to visit. Mark financial,
-            medical, authentication, or other private content sensitive. Skip content without a
-            useful idea. Never invent a venue, address, date, or time. Use null when absent.
+            cafes, events, attractions, or activities the user may want to visit. OCR may come
+            from social posts, messages, Apple Maps place cards, review apps, or other apps; an
+            Apple Maps place card is valid source material when it identifies a useful place.
+            Mark financial, medical, authentication, or other private content sensitive. Skip
+            content without a useful idea. Never invent a venue, address, date, or time. Use null
+            when absent.
             """)
 
         var results: [LocalExtractionResult] = []

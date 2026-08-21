@@ -28,6 +28,11 @@ private struct MappedIdea: Identifiable {
 private struct DiscoveryIdeaImage: View {
     let item: CollectionItemWrapper
     @State private var localImage: UIImage?
+    @State private var imageRequestToken = UUID()
+
+    private var imageLoadID: String {
+        "\(item.id)-\(item.local_id)-\(item.ideas?.media_url ?? "remote")"
+    }
 
     var body: some View {
         ZStack {
@@ -56,9 +61,16 @@ private struct DiscoveryIdeaImage: View {
         // carousel's layout or appearing to move independently of its card.
         .frame(width: 250, height: 150)
         .clipped()
-        .task(id: item.local_id) {
+        .task(id: imageLoadID) {
+            let requestToken = UUID()
+            imageRequestToken = requestToken
+            localImage = nil
+
             guard item.ideas?.media_url == nil, !item.local_id.isEmpty else { return }
-            localImage = try? await loadImage(from: item.local_id)
+
+            let loadedImage = try? await loadImage(from: item.local_id)
+            guard !Task.isCancelled, imageRequestToken == requestToken else { return }
+            localImage = loadedImage
         }
     }
 
@@ -95,7 +107,6 @@ private enum SheetSectionDestination: Hashable {
     case nomnomnom
     case nearby
     case events
-    case selectedIdea(Int)
 }
 
 @Observable
@@ -143,6 +154,7 @@ struct PinsView: View {
     @State private var selectedIdeaID: Int?
     @State private var cameraPosition: MapCameraPosition = .automatic
     @State private var hasSetInitialCamera = false
+    @State private var mapHeight: CGFloat = 0
     @State private var isLoading = true
     @State private var detailIdea: CollectionItemWrapper?
     @State private var isShowingIdeaInSheet = false
@@ -152,6 +164,7 @@ struct PinsView: View {
     @State private var isDiscoverySheetPresented = true
     @State private var isSettingsSheetPresented = false
     @State private var discoveryDetent: PresentationDetent = .fraction(0.55)
+    @Namespace private var mapScope
     @Namespace private var ideaTransition
 
     private var query: String {
@@ -178,10 +191,6 @@ struct PinsView: View {
         }
     }
 
-    private var selectedIdea: MappedIdea? {
-        visibleIdeas.first { $0.id == selectedIdeaID }
-    }
-
     private var nomnomnomCollection: CollectionWrapper? {
         collections.first { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "nomnomnom" }
     }
@@ -203,6 +212,9 @@ struct PinsView: View {
 
                 topChrome
             }
+            .overlay(alignment: .bottomTrailing) {
+                mapUserLocationControl
+            }
             .ignoresSafeArea(edges: .bottom)
             .toolbarVisibility(.hidden, for: .navigationBar)
             .sheet(isPresented: $isDiscoverySheetPresented) {
@@ -213,7 +225,9 @@ struct PinsView: View {
                     )
                     .presentationDragIndicator(.visible)
                     .presentationBackground(.clear)
-                    .presentationCornerRadius(36)
+                    // Keep the native iOS sheet curvature and inset, including
+                    // the updated Liquid Glass half-sheet treatment.
+                    .presentationCornerRadius(nil)
                     .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.55)))
                     .presentationContentInteraction(.resizes)
                     .interactiveDismissDisabled(true)
@@ -232,6 +246,14 @@ struct PinsView: View {
             guard let newLocation, !hasSetInitialCamera, selectedIdeaID == nil else { return }
             centerMapOnUser(newLocation.coordinate)
         }
+        .onChange(of: cameraPosition) { _, newPosition in
+            // MapUserLocationButton changes the camera to .userLocation
+            // directly. Reapply the app's top-space framing after MapKit
+            // finishes that recentering.
+            guard newPosition.followsUserLocation,
+                  let coordinate = locationManager.location?.coordinate else { return }
+            centerMapOnUser(coordinate)
+        }
         .onChange(of: searchText) { _, _ in
             selectedIdeaID = nil
             cameraPosition = .automatic
@@ -244,10 +266,12 @@ struct PinsView: View {
                 }
                 isDiscoverySheetPresented = true
             } else {
-                isShowingIdeaInSheet = false
-                isDiscoverySheetPresented = true
                 if let newValue {
-                    openSectionPage(.selectedIdea(newValue))
+                    if let item = allLocationItems.first(where: {
+                        ($0.ideas?.id ?? $0.idea_id) == newValue
+                    }) {
+                        showIdeaInSheet(item)
+                    }
                 }
             }
         }
@@ -260,7 +284,7 @@ struct PinsView: View {
     }
 
     private var map: some View {
-        Map(position: $cameraPosition, selection: $selectedIdeaID) {
+        Map(position: $cameraPosition, selection: $selectedIdeaID, scope: mapScope) {
             ForEach(visibleIdeas) { mapped in
                 Annotation(
                     mapped.displayName,
@@ -275,15 +299,38 @@ struct PinsView: View {
         }
         .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
         .mapControls {
-            MapUserLocationButton()
             MapCompass()
             MapScaleView()
+        }
+        .background {
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear { mapHeight = proxy.size.height }
+                    .onChange(of: proxy.size) { _, size in mapHeight = size.height }
+            }
         }
         .onMapCameraChange(frequency: .onEnd) { _ in
             Task { await resolveMissingPlaces() }
         }
         .ignoresSafeArea()
         .accessibilityLabel("Map of saved ideas")
+    }
+
+    private var mapUserLocationControl: some View {
+        GeometryReader { proxy in
+            VStack {
+                Spacer()
+
+                HStack {
+                    Spacer()
+                    MapUserLocationButton(scope: mapScope)
+                        .padding(.trailing, 16)
+                        .padding(.bottom, mapUserLocationButtonBottomPadding(for: proxy.size.height))
+                }
+            }
+            .opacity(discoveryDetent == .large ? 0 : 1)
+            .allowsHitTesting(discoveryDetent != .large)
+        }
     }
 
     private func mapPin(_ mapped: MappedIdea) -> some View {
@@ -305,7 +352,6 @@ struct PinsView: View {
                 .offset(y: -2)
                 .opacity(isSelected ? 1 : 0)
         }
-        .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
         .animation(.spring(response: 0.3, dampingFraction: 0.82), value: isSelected)
         .accessibilityLabel(mapped.displayName)
     }
@@ -412,7 +458,8 @@ struct PinsView: View {
                     IdeaView(
                         card: detailIdea,
                         function: { _ in await loadCollections() },
-                        allowsDeletion: true
+                        allowsDeletion: true,
+                        isPreview: isDiscoverySheetTranslucent
                     )
                     .navigationTransition(
                         .zoom(sourceID: transitionID(for: detailIdea), in: ideaTransition)
@@ -430,6 +477,7 @@ struct PinsView: View {
             .presentationCornerRadius(36)
             .presentationBackground(Color(uiColor: .systemBackground))
         }
+        .simultaneousGesture(discoverySheetPromotionGesture)
     }
 
     private var isDiscoverySheetTranslucent: Bool {
@@ -446,6 +494,24 @@ struct PinsView: View {
         reduceMotion
             ? .linear(duration: 0.01)
             : .spring(response: 0.3, dampingFraction: 0.8)
+    }
+
+    private var discoverySheetPromotionGesture: some Gesture {
+        DragGesture(minimumDistance: 8)
+            .onEnded { value in
+                guard discoveryDetent == .fraction(0.55),
+                      value.translation.height < 0,
+                      abs(value.translation.height) > abs(value.translation.width)
+                else { return }
+
+                withAnimation(
+                    reduceMotion
+                        ? .linear(duration: 0.01)
+                        : .spring(response: 0.3, dampingFraction: 0.85)
+                ) {
+                    discoveryDetent = .large
+                }
+            }
     }
 
     @ViewBuilder
@@ -472,50 +538,7 @@ struct PinsView: View {
                 items: filteredEventItems,
                 onBack: dismissSectionPage
             )
-        case .selectedIdea(let ideaID):
-            if let item = allLocationItems.first(where: {
-                ($0.ideas?.id ?? $0.idea_id) == ideaID
-            }) {
-                selectedIdeaPage(item)
-            } else {
-                Color.clear
-            }
         }
-    }
-
-    private func selectedIdeaPage(_ item: CollectionItemWrapper) -> some View {
-        VStack(spacing: 0) {
-            ZStack {
-                Text(item.ideas?.name ?? "selected place")
-                    .font(.system(size: 17, weight: .semibold))
-                    .tracking(-0.35)
-                    .lineLimit(1)
-
-                HStack {
-                    Button(action: dismissSectionPage) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 16, weight: .semibold))
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .accessibilityLabel("Back to discovery")
-
-                    Spacer()
-                }
-            }
-            .foregroundStyle(.primary)
-            .padding(.horizontal, 12)
-            .padding(.top, 10)
-            .padding(.bottom, 12)
-
-            ScrollView {
-                selectedPreview(item)
-                    .padding(.top, 16)
-                    .padding(.bottom, 48)
-            }
-            .scrollIndicators(.hidden)
-        }
-        .background((colorScheme == .dark ? Color.black : Color.white).ignoresSafeArea())
     }
 
     private func dismissSectionPage() {
@@ -604,15 +627,16 @@ struct PinsView: View {
                 .accessibilityHidden(isDiscoverySheetCollapsed)
                 .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .top)
                 .padding(.top, 20)
-                .padding(.bottom, 60)
+                .padding(.bottom, 16)
                 .background {
                     DiscoverySheetBackground()
                 }
             }
             .frame(maxWidth: .infinity)
+            .scrollDisabled(discoveryDetent != .large)
             .scrollIndicators(.hidden)
             .scrollEdgeEffectStyle(.soft, for: .top)
-            .safeAreaInset(edge: .top, spacing: 0) {
+            .safeAreaBar(edge: .top, spacing: 0) {
                 searchBar
                     .padding(.horizontal, 20)
                     .padding(.top, 18)
@@ -744,10 +768,6 @@ struct PinsView: View {
             VStack(alignment: .leading, spacing: 8) {
                 DiscoveryIdeaImage(item: item)
                     .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    .matchedTransitionSource(
-                        id: transitionID(for: item),
-                        in: ideaTransition
-                    )
 
                 Text(displayName)
                     .font(.system(size: 19, weight: .medium))
@@ -766,44 +786,82 @@ struct PinsView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-
-    private func selectedPreview(_ item: CollectionItemWrapper) -> some View {
-        let mapName = mappedIdeas.first {
-            $0.id == (item.ideas?.id ?? item.idea_id)
-        }?.mapName
-
-        return Card(
-            card: item,
-            mapName: mapName,
-            tapAction: { showIdeaInSheet(item) },
-            loadsMapData: false,
-            allowsDetailPresentation: false,
-            animatesImageLoading: false
+        .matchedTransitionSource(
+            id: transitionID(for: item),
+            in: ideaTransition
         )
-        .frame(maxWidth: 340)
-        .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
-        .padding(.horizontal, 18)
-        .padding(.bottom, 8)
-        .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 
     private func showIdeaInSheet(_ item: CollectionItemWrapper) {
         detailIdea = item
-        discoveryDetent = .large
         isDiscoverySheetPresented = true
         isShowingIdeaInSheet = true
     }
 
     private func focusOnMap(_ item: CollectionItemWrapper) {
-        guard let mapped = mappedIdeas.first(where: { $0.id == (item.ideas?.id ?? item.idea_id) }) else {
-            // Keep cards without a resolvable location usable.
+        let ideaID = item.ideas?.id ?? item.idea_id
+        if let mapped = mappedIdeas.first(where: { $0.id == ideaID }) {
+            focusOnMap(mapped, presenting: item)
+            return
+        }
+
+        // Resolve a card immediately when its map pin has not been loaded yet.
+        guard item.ideas?.place_id != nil else {
             showIdeaInSheet(item)
             return
         }
 
+        if resolvingIdeaIDs.contains(ideaID) {
+            Task { @MainActor in
+                for _ in 0..<30 {
+                    if let mapped = mappedIdeas.first(where: { $0.id == ideaID }) {
+                        focusOnMap(mapped, presenting: item)
+                        return
+                    }
+                    guard resolvingIdeaIDs.contains(ideaID), !Task.isCancelled else { break }
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                }
+
+                if let mapped = mappedIdeas.first(where: { $0.id == ideaID }) {
+                    focusOnMap(mapped, presenting: item)
+                } else {
+                    showIdeaInSheet(item)
+                }
+            }
+            return
+        }
+
+        resolvingIdeaIDs.insert(ideaID)
+        Task { @MainActor in
+            defer { resolvingIdeaIDs.remove(ideaID) }
+
+            guard let mapItem = await resolveMapItem(for: item) else {
+                showIdeaInSheet(item)
+                return
+            }
+
+            let coordinate = mapItem.location.coordinate
+            guard CLLocationCoordinate2DIsValid(coordinate) else {
+                showIdeaInSheet(item)
+                return
+            }
+
+            let mapped = MappedIdea(item: item, coordinate: coordinate, mapName: mapItem.name)
+            if !mappedIdeas.contains(where: { $0.id == ideaID }) {
+                mappedIdeas.append(mapped)
+            }
+            focusOnMap(mapped, presenting: item)
+        }
+    }
+
+    private func focusOnMap(_ mapped: MappedIdea) {
+        focusOnMap(mapped, presenting: nil)
+    }
+
+    private func focusOnMap(
+        _ mapped: MappedIdea,
+        presenting item: CollectionItemWrapper?
+    ) {
         withAnimation(.easeInOut(duration: 0.45)) {
             cameraPosition = .region(
                 MKCoordinateRegion(
@@ -814,10 +872,15 @@ struct PinsView: View {
             )
             selectedIdeaID = mapped.id
         }
+
+        // Keep the direct navigation path while the map recenters underneath it.
+        showIdeaInSheet(item ?? mapped.item)
     }
 
     private func transitionID(for item: CollectionItemWrapper) -> String {
-        "idea-image-\(item.ideas?.id ?? item.idea_id)"
+        // Collection-item IDs identify the rendered source, whereas an idea can
+        // appear in multiple collections and therefore have multiple sources.
+        "idea-image-\(item.id)"
     }
 
     private func loadCollections() async {
@@ -915,11 +978,35 @@ struct PinsView: View {
         withAnimation(.easeInOut(duration: 0.45)) {
             cameraPosition = .region(
                 MKCoordinateRegion(
-                    center: coordinate,
-                    latitudinalMeters: 48_280,
-                    longitudinalMeters: 48_280
+                    center: initialCameraCenter(for: coordinate),
+                    latitudinalMeters: 24_140,
+                    longitudinalMeters: 24_140
                 )
             )
         }
+    }
+
+    private func mapUserLocationButtonBottomPadding(for height: CGFloat) -> CGFloat {
+        if discoveryDetent == .height(110) {
+            return 126
+        }
+
+        // The default half-sheet covers 55% of the map. Keep the native
+        // location control just above its top edge.
+        if discoveryDetent == .fraction(0.55) {
+            return max(126, height * 0.55 + 16)
+        }
+
+        return 16
+    }
+
+    private func initialCameraCenter(for coordinate: CLLocationCoordinate2D) -> CLLocationCoordinate2D {
+        // Move the camera center south so the user's location appears roughly
+        // 400 points higher, centered in the map area above the discovery sheet.
+        let effectiveMapHeight = mapHeight > 0 ? Double(mapHeight) : 844
+        let verticalOffsetMeters = 24_140 * 400 / effectiveMapHeight
+        let mapPoint = MKMapPoint(coordinate)
+        let offset = verticalOffsetMeters * MKMapPointsPerMeterAtLatitude(coordinate.latitude)
+        return MKMapPoint(x: mapPoint.x, y: mapPoint.y + offset).coordinate
     }
 }

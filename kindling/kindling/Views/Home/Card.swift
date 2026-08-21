@@ -11,6 +11,7 @@ import SwiftUI
 
 struct Card: View {
     @State var image: UIImage? = nil
+    @State private var imageRequestToken = UUID()
     @State var sheetPresented: Bool = false
     @State private var mapItem: MKMapItem?
     @State private var etaString: String?
@@ -33,6 +34,10 @@ struct Card: View {
 
     private var venueTitle: String {
         mapName ?? mapItem?.name ?? card.ideas?.name ?? "Untitled"
+    }
+
+    private var imageLoadID: String {
+        "\(card.id)-\(card.local_id)-\(card.ideas?.media_url ?? "remote")"
     }
 
     private var isEvent: Bool {
@@ -65,17 +70,22 @@ struct Card: View {
         }
         .onAppear {
             applyCachedDirections()
-            Task {
-                if card.ideas?.media_url == nil, !card.local_id.isEmpty {
-                    let loadedImage = try await loadImage(from: card.local_id)
-                    if animatesImageLoading {
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            image = loadedImage
-                        }
-                    } else {
-                        image = loadedImage
-                    }
+        }
+        .task(id: imageLoadID) {
+            let requestToken = UUID()
+            imageRequestToken = requestToken
+            image = nil
+            guard card.ideas?.media_url == nil, !card.local_id.isEmpty else { return }
+
+            let loadedImage = try? await loadImage(from: card.local_id)
+            guard !Task.isCancelled, imageRequestToken == requestToken else { return }
+
+            if animatesImageLoading {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    image = loadedImage
                 }
+            } else {
+                image = loadedImage
             }
         }
         .task(id: mapDataTaskID) {

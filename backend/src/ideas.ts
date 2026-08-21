@@ -9,6 +9,30 @@ export type ProcessResult =
   | { status: 'linked'; via: LinkedVia; draft: DraftCollectionItem }
   | { status: 'dropped'; reason: string; venue: string | null };
 
+function cleanSearchPart(value: string | null | undefined): string {
+  return value?.replace(/\s+/g, ' ').trim() ?? '';
+}
+
+/**
+ * OCR-derived context is useful for ranking, but it is not always searchable
+ * as a single phrase. For example, an Apple Maps card can expose a mall name
+ * without the city, or include a noisy address fragment. Keep the full query
+ * first, then relax only the context so a real venue is not dropped outright.
+ */
+export function buildPlaceQueries(item: ExtractedItem): string[] {
+  const venue = cleanSearchPart(item.venue);
+  const location = cleanSearchPart(item.location);
+  const address = cleanSearchPart(item.address);
+  const candidates = [
+    [venue, location, address],
+    [venue, address],
+    [venue, location],
+    [venue],
+  ].map((parts) => parts.filter(Boolean).join(' ').trim());
+
+  return [...new Set(candidates)].filter(Boolean);
+}
+
 function toDraft(
   idea: Idea,
   localId: string,
@@ -98,14 +122,14 @@ export async function processEntry(
   const item = data.item;
   // The guard above guarantees a venue for successful extraction results.
   const venue = item.venue!;
-  const location = item.location ?? '';
-  const address = item.address ?? '';
-  const query = `${venue} ${location} ${address}`.trim();
-
-  const mapsData = await lookupPlace(query, appleMaps, {
-    entry_id: id,
-    venue,
-  });
+  let mapsData: Awaited<ReturnType<typeof lookupPlace>> = null;
+  for (const query of buildPlaceQueries(item)) {
+    mapsData = await lookupPlace(query, appleMaps, {
+      entry_id: id,
+      venue,
+    });
+    if (mapsData?.place.id) break;
+  }
 
   if (mapsData?.place.id) {
     const created = await getOrCreateIdeaForPlace(

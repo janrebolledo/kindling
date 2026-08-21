@@ -25,10 +25,12 @@ struct IdeaView: View {
     var transportType: TransportType = .driving
     var function: (ItemWrapper?) async -> Void
     var allowsDeletion = true
+    var isPreview = false
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var localImage: UIImage?
+    @State private var imageRequestToken = UUID()
     @State private var screenshotDate: Date?
     @State private var showQuickLook = false
     @State private var isDeletingFromCollection = false
@@ -52,6 +54,14 @@ struct IdeaView: View {
 
     private var locationText: String {
         card.ideas?.locationTypeLabel ?? "saved place"
+    }
+
+    private var displayedHeroHeight: CGFloat {
+        isPreview ? 150 : LayoutConstants.heroHeight
+    }
+
+    private var imageLoadID: String {
+        "\(card.id)-\(card.local_id)-\(card.ideas?.media_url ?? "remote")"
     }
 
     var body: some View {
@@ -254,12 +264,23 @@ struct IdeaView: View {
             .padding(.bottom, 72)
         }
         .ignoresSafeArea()
-        .onAppear {
-            Task {
-                localImage = try await loadImage(from: card.local_id)
-                let result = PHAsset.fetchAssets(withLocalIdentifiers: [card.local_id], options: nil)
-                screenshotDate = result.firstObject?.creationDate
-            }
+        .task(id: imageLoadID) {
+            let requestToken = UUID()
+            imageRequestToken = requestToken
+            localImage = nil
+            screenshotDate = nil
+
+            guard !card.local_id.isEmpty else { return }
+
+            let result = PHAsset.fetchAssets(withLocalIdentifiers: [card.local_id], options: nil)
+            screenshotDate = result.firstObject?.creationDate
+
+            guard card.ideas?.media_url == nil else { return }
+
+            let loadedImage = try? await loadImage(from: card.local_id)
+            guard !Task.isCancelled, imageRequestToken == requestToken else { return }
+
+            localImage = loadedImage
         }
         .task(id: card.ideas?.place_id) {
             await resolveMapItemIfNeeded()
@@ -294,24 +315,28 @@ struct IdeaView: View {
                             placeholderImage(geometry: geometry)
                         }
                     }
-                    .frame(width: geometry.size.width, height: LayoutConstants.heroHeight)
+                    .frame(width: geometry.size.width, height: displayedHeroHeight)
                     .clipped()
                 } else if let localImage {
                     Image(uiImage: localImage)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .frame(width: geometry.size.width, height: LayoutConstants.heroHeight)
+                        .frame(width: geometry.size.width, height: displayedHeroHeight)
                         .clipped()
                 } else {
                     placeholderImage(geometry: geometry)
                 }
             }
         }
-        .frame(height: LayoutConstants.heroHeight)
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .padding(.horizontal, 16)
-        .padding(.top, 16)
-        .padding(.bottom, 16)
+        .frame(height: displayedHeroHeight)
+        .clipShape(RoundedRectangle(cornerRadius: isPreview ? 20 : 28, style: .continuous))
+        .padding(.horizontal, isPreview ? 0 : 16)
+        .padding(.top, isPreview ? 0 : 16)
+        .padding(.bottom, isPreview ? 8 : 16)
+        .animation(
+            reduceMotion ? .linear(duration: 0.01) : .spring(response: 0.4, dampingFraction: 0.9),
+            value: isPreview
+        )
     }
 
     @ViewBuilder
@@ -531,7 +556,7 @@ struct IdeaView: View {
 
     private func placeholderImage(geometry: GeometryProxy) -> some View {
         Color.gray.opacity(0.2)
-            .frame(width: geometry.size.width, height: LayoutConstants.heroHeight)
+            .frame(width: geometry.size.width, height: displayedHeroHeight)
     }
 
     private var savedDateText: String {
@@ -557,9 +582,14 @@ private struct IdeaShareSheet: UIViewControllerRepresentable {
     ) {}
 }
 
-/// Keeps sheet dismiss attached to the idea scroller. MapKit (and any other
-/// nested scroller) would otherwise steal the pan, so pulling down at the top
-/// rubber-bands instead of dragging the sheet away.
+/// Keeps sheet dismiss attached to the idea scroller. MapKit would otherwise
+/// steal the pan, so pulling down at the top rubber-bands instead of dragging
+/// the sheet away.
+///
+/// This must stay scoped to the idea scroller. The idea view can be pushed into
+/// the discovery sheet, whose presenting host also contains the home carousels.
+/// Mutating sibling scroll views here leaves those carousels disabled after the
+/// idea is dismissed.
 private struct SheetScrollOwnership: UIViewRepresentable {
     func makeUIView(context: Context) -> SentinelView {
         SentinelView()
@@ -590,35 +620,7 @@ private struct SheetScrollOwnership: UIViewRepresentable {
 
         private func claimPrimaryScroller() {
             guard let primary = enclosingScrollView() else { return }
-            let root = presentedHostView() ?? primary
-
-            disableMapScrolling(in: root)
-
-            for scrollView in allScrollViews(in: root) where scrollView !== primary {
-                if primary.isDescendant(of: scrollView) { continue }
-                scrollView.isScrollEnabled = false
-                scrollView.bounces = false
-                scrollView.alwaysBounceVertical = false
-            }
-        }
-
-        /// The sheet's host view — not the window — so we don't disable
-        /// the presenting screen's scroll view.
-        private func presentedHostView() -> UIView? {
-            var responder: UIResponder? = self
-            var controller: UIViewController?
-            while let current = responder {
-                if let viewController = current as? UIViewController {
-                    controller = viewController
-                    break
-                }
-                responder = current.next
-            }
-            guard var host = controller else { return nil }
-            while let parent = host.parent {
-                host = parent
-            }
-            return host.presentingViewController != nil ? host.view : nil
+            disableMapScrolling(in: primary)
         }
 
         private func enclosingScrollView() -> UIScrollView? {
@@ -645,16 +647,6 @@ private struct SheetScrollOwnership: UIViewRepresentable {
             }
         }
 
-        private func allScrollViews(in view: UIView) -> [UIScrollView] {
-            var result: [UIScrollView] = []
-            if let scrollView = view as? UIScrollView {
-                result.append(scrollView)
-            }
-            for subview in view.subviews {
-                result.append(contentsOf: allScrollViews(in: subview))
-            }
-            return result
-        }
     }
 }
 

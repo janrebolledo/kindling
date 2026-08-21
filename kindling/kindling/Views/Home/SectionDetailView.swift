@@ -61,7 +61,7 @@ struct SectionDetailView: View {
         .background((colorScheme == .dark ? Color.black : Color.white).ignoresSafeArea())
         .toolbarVisibility(.hidden, for: .navigationBar)
         .background { InteractivePopGestureEnabler() }
-        .safeAreaInset(edge: .top, spacing: 0) {
+        .safeAreaBar(edge: .top, spacing: 0) {
             pageHeader
         }
     }
