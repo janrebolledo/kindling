@@ -14,11 +14,11 @@ private let figmaGray = Color(red: 142 / 255, green: 142 / 255, blue: 147 / 255)
 private let homeSectionPreviewLimit = 5
 
 private struct MappedIdea: Identifiable {
-    let item: CollectionItemWrapper
+    let item: SavedIdea
     let coordinate: CLLocationCoordinate2D
     let mapName: String?
 
-    var id: Int { item.ideas?.id ?? item.idea_id }
+    var id: Int { item.id }
 
     var displayName: String {
         mapName ?? item.ideas?.name ?? "Saved idea"
@@ -26,29 +26,62 @@ private struct MappedIdea: Identifiable {
 }
 
 private struct DiscoveryIdeaImage: View {
-    let item: CollectionItemWrapper
+    let item: SavedIdea
     @State private var localImage: UIImage?
     @State private var imageRequestToken = UUID()
+    @State private var placeDetails: GooglePlaceDetails?
+    @State private var didResolveGoogleMedia = false
 
     private var imageLoadID: String {
         "\(item.id)-\(item.local_id)-\(item.ideas?.media_url ?? "remote")"
+    }
+
+    private var googleMediaResolutionID: String {
+        "\(item.id)-\(item.ideas?.place_id ?? "no-place")"
+    }
+
+    private var googleMapsMediaURL: URL? {
+        let value = placeDetails?.photoUrl ?? item.ideas?.media_url
+        return value.flatMap(URL.init(string:))
+    }
+
+    private var isWaitingForGoogleMedia: Bool {
+        item.ideas?.place_id != nil
+            && googleMapsMediaURL == nil
+            && !didResolveGoogleMedia
     }
 
     var body: some View {
         ZStack {
             Color.gray.opacity(0.14)
 
-            if let mediaURL = item.ideas?.media_url,
-               let url = URL(string: mediaURL) {
+            if let url = googleMapsMediaURL {
                 AsyncImage(url: url) { phase in
-                    if let image = phase.image {
+                    switch phase {
+                    case .success(let image):
                         image.resizable().scaledToFill()
-                    } else if phase.error == nil {
+                    case .empty:
                         ProgressView().controlSize(.small)
-                    } else {
-                        placeholder
+                    case .failure:
+                        if let localImage {
+                            Image(uiImage: localImage)
+                                .resizable()
+                                .scaledToFill()
+                        } else {
+                            placeholder
+                        }
+                    @unknown default:
+                        if let localImage {
+                            Image(uiImage: localImage)
+                                .resizable()
+                                .scaledToFill()
+                        } else {
+                            placeholder
+                        }
                     }
                 }
+            } else if isWaitingForGoogleMedia {
+                ProgressView().controlSize(.small)
             } else if let localImage {
                 Image(uiImage: localImage)
                     .resizable()
@@ -66,11 +99,25 @@ private struct DiscoveryIdeaImage: View {
             imageRequestToken = requestToken
             localImage = nil
 
-            guard item.ideas?.media_url == nil, !item.local_id.isEmpty else { return }
+            guard !item.local_id.isEmpty else { return }
 
             let loadedImage = try? await loadImage(from: item.local_id)
             guard !Task.isCancelled, imageRequestToken == requestToken else { return }
             localImage = loadedImage
+        }
+        .task(id: googleMediaResolutionID) {
+            didResolveGoogleMedia = false
+            placeDetails = nil
+
+            guard let placeID = item.ideas?.place_id else {
+                didResolveGoogleMedia = true
+                return
+            }
+
+            let details = await GooglePlacesService.shared.details(for: placeID)
+            guard !Task.isCancelled else { return }
+            placeDetails = details
+            didResolveGoogleMedia = true
         }
     }
 
@@ -154,11 +201,12 @@ struct PinsView: View {
     @State private var searchText = ""
     @State private var selectedIdeaID: Int?
     @State private var mapCenter: CLLocationCoordinate2D?
-    @State private var mapZoom: Float = 10
+    // At this zoom the map is roughly ten miles wide on a standard iPhone.
+    @State private var mapZoom: Float = 11.5
     @State private var hasSetInitialCamera = false
     @State private var mapHeight: CGFloat = 0
     @State private var isLoading = true
-    @State private var detailIdea: CollectionItemWrapper?
+    @State private var detailIdea: SavedIdea?
     @State private var isShowingIdeaInSheet = false
     @State private var sectionDestination: SheetSectionDestination?
     @State private var isDiscoverySheetPresented = true
@@ -169,15 +217,12 @@ struct PinsView: View {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
-    private var allLocationItems: [CollectionItemWrapper] {
-        var seen = Set<Int>()
-        return collections
-            .flatMap { $0.collection_items ?? [] }
-            .filter { item in
-                guard item.ideas?.type?.lowercased() != "event" else { return false }
-                let id = item.ideas?.id ?? item.idea_id
-                return seen.insert(id).inserted
-            }
+    private var allLocationItems: [SavedIdea] {
+        deduplicatedSavedIdeas(
+            collections
+                .flatMap { $0.collection_items ?? [] }
+                .filter { $0.ideas?.type?.lowercased() != "event" }
+        )
     }
 
     private var visibleIdeas: [MappedIdea] {
@@ -193,12 +238,12 @@ struct PinsView: View {
         collections.first { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "nomnomnom" }
     }
 
-    private var nomnomnomItems: [CollectionItemWrapper] {
+    private var nomnomnomItems: [SavedIdea] {
         guard let collection = nomnomnomCollection else { return [] }
         return filter(locationItems(for: collection, applyingSearch: false))
     }
 
-    private var allNomnomnomItems: [CollectionItemWrapper] {
+    private var allNomnomnomItems: [SavedIdea] {
         guard let collection = nomnomnomCollection else { return [] }
         return locationItems(for: collection, applyingSearch: false)
     }
@@ -257,9 +302,7 @@ struct PinsView: View {
                 isDiscoverySheetPresented = true
             } else {
                 if let newValue {
-                    if let item = allLocationItems.first(where: {
-                        ($0.ideas?.id ?? $0.idea_id) == newValue
-                    }) {
+                    if let item = allLocationItems.first(where: { $0.id == newValue }) {
                         showIdeaInSheet(item)
                     }
                 }
@@ -270,7 +313,6 @@ struct PinsView: View {
                 discoveryDetent = .fraction(0.55)
             }
         }
-        .animation(.spring(response: 0.38, dampingFraction: 0.9), value: selectedIdeaID)
     }
 
     private var map: some View {
@@ -428,8 +470,13 @@ struct PinsView: View {
 
                 discoverySheet
             }
+            // Keep the navigation bar in the hierarchy before a destination
+            // is pushed. The native back button can then appear without
+            // changing the sheet's safe-area geometry mid-transition.
+            .ignoresSafeArea(edges: .top)
             .background(Color.clear)
-            .toolbarVisibility(.hidden, for: .navigationBar)
+            .toolbarVisibility(.visible, for: .navigationBar)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .navigationDestination(item: $sectionDestination) { destination in
                 sectionPage(destination)
             }
@@ -454,29 +501,10 @@ struct PinsView: View {
             .presentationCornerRadius(36)
             .presentationBackground(Color(uiColor: .systemBackground))
         }
-        .simultaneousGesture(discoverySheetPromotionGesture)
     }
 
     private var isDiscoverySheetTranslucent: Bool {
         discoveryDetent != .large
-    }
-
-    private var discoverySheetPromotionGesture: some Gesture {
-        DragGesture(minimumDistance: 8)
-            .onEnded { value in
-                guard discoveryDetent == .fraction(0.55),
-                      value.translation.height < 0,
-                      abs(value.translation.height) > abs(value.translation.width)
-                else { return }
-
-                withAnimation(
-                    reduceMotion
-                        ? .linear(duration: 0.01)
-                        : .spring(response: 0.3, dampingFraction: 0.85)
-                ) {
-                    discoveryDetent = .large
-                }
-            }
     }
 
     @ViewBuilder
@@ -570,30 +598,29 @@ struct PinsView: View {
         discoveryDetent == .height(110)
     }
 
-    private var filteredLocationItems: [CollectionItemWrapper] {
+    private var filteredLocationItems: [SavedIdea] {
         filter(allLocationItems)
     }
 
     private func locationItems(
         for collection: CollectionWrapper,
         applyingSearch: Bool
-    ) -> [CollectionItemWrapper] {
-        let items = (collection.collection_items ?? []).filter {
+    ) -> [SavedIdea] {
+        let items = deduplicatedSavedIdeas((collection.collection_items ?? []).filter {
             $0.ideas?.type?.lowercased() != "event"
-        }
+        })
         return applyingSearch ? filter(items) : items
     }
 
-    private var filteredEventItems: [CollectionItemWrapper] {
-        var seen = Set<Int>()
-        let events = collections.flatMap { $0.collection_items ?? [] }.filter { item in
-            guard item.ideas?.type?.lowercased() == "event" else { return false }
-            return seen.insert(item.ideas?.id ?? item.idea_id).inserted
-        }
+    private var filteredEventItems: [SavedIdea] {
+        let events = deduplicatedSavedIdeas(
+            collections.flatMap { $0.collection_items ?? [] }
+                .filter { $0.ideas?.type?.lowercased() == "event" }
+        )
         return filter(events)
     }
 
-    private func filter(_ items: [CollectionItemWrapper]) -> [CollectionItemWrapper] {
+    private func filter(_ items: [SavedIdea]) -> [SavedIdea] {
         guard !query.isEmpty else { return items }
         return items.filter { item in
             let idea = item.ideas
@@ -602,7 +629,7 @@ struct PinsView: View {
         }
     }
 
-    private func subtitle(for items: [CollectionItemWrapper]) -> String {
+    private func subtitle(for items: [SavedIdea]) -> String {
         let types = items.compactMap { $0.ideas?.type?.lowercased() }
         let foodCount = types.filter { $0 == "food" }.count
         if !types.isEmpty && foodCount * 2 >= types.count {
@@ -613,7 +640,7 @@ struct PinsView: View {
 
     private func discoverySection(
         title: String,
-        items: [CollectionItemWrapper],
+        items: [SavedIdea],
         action: @escaping () -> Void
     ) -> some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -678,9 +705,9 @@ struct PinsView: View {
         .accessibilityLabel("View all")
     }
 
-    private func discoveryCard(_ item: CollectionItemWrapper) -> some View {
+    private func discoveryCard(_ item: SavedIdea) -> some View {
         let displayName = mappedIdeas.first {
-            $0.id == (item.ideas?.id ?? item.idea_id)
+            $0.id == item.id
         }?.displayName ?? item.ideas?.name ?? "Untitled"
 
         return Button {
@@ -709,14 +736,14 @@ struct PinsView: View {
         .buttonStyle(.plain)
     }
 
-    private func showIdeaInSheet(_ item: CollectionItemWrapper) {
+    private func showIdeaInSheet(_ item: SavedIdea) {
         detailIdea = item
         isDiscoverySheetPresented = true
         isShowingIdeaInSheet = true
     }
 
-    private func focusOnMap(_ item: CollectionItemWrapper) {
-        let ideaID = item.ideas?.id ?? item.idea_id
+    private func focusOnMap(_ item: SavedIdea) {
+        let ideaID = item.id
         if let mapped = mappedIdeas.first(where: { $0.id == ideaID }) {
             focusOnMap(mapped, presenting: item)
             return
@@ -776,11 +803,11 @@ struct PinsView: View {
 
     private func focusOnMap(
         _ mapped: MappedIdea,
-        presenting item: CollectionItemWrapper?
+        presenting item: SavedIdea?
     ) {
         withAnimation(.easeInOut(duration: 0.45)) {
-            mapCenter = mapped.coordinate
             mapZoom = 14
+            mapCenter = cameraCenter(for: mapped.coordinate, zoom: mapZoom)
             selectedIdeaID = mapped.id
         }
 
@@ -811,7 +838,7 @@ struct PinsView: View {
         )
 
         mappedIdeas = allLocationItems.compactMap { item in
-            let id = item.ideas?.id ?? item.idea_id
+            let id = item.id
             // Coordinates are Google Places response data and stay in memory only.
             // Keep a successfully resolved pin visible while a collection
             // refresh is happening.
@@ -828,7 +855,7 @@ struct PinsView: View {
         var resolvedThisPass = 0
         for item in candidates {
             guard resolvedThisPass < 6 else { break }
-            let ideaID = item.ideas?.id ?? item.idea_id
+            let ideaID = item.id
             guard !mappedIdeas.contains(where: { $0.id == ideaID }),
                   !resolvingIdeaIDs.contains(ideaID),
                   !failedIdeaIDs.contains(ideaID) else { continue }
@@ -858,7 +885,7 @@ struct PinsView: View {
         }
     }
 
-    private func resolvePlace(for item: CollectionItemWrapper) async -> GooglePlaceDetails? {
+    private func resolvePlace(for item: SavedIdea) async -> GooglePlaceDetails? {
         guard let placeID = item.ideas?.place_id else { return nil }
         return await GooglePlacesService.shared.details(for: placeID)
     }
@@ -866,8 +893,8 @@ struct PinsView: View {
     private func centerMapOnUser(_ coordinate: CLLocationCoordinate2D) {
         hasSetInitialCamera = true
         withAnimation(.easeInOut(duration: 0.45)) {
-            mapCenter = initialCameraCenter(for: coordinate)
-            mapZoom = 10
+            mapZoom = 11.5
+            mapCenter = cameraCenter(for: coordinate, zoom: mapZoom)
         }
     }
 
@@ -885,15 +912,21 @@ struct PinsView: View {
         return 16
     }
 
-    private func initialCameraCenter(for coordinate: CLLocationCoordinate2D) -> CLLocationCoordinate2D {
+    private func cameraCenter(
+        for coordinate: CLLocationCoordinate2D,
+        zoom: Float
+    ) -> CLLocationCoordinate2D {
         // Move the camera center south so the user's location appears roughly
         // 400 points higher, centered in the map area above the discovery sheet.
         let effectiveMapHeight = mapHeight > 0 ? Double(mapHeight) : 844
-        let verticalOffsetMeters = 24_140 * 400 / effectiveMapHeight
-        // Google Maps handles the visual insets independently; keep this
-        // centered on the user's actual location instead of projecting it
-        // map-point projection.
-        _ = verticalOffsetMeters
-        return coordinate
+        // Scale the reference viewport to the requested zoom so card taps get
+        // the same on-screen offset even though they zoom in closer.
+        let zoomScale = pow(2.0, 11.5 - Double(zoom))
+        let verticalOffsetMeters = 16_000 * zoomScale * 400 / effectiveMapHeight
+        let metersPerLatitudeDegree = 111_320.0
+        return CLLocationCoordinate2D(
+            latitude: coordinate.latitude - verticalOffsetMeters / metersPerLatitudeDegree,
+            longitude: coordinate.longitude
+        )
     }
 }

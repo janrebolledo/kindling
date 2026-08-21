@@ -21,7 +21,7 @@ enum HomeDestination: Hashable, Identifiable {
 struct SectionDetailView: View {
     let title: String
     let subtitle: String
-    let items: [CollectionItemWrapper]
+    let items: [SavedIdea]
     var onBack: (() -> Void)? = nil
 
     @Environment(\.colorScheme) private var colorScheme
@@ -206,7 +206,7 @@ struct SectionDetailView: View {
         return result
     }
 
-    private var filteredItems: [CollectionItemWrapper] {
+    private var filteredItems: [SavedIdea] {
         let categories = selectedFilters.compactMap { filter -> String? in
             if case .category(let name) = filter { return name }
             return nil
@@ -236,7 +236,7 @@ struct SectionDetailView: View {
         }
     }
 
-    private func matches(_ item: CollectionItemWrapper, category: String) -> Bool {
+    private func matches(_ item: SavedIdea, category: String) -> Bool {
         if let locationType = item.ideas?.location_type, !locationType.isEmpty {
             if normalizedCategory(locationType) == category { return true }
             if locationType.lowercased().contains(singular(category)) { return true }

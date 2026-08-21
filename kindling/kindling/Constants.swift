@@ -34,7 +34,7 @@ private func extractTimes(from str: String) -> (open: String, close: String)? {
 
 /// Parses today's entry from a Google Places `weekdayDescriptions` array and returns
 /// whether the place is currently open and the next transition time (e.g. "Closes at 4:00 PM").
-func resolveOpenStatus(from openHours: [String]) -> OpenStatus? {
+nonisolated func resolveOpenStatus(from openHours: [String]) -> OpenStatus? {
     let calendar = Calendar.current
     let now = Date()
     let weekday = calendar.component(.weekday, from: now) // 1=Sun … 7=Sat

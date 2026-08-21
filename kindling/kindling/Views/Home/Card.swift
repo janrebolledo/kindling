@@ -245,7 +245,19 @@ struct Card: View {
                         .resizable()
                         .scaledToFill()
                         .transition(.opacity)
-                default:
+                case .empty:
+                    // Keep the Google photo first-class while it loads. The
+                    // screenshot is only a fallback after the request fails.
+                    Color.gray.opacity(0.15)
+                case .failure:
+                    if let image {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        Color.gray.opacity(0.15)
+                    }
+                @unknown default:
                     if let image {
                         Image(uiImage: image)
                             .resizable()

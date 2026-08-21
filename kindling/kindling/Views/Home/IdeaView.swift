@@ -16,6 +16,12 @@ import UIKit
 private let pillBackground = Color("raisedSurface")
 private let destructiveRed = Color(red: 1.0, green: 56 / 255, blue: 60 / 255)
 
+private struct SavedScreenshot: Identifiable {
+    let id: String
+    let image: UIImage
+    let date: Date?
+}
+
 struct IdeaView: View {
     var card: CardData
     var placeDetails: GooglePlaceDetails?
@@ -30,6 +36,10 @@ struct IdeaView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var localImage: UIImage?
+    @State private var savedScreenshots: [SavedScreenshot] = []
+    @State private var selectedScreenshotIndex = 0
+    @State private var screenshotDragOffset: CGFloat = 0
+    @State private var isCyclingScreenshot = false
     @State private var imageRequestToken = UUID()
     @State private var screenshotDate: Date?
     @State private var showQuickLook = false
@@ -38,7 +48,7 @@ struct IdeaView: View {
     @State private var showShareSheet = false
     @State private var resolvedPlaceDetails: GooglePlaceDetails?
     @State private var resolvedGooglePlaceHours: GooglePlaceHours?
-    @State private var polaroidRotation = Double.random(in: -6...6)
+    @State private var scrollPosition = ScrollPosition()
 
     private var venueTitle: String {
         placeDetails?.name ?? resolvedPlaceDetails?.name ?? card.ideas?.name ?? "Untitled"
@@ -61,7 +71,7 @@ struct IdeaView: View {
     }
 
     private var imageLoadID: String {
-        "\(card.id)-\(card.local_id)-\(card.ideas?.media_url ?? "remote")"
+        "\(card.id)-\(card.screenshotLocalIDs.joined(separator: ","))-\(card.ideas?.media_url ?? "remote")"
     }
 
     private var googleMapsMediaURL: URL? {
@@ -270,22 +280,43 @@ struct IdeaView: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 72)
         }
+        .scrollPosition($scrollPosition)
         .ignoresSafeArea()
+        .background { IdeaInteractivePopGestureEnabler() }
+        .onChange(of: isPreview) { _, _ in
+            // The preview and full layouts have different hero heights. Reset
+            // before that geometry changes so the old full-view offset cannot
+            // place the title and metadata on top of the shrinking hero.
+            var transaction = Transaction()
+            transaction.animation = nil
+            withTransaction(transaction) {
+                scrollPosition.scrollTo(edge: .top)
+            }
+        }
         .task(id: imageLoadID) {
             let requestToken = UUID()
             imageRequestToken = requestToken
             localImage = nil
+            savedScreenshots = []
+            selectedScreenshotIndex = 0
+            screenshotDragOffset = 0
+            isCyclingScreenshot = false
             screenshotDate = nil
 
-            guard !card.local_id.isEmpty else { return }
+            for localID in card.screenshotLocalIDs {
+                guard !Task.isCancelled, imageRequestToken == requestToken else { return }
 
-            let result = PHAsset.fetchAssets(withLocalIdentifiers: [card.local_id], options: nil)
-            screenshotDate = result.firstObject?.creationDate
+                let result = PHAsset.fetchAssets(withLocalIdentifiers: [localID], options: nil)
+                let date = result.firstObject?.creationDate
+                guard let image = try? await loadImage(from: localID) else { continue }
 
-            let loadedImage = try? await loadImage(from: card.local_id)
-            guard !Task.isCancelled, imageRequestToken == requestToken else { return }
-
-            localImage = loadedImage
+                let screenshot = SavedScreenshot(id: localID, image: image, date: date)
+                savedScreenshots.append(screenshot)
+                if localImage == nil {
+                    localImage = image
+                    screenshotDate = date
+                }
+            }
         }
         .task(id: card.ideas?.place_id) {
             await resolvePlaceDetailsIfNeeded()
@@ -314,7 +345,20 @@ struct IdeaView: View {
                                 .resizable()
                                 .aspectRatio(contentMode: .fill)
                                 .transition(.opacity)
-                        default:
+                        case .empty:
+                            // Keep the Google photo first-class while it
+                            // loads. The screenshot is only a fallback after
+                            // the request fails.
+                            placeholderImage(geometry: geometry)
+                        case .failure:
+                            if let localImage {
+                                Image(uiImage: localImage)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                            } else {
+                                placeholderImage(geometry: geometry)
+                            }
+                        @unknown default:
                             if let localImage {
                                 Image(uiImage: localImage)
                                     .resizable()
@@ -342,10 +386,6 @@ struct IdeaView: View {
         .padding(.horizontal, isPreview ? 0 : 16)
         .padding(.top, isPreview ? 0 : 16)
         .padding(.bottom, isPreview ? 8 : 16)
-        .animation(
-            reduceMotion ? .linear(duration: 0.01) : .spring(response: 0.4, dampingFraction: 0.9),
-            value: isPreview
-        )
     }
 
     @ViewBuilder
@@ -406,30 +446,7 @@ struct IdeaView: View {
     @ViewBuilder
     private var savedSection: some View {
         VStack(alignment: .center, spacing: 16) {
-            // Polaroid
-            Group {
-                if let localImage {
-                    Image(uiImage: localImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 143, height: 143)
-                        .clipped()
-                        .clipShape(RoundedRectangle(cornerRadius: 2))
-                } else {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(Color.gray.opacity(0.2))
-                        .frame(width: 143, height: 143)
-                }
-            }
-            .padding(8)
-            .padding(.bottom, 24)
-            .background(.white)
-            .clipShape(RoundedRectangle(cornerRadius: 2))
-            .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 4)
-            .rotationEffect(.degrees(polaroidRotation))
-            .onTapGesture {
-                if localImage != nil { showQuickLook = true }
-            }
+            screenshotCarousel
 
             // Saved on label
             VStack(spacing: 6) {
@@ -443,6 +460,8 @@ struct IdeaView: View {
                     .tracking(-0.4)
                     .foregroundStyle(.primary)
                     .frame(maxWidth: .infinity, alignment: .center)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
             }
 
             // View + Delete pill buttons
@@ -462,7 +481,7 @@ struct IdeaView: View {
                 .clipShape(Capsule())
                 .disabled(localImage == nil)
                 .sheet(isPresented: $showQuickLook) {
-                    if let image = localImage {
+                    if let image = selectedScreenshot?.image ?? localImage {
                         ImagePreviewSheet(image: image)
                     }
                 }
@@ -492,6 +511,123 @@ struct IdeaView: View {
         }
     }
 
+    @ViewBuilder
+    private var screenshotCarousel: some View {
+        VStack(spacing: 2) {
+            ZStack {
+                if savedScreenshots.isEmpty {
+                    polaroid(image: localImage, index: 0)
+                } else {
+                    ForEach(Array(savedScreenshots.enumerated()), id: \.element.id) { index, screenshot in
+                        let distance = screenshotStackDistance(for: index)
+                        polaroid(image: screenshot.image, index: index)
+                            .scaleEffect(distance == 0 ? 1 : 1 - CGFloat(min(distance, 3)) * 0.04)
+                            .opacity(distance > 3 ? 0 : 1)
+                            .offset(
+                                x: distance == 0 ? screenshotDragOffset : CGFloat(min(distance, 3)) * 5,
+                                y: distance == 0 ? 0 : CGFloat(min(distance, 3)) * 2
+                            )
+                            .zIndex(distance == 0 ? 10 : Double(-distance))
+                    }
+                }
+            }
+            .frame(width: 190, height: 210)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if savedScreenshots.count > 1 {
+                    cycleScreenshot(direction: 1)
+                } else if localImage != nil {
+                    showQuickLook = true
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 8)
+                    .onChanged { value in
+                        guard savedScreenshots.count > 1, !isCyclingScreenshot else { return }
+                        screenshotDragOffset = value.translation.width
+                    }
+                    .onEnded { value in
+                        guard savedScreenshots.count > 1, !isCyclingScreenshot else { return }
+                        let isHorizontal = abs(value.translation.width) > abs(value.translation.height)
+                        guard isHorizontal else {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.86)) {
+                                screenshotDragOffset = 0
+                            }
+                            return
+                        }
+
+                        if abs(value.translation.width) > 45 {
+                            cycleScreenshot(direction: value.translation.width < 0 ? 1 : -1)
+                        } else {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.86)) {
+                                screenshotDragOffset = 0
+                            }
+                        }
+                    }
+            )
+
+            if savedScreenshots.count > 1 {
+                HStack(spacing: 14) {
+                    cycleButton(direction: -1, systemName: "chevron.left")
+                    Text("\(selectedScreenshotIndex + 1) / \(savedScreenshots.count)")
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .frame(minWidth: 42)
+                    cycleButton(direction: 1, systemName: "chevron.right")
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(
+            reduceMotion ? .easeOut(duration: 0.12) : .spring(response: 0.34, dampingFraction: 0.86),
+            value: selectedScreenshotIndex
+        )
+    }
+
+    private func screenshotStackDistance(for index: Int) -> Int {
+        guard !savedScreenshots.isEmpty else { return 0 }
+        return (index - selectedScreenshotIndex + savedScreenshots.count)
+            % savedScreenshots.count
+    }
+
+    private func polaroid(image: UIImage?, index: Int) -> some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 143, height: 143)
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 2))
+            } else {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.gray.opacity(0.2))
+                    .frame(width: 143, height: 143)
+            }
+        }
+        .padding(8)
+        .padding(.bottom, 24)
+        .background(.white)
+        .clipShape(RoundedRectangle(cornerRadius: 2))
+        .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 4)
+        .rotationEffect(.degrees(polaroidRotation(for: index)))
+        .offset(x: CGFloat(index % 3 - 1) * 4, y: CGFloat(index % 3 - 1) * 2)
+    }
+
+    private func cycleButton(direction: Int, systemName: String) -> some View {
+        Button {
+            cycleScreenshot(direction: direction)
+        } label: {
+            Image(systemName: systemName)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(.primary)
+                .frame(width: 30, height: 30)
+                .background(.ultraThinMaterial, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(direction < 0 ? "Previous screenshot" : "Next screenshot")
+    }
+
     // MARK: - Helpers
 
     private var shareURL: URL {
@@ -502,11 +638,13 @@ struct IdeaView: View {
 
     private func deleteFromCollection(deleteFromDevice: Bool = false) async {
         do {
-            try await supabase
-                .from("collection_items")
-                .delete()
-                .eq("id", value: card.id)
-                .execute()
+            for collectionItemID in card.collectionItemIDs {
+                try await supabase
+                    .from("collection_items")
+                    .delete()
+                    .eq("id", value: collectionItemID)
+                    .execute()
+            }
 
             let ideaID = card.ideas?.id ?? card.id
             Task {
@@ -517,13 +655,15 @@ struct IdeaView: View {
             }
 
             if deleteFromDevice {
-                let fetchResult = PHAsset.fetchAssets(
-                    withLocalIdentifiers: [card.local_id],
-                    options: nil
-                )
-                if let asset = fetchResult.firstObject {
+                let assets = card.screenshotLocalIDs.compactMap { localID in
+                    PHAsset.fetchAssets(
+                        withLocalIdentifiers: [localID],
+                        options: nil
+                    ).firstObject
+                }
+                if !assets.isEmpty {
                     try await PHPhotoLibrary.shared().performChanges {
-                        PHAssetChangeRequest.deleteAssets([asset] as NSArray)
+                        PHAssetChangeRequest.deleteAssets(assets as NSArray)
                     }
                 }
             }
@@ -543,10 +683,75 @@ struct IdeaView: View {
     private var savedDateText: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d, yyyy"
-        if let date = screenshotDate {
+        if let date = selectedScreenshot?.date ?? screenshotDate {
             return formatter.string(from: date)
         }
         return "unknown"
+    }
+
+    private var selectedScreenshot: SavedScreenshot? {
+        guard savedScreenshots.indices.contains(selectedScreenshotIndex) else { return nil }
+        return savedScreenshots[selectedScreenshotIndex]
+    }
+
+    private func cycleScreenshot(direction: Int) {
+        guard savedScreenshots.count > 1, !isCyclingScreenshot else { return }
+
+        isCyclingScreenshot = true
+        let outgoingOffset: CGFloat = direction > 0 ? -230 : 230
+        let incomingOffset = -outgoingOffset
+        let animation: Animation = reduceMotion
+            ? .easeOut(duration: 0.12)
+            : .spring(response: 0.28, dampingFraction: 0.88)
+
+        withAnimation(animation) {
+            screenshotDragOffset = outgoingOffset
+        }
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            guard !Task.isCancelled else { return }
+
+            var transaction = Transaction()
+            transaction.animation = nil
+            withTransaction(transaction) {
+                selectedScreenshotIndex = (selectedScreenshotIndex + direction + savedScreenshots.count)
+                    % savedScreenshots.count
+                screenshotDragOffset = incomingOffset
+            }
+
+            withAnimation(animation) {
+                screenshotDragOffset = 0
+                isCyclingScreenshot = false
+            }
+        }
+    }
+
+    private func polaroidRotation(for index: Int) -> Double {
+        [-5.0, 3.5, -2.5, 4.0][index % 4]
+    }
+}
+
+private struct IdeaInteractivePopGestureEnabler: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> Controller {
+        Controller()
+    }
+
+    func updateUIViewController(_ controller: Controller, context: Context) {
+        controller.enableInteractivePopGesture()
+    }
+
+    final class Controller: UIViewController {
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            enableInteractivePopGesture()
+        }
+
+        func enableInteractivePopGesture() {
+            guard let navigationController else { return }
+            navigationController.interactivePopGestureRecognizer?.isEnabled = true
+            navigationController.interactivePopGestureRecognizer?.delegate = nil
+        }
     }
 }
 

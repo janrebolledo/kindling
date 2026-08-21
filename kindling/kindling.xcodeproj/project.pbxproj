@@ -299,8 +299,8 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = FDX72WZH23;
 				ENABLE_PREVIEWS = YES;
+				GOOGLE_MAPS_API_KEY = AIzaSyAlNi62vzbdcCRyUbPumh9504VzhrLPU14;
 				INFOPLIST_FILE = kindling/Info.plist;
-				GOOGLE_MAPS_API_KEY = "";
 				INFOPLIST_KEY_CFBundleDisplayName = kindling;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -337,8 +337,8 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = FDX72WZH23;
 				ENABLE_PREVIEWS = YES;
+				GOOGLE_MAPS_API_KEY = AIzaSyAlNi62vzbdcCRyUbPumh9504VzhrLPU14;
 				INFOPLIST_FILE = kindling/Info.plist;
-				GOOGLE_MAPS_API_KEY = "";
 				INFOPLIST_KEY_CFBundleDisplayName = kindling;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

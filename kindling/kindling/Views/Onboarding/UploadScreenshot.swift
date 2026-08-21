@@ -24,6 +24,18 @@ protocol CardData {
     var id: Int { get }
     var local_id: String { get }
     var ideas: Item? { get }
+    var screenshotLocalIDs: [String] { get }
+    var collectionItemIDs: [Int] { get }
+}
+
+extension CardData {
+    var screenshotLocalIDs: [String] {
+        local_id.isEmpty ? [] : [local_id]
+    }
+
+    var collectionItemIDs: [Int] {
+        [id]
+    }
 }
 
 struct ItemWrapper: Codable, Identifiable, CardData {
