@@ -95,6 +95,26 @@ export function resolveOpenStatus(openHours: string[], now = new Date()): OpenSt
   return { isOpen: false, detail: 'Closed' };
 }
 
+/**
+ * Prefer Google's provider-local live status when it is available, while
+ * keeping the schedule-derived detail used by the iOS detail view.
+ */
+export function resolvePlaceStatus(
+  openHours: string[],
+  openNow: boolean | null,
+): OpenStatus | null {
+  const scheduleStatus = resolveOpenStatus(openHours);
+  if (openNow == null) return scheduleStatus;
+  if (openNow) {
+    return scheduleStatus?.isOpen
+      ? scheduleStatus
+      : { isOpen: true, detail: 'Open' };
+  }
+  return scheduleStatus && !scheduleStatus.isOpen
+    ? scheduleStatus
+    : { isOpen: false, detail: 'Closed' };
+}
+
 export function formatSavedOn(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;

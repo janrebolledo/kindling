@@ -362,7 +362,7 @@ struct AccountView: View {
                 )
             }
 
-            Text("v1.00 early preview • jan rebolledo")
+            Text("v1.00 • jan rebolledo")
                 .font(.system(size: 16))
                 .tracking(-0.16)
                 .foregroundStyle(figmaGray)

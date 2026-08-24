@@ -11,6 +11,20 @@ export type SharedIdea = {
   date: string | null;
   time: string | null;
   created_at: string;
+  place: SharedPlace | null;
+};
+
+export type SharedPlace = {
+  id: string;
+  name: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  formattedAddress: string | null;
+  weekdayDescriptions: string[];
+  openNow: boolean | null;
+  photoUrl: string | null;
+  photoAttributions: string[];
+  googleMapsUri: string | null;
 };
 
 const SHARE_URL = 'https://api.getkindl.ing/share';

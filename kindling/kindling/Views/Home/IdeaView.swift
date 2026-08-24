@@ -35,6 +35,7 @@ struct IdeaView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.displayScale) private var displayScale
     @State private var localImage: UIImage?
     @State private var savedScreenshots: [SavedScreenshot] = []
     @State private var imageRequestToken = UUID()
@@ -74,6 +75,13 @@ struct IdeaView: View {
     private var googleMapsMediaURL: URL? {
         let value = resolvedPlace?.photoUrl ?? card.ideas?.media_url
         return value.flatMap(URL.init(string:))
+    }
+
+    private var screenshotTargetSize: CGSize {
+        // The hero is the largest local rendering surface in this view. Keep
+        // the decoded image close to the device's display size instead of
+        // asking PhotoKit for the original library dimensions.
+        return CGSize(width: 400 * displayScale, height: 400 * displayScale)
     }
 
     var body: some View {
@@ -289,20 +297,45 @@ struct IdeaView: View {
             savedScreenshots = []
             screenshotDate = nil
 
+            let assets = PHAsset.fetchAssets(
+                withLocalIdentifiers: card.screenshotLocalIDs,
+                options: nil
+            )
+            var assetsByID: [String: PHAsset] = [:]
+            assets.enumerateObjects { asset, _, _ in
+                assetsByID[asset.localIdentifier] = asset
+            }
+
+            var loadedScreenshots: [SavedScreenshot] = []
+            var firstImage: UIImage?
+
             for localID in card.screenshotLocalIDs {
                 guard !Task.isCancelled, imageRequestToken == requestToken else { return }
 
-                let result = PHAsset.fetchAssets(withLocalIdentifiers: [localID], options: nil)
-                let date = result.firstObject?.creationDate
-                guard let image = try? await loadImage(from: localID) else { continue }
+                guard let asset = assetsByID[localID] else { continue }
+                let date = asset.creationDate
+                guard let image = try? await loadImage(
+                    from: asset,
+                    targetSize: screenshotTargetSize,
+                    resizeMode: .fast
+                ) else { continue }
+                // The previous idea's PhotoKit request can finish after the
+                // navigation has already moved to a new idea. Never append a
+                // late result from that cancelled request to the new stack.
+                guard !Task.isCancelled, imageRequestToken == requestToken else { return }
 
-                let screenshot = SavedScreenshot(id: localID, image: image, date: date)
-                savedScreenshots.append(screenshot)
-                if localImage == nil {
+                loadedScreenshots.append(
+                    SavedScreenshot(id: localID, image: image, date: date)
+                )
+                if firstImage == nil {
+                    firstImage = image
                     localImage = image
                     screenshotDate = date
                 }
             }
+
+            guard !Task.isCancelled, imageRequestToken == requestToken else { return }
+            savedScreenshots = loadedScreenshots
         }
         .task(id: card.ideas?.place_id) {
             await resolvePlaceDetailsIfNeeded()

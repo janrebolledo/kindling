@@ -123,6 +123,21 @@ app.get('/share/:id', async (c) => {
     return c.json({ error: 'Not found' }, 404);
   }
 
+  // Keep public share links in sync with the iOS detail view. Place data is
+  // intentionally best-effort: an old/deleted Google place must not make an
+  // otherwise valid share link disappear.
+  let place = null;
+  if (idea.place_id) {
+    try {
+      place = await getPlaceDetails(idea.place_id, {
+        GOOGLE_MAPS_API_KEY: c.env.GOOGLE_MAPS_API_KEY,
+        PUBLIC_API_URL: c.env.PUBLIC_API_URL,
+      });
+    } catch (err) {
+      logError('share.place_fetch_failed', err, { idea_id: id, place_id: idea.place_id });
+    }
+  }
+
   try {
     await recordShareOpen(createSupabase(c.env), id);
   } catch (err) {
@@ -131,7 +146,7 @@ app.get('/share/:id', async (c) => {
   }
 
   c.header('Cache-Control', 'public, max-age=60');
-  return c.json(idea);
+  return c.json({ ...idea, place });
 });
 
 app.delete('/account', async (c) => {

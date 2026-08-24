@@ -96,6 +96,19 @@ func loadImage(
         return nil
     }
 
+    return try await loadImage(
+        from: asset,
+        targetSize: targetSize,
+        resizeMode: resizeMode
+    )
+}
+
+func loadImage(
+    from asset: PHAsset,
+    targetSize: CGSize = PHImageManagerMaximumSize,
+    resizeMode: PHImageRequestOptionsResizeMode = .none
+) async throws -> UIImage? {
+
     let options = PHImageRequestOptions()
     options.isSynchronous = false
     options.deliveryMode = .highQualityFormat

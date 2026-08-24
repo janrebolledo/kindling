@@ -36,7 +36,9 @@ struct SavedIdea: Identifiable, CardData {
     let representative: CollectionItemWrapper
     let screenshots: [CollectionItemWrapper]
 
-    var id: Int { representative.ideas?.id ?? representative.idea_id }
+    // `collection_items.idea_id` is the canonical link. The nested `ideas`
+    // payload is display data and should not determine grouping.
+    var id: Int { representative.idea_id }
     var local_id: String { representative.local_id }
     var ideas: Item? { representative.ideas }
     var screenshotLocalIDs: [String] {
@@ -58,7 +60,7 @@ func deduplicatedSavedIdeas(_ items: [CollectionItemWrapper]) -> [SavedIdea] {
     var order: [Int] = []
 
     for item in items {
-        let ideaID = item.ideas?.id ?? item.idea_id
+        let ideaID = item.idea_id
         if grouped[ideaID] == nil {
             order.append(ideaID)
         }

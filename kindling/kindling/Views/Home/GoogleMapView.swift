@@ -16,6 +16,8 @@ struct GoogleMapView: UIViewRepresentable {
     let markers: [GoogleMapMarkerData]
     let center: CLLocationCoordinate2D?
     let zoom: Float
+    let centerRequestID: Int
+    let isInteractive: Bool
     let selectedID: Int?
     let onSelect: (Int) -> Void
 
@@ -33,12 +35,19 @@ struct GoogleMapView: UIViewRepresentable {
         options.camera = camera
         let mapView = GMSMapView(options: options)
         mapView.delegate = context.coordinator
+        context.coordinator.lastCenterRequestID = centerRequestID
+        context.coordinator.appliedIsDark = colorScheme == .dark
         mapView.mapStyle = try? GMSMapStyle(jsonString: KindlingMapStyle.json(for: colorScheme))
+        mapView.isUserInteractionEnabled = isInteractive
+        mapView.settings.scrollGestures = isInteractive
+        mapView.settings.zoomGestures = isInteractive
+        mapView.settings.rotateGestures = isInteractive
+        mapView.settings.tiltGestures = isInteractive
         // Apple Maps keeps orientation chrome out of the way until it is useful.
         // The map remains rotatable; we just avoid a permanently visible compass.
         mapView.settings.compassButton = false
         mapView.settings.myLocationButton = false
-        mapView.isMyLocationEnabled = true
+        mapView.isMyLocationEnabled = isInteractive
         mapView.mapType = .normal
         return mapView
     }
@@ -48,42 +57,104 @@ struct GoogleMapView: UIViewRepresentable {
         context.coordinator.hitTargets = markers.map {
             MarkerHitTarget(id: $0.id, coordinate: $0.coordinate)
         }
-        mapView.mapStyle = try? GMSMapStyle(jsonString: KindlingMapStyle.json(for: colorScheme))
-        mapView.clear()
 
-        for markerData in markers {
-            let marker = GMSMarker(position: markerData.coordinate)
-            marker.title = markerData.title
-            marker.userData = markerData.id
-            marker.iconView = MarkerEmojiView(
-                emoji: markerData.emoji,
-                isSelected: selectedID == markerData.id
-            )
-            marker.groundAnchor = CGPoint(x: 0.5, y: 1)
-            marker.zIndex = selectedID == markerData.id ? 1 : 0
-            marker.map = mapView
+        // SwiftUI can call updateUIView for unrelated state changes, such as
+        // an image finishing its load in a sibling view. Re-parsing the style
+        // and rebuilding every overlay on each call causes visible map work
+        // during scrolling and navigation transitions.
+        let isDark = colorScheme == .dark
+        if context.coordinator.appliedIsDark != isDark {
+            mapView.mapStyle = try? GMSMapStyle(jsonString: KindlingMapStyle.json(for: colorScheme))
+            context.coordinator.appliedIsDark = isDark
         }
+
+        context.coordinator.updateMarkers(markers, selectedID: selectedID, on: mapView)
 
         if let center {
             let current = mapView.camera.target
             let moved = abs(current.latitude - center.latitude) > 0.0001
                 || abs(current.longitude - center.longitude) > 0.0001
-            if moved || mapView.camera.zoom != zoom {
+            let requestedAgain = context.coordinator.lastCenterRequestID != centerRequestID
+            if moved || mapView.camera.zoom != zoom || requestedAgain {
                 mapView.animate(to: GMSCameraPosition(
                     latitude: center.latitude,
                     longitude: center.longitude,
                     zoom: zoom
                 ))
             }
+            context.coordinator.lastCenterRequestID = centerRequestID
         }
     }
 
     final class Coordinator: NSObject, GMSMapViewDelegate {
         var onSelect: (Int) -> Void
         fileprivate var hitTargets: [MarkerHitTarget] = []
+        fileprivate var lastCenterRequestID: Int?
+        fileprivate var appliedIsDark: Bool?
+        private var markersByID: [Int: GMSMarker] = [:]
+        private var markerSignatures: [Int: MarkerSignature] = [:]
 
         init(onSelect: @escaping (Int) -> Void) {
             self.onSelect = onSelect
+        }
+
+        func updateMarkers(
+            _ markerData: [GoogleMapMarkerData],
+            selectedID: Int?,
+            on mapView: GMSMapView
+        ) {
+            let incomingIDs = Set(markerData.map(\.id))
+
+            let staleIDs = markersByID.keys.filter { !incomingIDs.contains($0) }
+            for id in staleIDs {
+                markersByID[id]?.map = nil
+                markersByID.removeValue(forKey: id)
+                markerSignatures.removeValue(forKey: id)
+            }
+
+            for data in markerData {
+                let signature = MarkerSignature(
+                    coordinate: data.coordinate,
+                    title: data.title,
+                    emoji: data.emoji,
+                    isSelected: selectedID == data.id
+                )
+
+                if let marker = markersByID[data.id] {
+                    let oldSignature = markerSignatures[data.id]
+                    if oldSignature?.coordinate != signature.coordinate {
+                        marker.position = data.coordinate
+                    }
+                    if oldSignature?.title != signature.title {
+                        marker.title = data.title
+                    }
+                    if oldSignature?.emoji != signature.emoji
+                        || oldSignature?.isSelected != signature.isSelected {
+                        marker.iconView = MarkerEmojiView(
+                            emoji: data.emoji,
+                            isSelected: signature.isSelected
+                        )
+                    }
+                    if oldSignature?.isSelected != signature.isSelected {
+                        marker.zIndex = signature.isSelected ? 1 : 0
+                    }
+                    marker.userData = data.id
+                } else {
+                    let marker = GMSMarker(position: data.coordinate)
+                    marker.title = data.title
+                    marker.userData = data.id
+                    marker.iconView = MarkerEmojiView(
+                        emoji: data.emoji,
+                        isSelected: signature.isSelected
+                    )
+                    marker.groundAnchor = CGPoint(x: 0.5, y: 1)
+                    marker.zIndex = signature.isSelected ? 1 : 0
+                    marker.map = mapView
+                    markersByID[data.id] = marker
+                }
+
+                markerSignatures[data.id] = signature
+            }
         }
 
         func mapView(_ mapView: GMSMapView, didTap marker: GMSMarker) -> Bool {
@@ -121,6 +192,33 @@ struct GoogleMapView: UIViewRepresentable {
 fileprivate struct MarkerHitTarget {
     let id: Int
     let coordinate: CLLocationCoordinate2D
+}
+
+private struct MarkerSignature: Equatable {
+    struct Coordinate: Equatable {
+        let latitude: CLLocationDegrees
+        let longitude: CLLocationDegrees
+    }
+
+    let coordinate: Coordinate
+    let title: String
+    let emoji: String
+    let isSelected: Bool
+
+    init(
+        coordinate: CLLocationCoordinate2D,
+        title: String,
+        emoji: String,
+        isSelected: Bool
+    ) {
+        self.coordinate = Coordinate(
+            latitude: coordinate.latitude,
+            longitude: coordinate.longitude
+        )
+        self.title = title
+        self.emoji = emoji
+        self.isSelected = isSelected
+    }
 }
 
 private enum KindlingMapStyle {
@@ -200,6 +298,8 @@ extension GoogleMapView {
             ],
             center: coordinate,
             zoom: 15,
+            centerRequestID: 0,
+            isInteractive: isInteractive,
             selectedID: nil,
             onSelect: { _ in }
         )

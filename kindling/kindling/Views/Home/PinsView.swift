@@ -13,6 +13,7 @@ import SwiftUI
 
 private let figmaGray = Color(red: 142 / 255, green: 142 / 255, blue: 147 / 255)
 private let homeSectionPreviewLimit = 5
+private let homeSectionPreviewHeight: CGFloat = 250
 
 private struct MappedIdea: Identifiable {
     let item: SavedIdea
@@ -243,6 +244,7 @@ struct PinsView: View {
     @State private var mapCenter: CLLocationCoordinate2D?
     // At this zoom the map is roughly ten miles wide on a standard iPhone.
     @State private var mapZoom: Float = 11.5
+    @State private var centerRequestID = 0
     @State private var hasSetInitialCamera = false
     @State private var mapHeight: CGFloat = 0
     @State private var isLoading = true
@@ -367,6 +369,8 @@ struct PinsView: View {
             },
             center: mapCenter,
             zoom: mapZoom,
+            centerRequestID: centerRequestID,
+            isInteractive: true,
             selectedID: selectedIdeaID,
             onSelect: { selectedIdeaID = $0 }
         )
@@ -595,52 +599,47 @@ struct PinsView: View {
     }
 
     private var discoverySheet: some View {
-        GeometryReader { proxy in
-            ScrollView(.vertical) {
-                // This stack only contains a few sections. Keeping it eager gives
-                // the sheet a stable full content height when sections contain
-                // nested horizontal scrollers.
-                VStack(alignment: .leading, spacing: 28) {
-                    if !nomnomnomItems.isEmpty {
-                        discoverySection(
-                            title: "#nomnomnom",
-                            items: nomnomnomItems,
-                            action: { openSectionPage(.nomnomnom) }
-                        )
-                    }
-
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 18) {
+                if !nomnomnomItems.isEmpty {
                     discoverySection(
-                        title: "Things Near You",
-                        items: filteredLocationItems,
-                        action: { openSectionPage(.nearby) }
+                        title: "#nomnomnom",
+                        items: nomnomnomItems,
+                        action: { openSectionPage(.nomnomnom) }
                     )
-
-                    if !filteredEventItems.isEmpty {
-                        discoverySection(
-                            title: "events this week",
-                            items: filteredEventItems,
-                            action: { openSectionPage(.events) }
-                        )
-                    }
                 }
-                .opacity(isDiscoverySheetCollapsed ? 0 : 1)
-                .allowsHitTesting(!isDiscoverySheetCollapsed)
-                .accessibilityHidden(isDiscoverySheetCollapsed)
-                .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .top)
-                .padding(.top, 20)
-                .padding(.bottom, 16)
+
+                discoverySection(
+                    title: "Things Near You",
+                    items: filteredLocationItems,
+                    action: { openSectionPage(.nearby) }
+                )
+
+                if !filteredEventItems.isEmpty {
+                    discoverySection(
+                        title: "events this week",
+                        items: filteredEventItems,
+                        action: { openSectionPage(.events) }
+                    )
+                }
             }
-            .frame(maxWidth: .infinity)
-            .background(Color.clear)
-            .scrollDisabled(discoveryDetent != .large)
-            .scrollIndicators(.hidden)
-            .scrollEdgeEffectStyle(.soft, for: .top)
-            .safeAreaBar(edge: .top, spacing: 0) {
-                searchBar
-                    .padding(.horizontal, 20)
-                    .padding(.top, 18)
-                    .padding(.bottom, 12)
-            }
+            .opacity(isDiscoverySheetCollapsed ? 0 : 1)
+            .allowsHitTesting(!isDiscoverySheetCollapsed)
+            .accessibilityHidden(isDiscoverySheetCollapsed)
+            .frame(maxWidth: .infinity, alignment: .top)
+            .padding(.top, 20)
+            .padding(.bottom, 16)
+        }
+        .frame(maxWidth: .infinity)
+        .background(Color.clear)
+        .scrollDisabled(discoveryDetent != .large)
+        .scrollIndicators(.hidden)
+        .scrollEdgeEffectStyle(.soft, for: .top)
+        .safeAreaBar(edge: .top, spacing: 0) {
+            searchBar
+                .padding(.horizontal, 20)
+                .padding(.top, 18)
+                .padding(.bottom, 12)
         }
     }
 
@@ -693,7 +692,7 @@ struct PinsView: View {
         items: [SavedIdea],
         action: @escaping () -> Void
     ) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 10) {
             Button(action: action) {
                 HStack(spacing: 7) {
                     Text(title)
@@ -729,6 +728,7 @@ struct PinsView: View {
                     .padding(.horizontal, 20)
                 }
                 .scrollIndicators(.hidden)
+                .frame(height: homeSectionPreviewHeight)
             }
         }
     }
@@ -864,6 +864,7 @@ struct PinsView: View {
     ) {
         withAnimation(.easeInOut(duration: 0.45)) {
             mapZoom = 14
+            centerRequestID += 1
             mapCenter = cameraCenter(for: mapped.coordinate, zoom: mapZoom)
             selectedIdeaID = mapped.id
         }
@@ -951,6 +952,7 @@ struct PinsView: View {
         hasSetInitialCamera = true
         withAnimation(.easeInOut(duration: 0.45)) {
             mapZoom = 11.5
+            centerRequestID += 1
             mapCenter = cameraCenter(for: coordinate, zoom: mapZoom)
         }
     }

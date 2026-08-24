@@ -6,7 +6,7 @@ import DownloadButton from '../../components/DownloadButton.astro';
 import ShareDock from '../../components/ShareDock.astro';
 import Footer from '../../components/Footer.astro';
 import { fetchSharedIdea } from '../../lib/api';
-import { formatSavedOn } from '../../lib/openStatus';
+import { formatSavedOn, resolvePlaceStatus } from '../../lib/openStatus';
 
 const id = Astro.params.id ?? '';
 const idea = await fetchSharedIdea(Astro.locals.runtime.env.API, id);
@@ -15,12 +15,23 @@ if (!idea) {
   Astro.response.status = 404;
 }
 
-const venue = idea?.name ?? 'Untitled';
+const venue = idea?.place?.name ?? idea?.name ?? 'Untitled';
 const title = idea ? `${venue} · kindling` : 'kindling';
 const description = idea?.description || 'saved with kindling.';
+const googleMediaUrl = idea?.place?.photoUrl ?? idea?.media_url;
+const placeStatus = idea?.place
+  ? resolvePlaceStatus(idea.place.weekdayDescriptions, idea.place.openNow)
+  : null;
+const hasMap = Boolean(
+  idea?.place?.latitude != null
+    && idea.place.longitude != null,
+);
+const mapEmbedUrl = hasMap
+  ? `https://www.google.com/maps?q=${idea?.place?.latitude},${idea?.place?.longitude}&z=15&output=embed`
+  : null;
 ---
 
-<Layout title={title} description={description} image={idea?.media_url}>
+<Layout title={title} description={description} image={googleMediaUrl}>
   {
     !idea ? (
       <div class='flex min-h-dvh flex-col items-center justify-center px-6 text-center'>
@@ -40,9 +51,9 @@ const description = idea?.description || 'saved with kindling.';
     ) : (
       <div class='mx-auto flex min-h-dvh w-full max-w-[402px] flex-col bg-white'>
         <div class='relative h-[487px] w-full overflow-hidden'>
-          {idea.media_url ? (
+          {googleMediaUrl ? (
             <img
-              src={idea.media_url}
+              src={googleMediaUrl}
               alt=''
               width={804}
               height={974}
@@ -61,30 +72,93 @@ const description = idea?.description || 'saved with kindling.';
           <h1 class='text-[32px] font-medium tracking-[-0.8px] text-black'>
             {venue}
           </h1>
-          {(idea.location_type || idea.location_emoji || idea.duration) && (
+          {(placeStatus || idea.location_type || idea.location_emoji || idea.duration) && (
             <div class='flex items-center gap-2 text-[16px] tracking-[-0.4px] text-muted'>
-              {(idea.location_emoji || idea.location_type) && (
+              {placeStatus ? (
+                <>
+                  <span class='font-medium'>{placeStatus.isOpen ? 'Open' : 'Closed'}</span>
+                  <span>{placeStatus.detail}</span>
+                </>
+              ) : (idea.location_emoji || idea.location_type) ? (
                 <span class='font-medium'>
                   {[idea.location_emoji, idea.location_type]
                     .filter(Boolean)
                     .join(' ')}
                 </span>
-              )}
-              {idea.duration && <span>{idea.duration}</span>}
+              ) : null}
+              {!placeStatus && idea.duration && <span>{idea.duration}</span>}
             </div>
           )}
         </div>
 
-        {idea.description && (
+        {(idea.name || idea.description) && (
           <div class='mx-4 mt-2 flex flex-col gap-2.5 rounded-xl bg-surface px-2 py-2.5'>
             <p class='text-[14px] font-medium tracking-[-0.35px] text-muted'>
               highlights
             </p>
-            <p class='text-[14px] font-medium tracking-[-0.35px] text-muted'>
-              {idea.description}
-            </p>
+            {idea.name && (
+              <p class='text-[16px] font-medium tracking-[-0.4px] text-black'>
+                {idea.name}
+              </p>
+            )}
+            {idea.description && (
+              <p class='text-[14px] font-medium tracking-[-0.35px] text-muted'>
+                {idea.description}
+              </p>
+            )}
           </div>
         )}
+
+        {idea.place?.weekdayDescriptions.length ? (
+          <div class='mx-4 mt-8 flex flex-col gap-3 px-2'>
+            <p class='text-[14px] font-medium tracking-[-0.35px] text-muted'>hours</p>
+            <div class='flex flex-col gap-3'>
+              {idea.place.weekdayDescriptions.map((row) => {
+                const [day, ...hours] = row.split(':');
+                return (
+                  <div class='flex items-start text-[16px] tracking-[-0.4px]'>
+                    <span class='w-[127px] shrink-0 text-black'>{day}</span>
+                    <span class='text-muted'>{hours.join(':').trim()}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {hasMap && mapEmbedUrl ? (
+          <div class='mx-[13px] mt-8 overflow-hidden rounded-3xl'>
+            <div class='relative h-[203px]'>
+              <iframe
+                title={`Google Maps location for ${venue}`}
+                src={mapEmbedUrl}
+                loading='lazy'
+                referrerpolicy='no-referrer-when-downgrade'
+                class='absolute inset-0 size-full border-0'
+              />
+              {idea.place?.googleMapsUri && (
+                <a
+                  href={idea.place.googleMapsUri}
+                  target='_blank'
+                  rel='noreferrer'
+                  class='absolute right-4 top-4 rounded-full bg-black/25 px-3 py-2 text-[16px] font-medium text-white backdrop-blur-sm'
+                >
+                  open in Maps ↗
+                </a>
+              )}
+            </div>
+            {idea.place.formattedAddress && (
+              <a
+                href={idea.place.googleMapsUri ?? mapEmbedUrl}
+                target='_blank'
+                rel='noreferrer'
+                class='block bg-surface px-3 py-2 text-[14px] font-medium tracking-[-0.35px] text-muted'
+              >
+                {idea.place.formattedAddress}
+              </a>
+            )}
+          </div>
+        ) : null}
 
         <div class='mt-8 flex flex-col items-center gap-1.5 px-4 text-center text-[16px] tracking-[-0.4px]'>
           <p class='text-muted'>Saved on</p>
