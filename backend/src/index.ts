@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { cors } from 'hono/cors';
+import { cachedJSON } from './cache';
 import { createAI, createSupabase } from './clients';
 import { userFromBearerToken, wipeAccount } from './deleteAccount';
 import { processEntry } from './ideas';
@@ -48,7 +49,7 @@ app.get('/places/:id', async (c) => {
     PUBLIC_API_URL: c.env.PUBLIC_API_URL,
   });
   if (!place) return c.json({ error: 'Place not found' }, 404);
-  c.header('Cache-Control', 'public, max-age=300');
+  c.header('Cache-Control', 'public, max-age=300, s-maxage=300');
   return c.json(place);
 });
 
@@ -78,30 +79,41 @@ app.post('/routes', async (c) => {
   }
 
   const travelMode = body.travelMode ?? 'DRIVE';
-  const response = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Goog-Api-Key': c.env.GOOGLE_MAPS_API_KEY,
-      'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters',
+  let upstreamFailed = false;
+  const route = await cachedJSON(
+    'google-routes',
+    JSON.stringify({ origin, destination, travelMode }),
+    60,
+    async () => {
+      const response = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': c.env.GOOGLE_MAPS_API_KEY,
+          'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters',
+        },
+        body: JSON.stringify({
+          origin: { location: { latLng: origin } },
+          destination: { location: { latLng: destination } },
+          travelMode,
+          ...(travelMode === 'DRIVE' ? { routingPreference: 'TRAFFIC_AWARE' } : {}),
+        }),
+      });
+
+      if (!response.ok) {
+        upstreamFailed = true;
+        log('google_routes.request_failed', { status: response.status });
+        return null;
+      }
+
+      const data = await response.json() as {
+        routes?: Array<{ duration?: string; distanceMeters?: number }>;
+      };
+      return data.routes?.[0] ?? null;
     },
-    body: JSON.stringify({
-      origin: { location: { latLng: origin } },
-      destination: { location: { latLng: destination } },
-      travelMode,
-      ...(travelMode === 'DRIVE' ? { routingPreference: 'TRAFFIC_AWARE' } : {}),
-    }),
-  });
+  );
 
-  if (!response.ok) {
-    log('google_routes.request_failed', { status: response.status });
-    return c.json({ error: 'Route unavailable' }, 502);
-  }
-
-  const data = await response.json() as {
-    routes?: Array<{ duration?: string; distanceMeters?: number }>;
-  };
-  const route = data.routes?.[0];
+  if (upstreamFailed) return c.json({ error: 'Route unavailable' }, 502);
   return route ? c.json(route) : c.json({ error: 'Route unavailable' }, 404);
 });
 
@@ -145,7 +157,9 @@ app.get('/share/:id', async (c) => {
     logError('share.open_record_failed', err, { idea_id: id });
   }
 
-  c.header('Cache-Control', 'public, max-age=60');
+  // The payload is public, but the request has an analytics side effect. Do
+  // not let a browser or shared CDN cache suppress recordShareOpen calls.
+  c.header('Cache-Control', 'private, no-store');
   return c.json({ ...idea, place });
 });
 

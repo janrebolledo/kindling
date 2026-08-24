@@ -14,6 +14,7 @@ import SwiftUI
 private let figmaGray = Color(red: 142 / 255, green: 142 / 255, blue: 147 / 255)
 private let homeSectionPreviewLimit = 5
 private let homeSectionPreviewHeight: CGFloat = 250
+private let nearbyRadiusMiles = 20.0
 
 private struct MappedIdea: Identifiable {
     let item: SavedIdea
@@ -187,9 +188,11 @@ struct KindlingTranslucentSheetBackground: View {
 }
 
 private enum SheetSectionDestination: Hashable, Identifiable {
-    case nomnomnom
+    case food
     case nearby
     case events
+    case allSavedPlaces
+    case pastEvents
 
     var id: Self { self }
 }
@@ -262,8 +265,12 @@ struct PinsView: View {
         deduplicatedSavedIdeas(
             collections
                 .flatMap { $0.collection_items ?? [] }
-                .filter { $0.ideas?.type?.lowercased() != "event" }
+                .filter { !isEvent($0) }
         )
+    }
+
+    private var foodItems: [SavedIdea] {
+        filter(allLocationItems.filter { isFood($0) })
     }
 
     private var visibleIdeas: [MappedIdea] {
@@ -273,20 +280,6 @@ struct PinsView: View {
             return [idea?.name, idea?.location_type]
                 .contains { $0?.lowercased().contains(query) == true }
         }
-    }
-
-    private var nomnomnomCollection: CollectionWrapper? {
-        collections.first { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "nomnomnom" }
-    }
-
-    private var nomnomnomItems: [SavedIdea] {
-        guard let collection = nomnomnomCollection else { return [] }
-        return filter(locationItems(for: collection, applyingSearch: false))
-    }
-
-    private var allNomnomnomItems: [SavedIdea] {
-        guard let collection = nomnomnomCollection else { return [] }
-        return locationItems(for: collection, applyingSearch: false)
     }
 
     var body: some View {
@@ -321,8 +314,8 @@ struct PinsView: View {
             locationManager.requestLocation()
             await loadCollections()
             await screenshotIndexing.scan()
-            // Refresh ideas created by the scan, then resolve a bounded batch
-            // of Google Place IDs for the map.
+            // Refresh ideas created by the scan, then resolve all saved place
+            // IDs so nearby results can be complete and accurately ranked.
             await loadCollections()
             await resolveMissingPlaces()
         }
@@ -372,7 +365,8 @@ struct PinsView: View {
             centerRequestID: centerRequestID,
             isInteractive: true,
             selectedID: selectedIdeaID,
-            onSelect: { selectedIdeaID = $0 }
+            onSelect: { selectedIdeaID = $0 },
+            onDeselect: { selectedIdeaID = nil }
         )
         .background {
             GeometryReader { proxy in
@@ -562,27 +556,43 @@ struct PinsView: View {
     @ViewBuilder
     private func sectionPage(_ destination: SheetSectionDestination) -> some View {
         switch destination {
-        case .nomnomnom:
+        case .food:
             SectionDetailView(
                 title: "#nomnomnom",
-                subtitle: subtitle(for: allNomnomnomItems),
-                items: allNomnomnomItems,
+                subtitle: "food you saved.",
+                items: foodItems,
                 onBack: dismissSectionPage,
                 onSelect: showIdeaInSheet
             )
         case .nearby:
             SectionDetailView(
-                title: "Things Near You",
-                subtitle: "places near you",
-                items: filteredLocationItems,
+                title: "things near you",
+                subtitle: "within 20 miles, closest first",
+                items: nearbyLocationItems,
                 onBack: dismissSectionPage,
                 onSelect: showIdeaInSheet
             )
         case .events:
             SectionDetailView(
-                title: "events this week",
-                subtitle: "what’s happening this week",
+                title: "events coming up in the calendar week",
+                subtitle: "upcoming events this week",
                 items: filteredEventItems,
+                onBack: dismissSectionPage,
+                onSelect: showIdeaInSheet
+            )
+        case .allSavedPlaces:
+            SectionDetailView(
+                title: "all saved places",
+                subtitle: "every place you saved",
+                items: filteredLocationItems,
+                onBack: dismissSectionPage,
+                onSelect: showIdeaInSheet
+            )
+        case .pastEvents:
+            SectionDetailView(
+                title: "past events",
+                subtitle: "events you saved that have passed",
+                items: pastEventItems,
                 onBack: dismissSectionPage,
                 onSelect: showIdeaInSheet
             )
@@ -601,25 +611,39 @@ struct PinsView: View {
     private var discoverySheet: some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 18) {
-                if !nomnomnomItems.isEmpty {
+                if !foodItems.isEmpty {
                     discoverySection(
                         title: "#nomnomnom",
-                        items: nomnomnomItems,
-                        action: { openSectionPage(.nomnomnom) }
+                        items: foodItems,
+                        action: { openSectionPage(.food) }
                     )
                 }
 
                 discoverySection(
-                    title: "Things Near You",
-                    items: filteredLocationItems,
+                    title: "things near you",
+                    items: nearbyLocationItems,
                     action: { openSectionPage(.nearby) }
                 )
 
                 if !filteredEventItems.isEmpty {
                     discoverySection(
-                        title: "events this week",
+                        title: "events coming up in the calendar week",
                         items: filteredEventItems,
                         action: { openSectionPage(.events) }
+                    )
+                }
+
+                discoverySection(
+                    title: "all saved places",
+                    items: filteredLocationItems,
+                    action: { openSectionPage(.allSavedPlaces) }
+                )
+
+                if !pastEventItems.isEmpty {
+                    discoverySection(
+                        title: "past events",
+                        items: pastEventItems,
+                        action: { openSectionPage(.pastEvents) }
                     )
                 }
             }
@@ -651,22 +675,41 @@ struct PinsView: View {
         filter(allLocationItems)
     }
 
-    private func locationItems(
-        for collection: CollectionWrapper,
-        applyingSearch: Bool
-    ) -> [SavedIdea] {
-        let items = deduplicatedSavedIdeas((collection.collection_items ?? []).filter {
-            $0.ideas?.type?.lowercased() != "event"
-        })
-        return applyingSearch ? filter(items) : items
+    private var nearbyLocationItems: [SavedIdea] {
+        guard let userLocation = locationManager.location else { return [] }
+
+        let coordinatesByIdeaID = Dictionary(
+            mappedIdeas.map { ($0.id, $0.coordinate) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let radiusMeters = nearbyRadiusMiles * 1_609.344
+
+        let nearby = allLocationItems.compactMap { item -> (item: SavedIdea, distance: CLLocationDistance)? in
+            guard let coordinate = coordinatesByIdeaID[item.id] else { return nil }
+            let distance = userLocation.distance(
+                from: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+            )
+            guard distance <= radiusMeters else { return nil }
+            return (item, distance)
+        }
+
+        return filter(nearby.sorted { $0.distance < $1.distance }.map { $0.item })
     }
 
     private var filteredEventItems: [SavedIdea] {
         let events = deduplicatedSavedIdeas(
             collections.flatMap { $0.collection_items ?? [] }
-                .filter { $0.ideas?.type?.lowercased() == "event" }
+                .filter { isEvent($0) }
         )
-        return filter(events)
+        return filter(sortedEvents(events, ascending: true).filter(isUpcomingEvent))
+    }
+
+    private var pastEventItems: [SavedIdea] {
+        let events = deduplicatedSavedIdeas(
+            collections.flatMap { $0.collection_items ?? [] }
+                .filter { isEvent($0) }
+        )
+        return filter(sortedEvents(events, ascending: false).filter(isPastEvent))
     }
 
     private func filter(_ items: [SavedIdea]) -> [SavedIdea] {
@@ -678,13 +721,101 @@ struct PinsView: View {
         }
     }
 
-    private func subtitle(for items: [SavedIdea]) -> String {
-        let types = items.compactMap { $0.ideas?.type?.lowercased() }
-        let foodCount = types.filter { $0 == "food" }.count
-        if !types.isEmpty && foodCount * 2 >= types.count {
-            return "tasty things you saved."
+    private func isFood(_ item: SavedIdea) -> Bool {
+        item.ideas?.type?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "food"
+    }
+
+    private func isEvent(_ item: SavedIdea) -> Bool {
+        item.ideas?.type?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "event"
+    }
+
+    private func isEvent(_ item: CollectionItemWrapper) -> Bool {
+        item.ideas?.type?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "event"
+    }
+
+    private struct ParsedEventDate {
+        let date: Date
+        let hasTime: Bool
+    }
+
+    private func parsedEventDate(for item: SavedIdea) -> ParsedEventDate? {
+        guard let dateString = item.ideas?.date?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !dateString.isEmpty else { return nil }
+
+        let timeString = item.ideas?.time?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let dateFormats = ["yyyy-MM-dd", "MM/dd/yyyy", "MMMM d, yyyy", "MMM d, yyyy"]
+        let timeFormats = ["h:mm a", "h a", "HH:mm"]
+        let locale = Locale(identifier: "en_US_POSIX")
+
+        if let timeString, !timeString.isEmpty {
+            for dateFormat in dateFormats {
+                for timeFormat in timeFormats {
+                    let parser = DateFormatter()
+                    parser.locale = locale
+                    parser.calendar = Calendar.current
+                    parser.dateFormat = "\(dateFormat) \(timeFormat)"
+                    if let date = parser.date(from: "\(dateString) \(timeString)") {
+                        return ParsedEventDate(date: date, hasTime: true)
+                    }
+                }
+            }
         }
-        return "things you saved."
+
+        for dateFormat in dateFormats {
+            let parser = DateFormatter()
+            parser.locale = locale
+            parser.calendar = Calendar.current
+            parser.dateFormat = dateFormat
+            if let date = parser.date(from: dateString) {
+                return ParsedEventDate(date: date, hasTime: false)
+            }
+        }
+
+        return nil
+    }
+
+    private var currentCalendarWeek: DateInterval {
+        Calendar.current.dateInterval(of: .weekOfYear, for: Date())
+            ?? DateInterval(start: Calendar.current.startOfDay(for: Date()), duration: 7 * 24 * 60 * 60)
+    }
+
+    private func isUpcomingEvent(_ item: SavedIdea) -> Bool {
+        guard let parsed = parsedEventDate(for: item) else { return false }
+        let calendar = Calendar.current
+        let now = Date()
+        let today = calendar.startOfDay(for: now)
+        let eventDay = calendar.startOfDay(for: parsed.date)
+        let week = currentCalendarWeek
+
+        guard eventDay >= today, eventDay < week.end else { return false }
+        return !parsed.hasTime || parsed.date >= now
+    }
+
+    private func isPastEvent(_ item: SavedIdea) -> Bool {
+        guard let parsed = parsedEventDate(for: item) else { return false }
+        let calendar = Calendar.current
+        let now = Date()
+        let today = calendar.startOfDay(for: now)
+        let eventDay = calendar.startOfDay(for: parsed.date)
+
+        return eventDay < today || (eventDay == today && parsed.hasTime && parsed.date < now)
+    }
+
+    private func sortedEvents(_ items: [SavedIdea], ascending: Bool) -> [SavedIdea] {
+        items.sorted { lhs, rhs in
+            let lhsDate = parsedEventDate(for: lhs)?.date
+            let rhsDate = parsedEventDate(for: rhs)?.date
+            switch (lhsDate, rhsDate) {
+            case let (left?, right?):
+                return ascending ? left < right : left > right
+            case (nil, _?):
+                return false
+            case (_?, nil):
+                return true
+            case (nil, nil):
+                return false
+            }
+        }
     }
 
     private func discoverySection(
@@ -910,9 +1041,7 @@ struct PinsView: View {
             item.ideas?.place_id != nil
         }
 
-        var resolvedThisPass = 0
         for item in candidates {
-            guard resolvedThisPass < 6 else { break }
             let ideaID = item.id
             guard !mappedIdeas.contains(where: { $0.id == ideaID }),
                   !resolvingIdeaIDs.contains(ideaID),
@@ -920,13 +1049,6 @@ struct PinsView: View {
 
             resolvingIdeaIDs.insert(ideaID)
             defer { resolvingIdeaIDs.remove(ideaID) }
-            resolvedThisPass += 1
-
-            // A small gap plus a six-item batch keeps the map responsive while
-            // Google Place details are resolving.
-            if resolvedThisPass > 1 {
-                try? await Task.sleep(nanoseconds: 200_000_000)
-            }
 
             guard let place = await resolvePlace(for: item) else {
                 failedIdeaIDs.insert(ideaID)

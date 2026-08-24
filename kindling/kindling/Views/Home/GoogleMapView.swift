@@ -20,9 +20,10 @@ struct GoogleMapView: UIViewRepresentable {
     let isInteractive: Bool
     let selectedID: Int?
     let onSelect: (Int) -> Void
+    let onDeselect: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onSelect: onSelect)
+        Coordinator(onSelect: onSelect, onDeselect: onDeselect)
     }
 
     func makeUIView(context: Context) -> GMSMapView {
@@ -54,8 +55,13 @@ struct GoogleMapView: UIViewRepresentable {
 
     func updateUIView(_ mapView: GMSMapView, context: Context) {
         context.coordinator.onSelect = onSelect
+        context.coordinator.onDeselect = onDeselect
         context.coordinator.hitTargets = markers.map {
-            MarkerHitTarget(id: $0.id, coordinate: $0.coordinate)
+            MarkerHitTarget(
+                id: $0.id,
+                coordinate: $0.coordinate,
+                isSelected: selectedID == $0.id
+            )
         }
 
         // SwiftUI can call updateUIView for unrelated state changes, such as
@@ -88,14 +94,16 @@ struct GoogleMapView: UIViewRepresentable {
 
     final class Coordinator: NSObject, GMSMapViewDelegate {
         var onSelect: (Int) -> Void
+        var onDeselect: () -> Void
         fileprivate var hitTargets: [MarkerHitTarget] = []
         fileprivate var lastCenterRequestID: Int?
         fileprivate var appliedIsDark: Bool?
         private var markersByID: [Int: GMSMarker] = [:]
         private var markerSignatures: [Int: MarkerSignature] = [:]
 
-        init(onSelect: @escaping (Int) -> Void) {
+        init(onSelect: @escaping (Int) -> Void, onDeselect: @escaping () -> Void) {
             self.onSelect = onSelect
+            self.onDeselect = onDeselect
         }
 
         func updateMarkers(
@@ -138,6 +146,10 @@ struct GoogleMapView: UIViewRepresentable {
                     if oldSignature?.isSelected != signature.isSelected {
                         marker.zIndex = signature.isSelected ? 1 : 0
                     }
+                    marker.groundAnchor = CGPoint(
+                        x: 0.5,
+                        y: MarkerInteractionMetrics.groundAnchorY
+                    )
                     marker.userData = data.id
                 } else {
                     let marker = GMSMarker(position: data.coordinate)
@@ -147,7 +159,10 @@ struct GoogleMapView: UIViewRepresentable {
                         emoji: data.emoji,
                         isSelected: signature.isSelected
                     )
-                    marker.groundAnchor = CGPoint(x: 0.5, y: 1)
+                    marker.groundAnchor = CGPoint(
+                        x: 0.5,
+                        y: MarkerInteractionMetrics.groundAnchorY
+                    )
                     marker.zIndex = signature.isSelected ? 1 : 0
                     marker.map = mapView
                     markersByID[data.id] = marker
@@ -168,23 +183,49 @@ struct GoogleMapView: UIViewRepresentable {
         // rendered bounds. Treat a nearby map tap as a pin tap as well so the
         // emoji does not need pixel-perfect targeting.
         func mapView(_ mapView: GMSMapView, didTapAt coordinate: CLLocationCoordinate2D) {
+            selectNearestMarker(at: coordinate, on: mapView)
+        }
+
+        private func selectNearestMarker(
+            at coordinate: CLLocationCoordinate2D,
+            on mapView: GMSMapView
+        ) {
             let tapPoint = mapView.projection.point(for: coordinate)
             var nearestID: Int?
             var nearestDistance = CGFloat.greatestFiniteMagnitude
 
             for target in hitTargets {
                 let markerPoint = mapView.projection.point(for: target.coordinate)
-                let dx = markerPoint.x - tapPoint.x
-                let dy = markerPoint.y - tapPoint.y
+                let hitCenter = CGPoint(
+                    x: markerPoint.x,
+                    y: markerPoint.y + target.hitCenterOffsetY
+                )
+                let dx = hitCenter.x - tapPoint.x
+                let dy = hitCenter.y - tapPoint.y
                 let distance = sqrt(dx * dx + dy * dy)
-                guard distance <= 34, distance < nearestDistance else { continue }
+                guard distance <= MarkerInteractionMetrics.fallbackHitRadius,
+                      distance < nearestDistance else { continue }
                 nearestID = target.id
                 nearestDistance = distance
             }
 
             if let nearestID {
                 onSelect(nearestID)
+            } else {
+                onDeselect()
             }
+        }
+
+        func mapView(
+            _ mapView: GMSMapView,
+            didTapPOIWithPlaceID placeID: String,
+            name: String,
+            location: CLLocationCoordinate2D
+        ) {
+            // Google can route taps on map POIs here instead of didTapAt. Run
+            // the same nearby-marker check so a POI label cannot steal a tap
+            // from a pin sitting beside it.
+            selectNearestMarker(at: location, on: mapView)
         }
     }
 }
@@ -192,6 +233,23 @@ struct GoogleMapView: UIViewRepresentable {
 fileprivate struct MarkerHitTarget {
     let id: Int
     let coordinate: CLLocationCoordinate2D
+    let hitCenterOffsetY: CGFloat
+
+    init(id: Int, coordinate: CLLocationCoordinate2D, isSelected: Bool) {
+        self.id = id
+        self.coordinate = coordinate
+        let hitSize = isSelected
+            ? MarkerInteractionMetrics.selectedHitSize
+            : MarkerInteractionMetrics.hitSize
+        self.hitCenterOffsetY = (0.5 - MarkerInteractionMetrics.groundAnchorY) * hitSize
+    }
+}
+
+private enum MarkerInteractionMetrics {
+    static let hitSize: CGFloat = 72
+    static let selectedHitSize: CGFloat = 72
+    static let fallbackHitRadius: CGFloat = 38
+    static let groundAnchorY: CGFloat = 0.875
 }
 
 private struct MarkerSignature: Equatable {
@@ -301,7 +359,8 @@ extension GoogleMapView {
             centerRequestID: 0,
             isInteractive: isInteractive,
             selectedID: nil,
-            onSelect: { _ in }
+            onSelect: { _ in },
+            onDeselect: {}
         )
     }
 }
@@ -310,7 +369,7 @@ private final class MarkerEmojiView: UIView {
     init(emoji: String, isSelected: Bool) {
         // Keep the visible pin compact while giving Google Maps a forgiving
         // touch target around it.
-        let hitSize: CGFloat = isSelected ? 58 : 54
+        let hitSize = MarkerInteractionMetrics.hitSize
         let visibleSize: CGFloat = isSelected ? 50 : 42
         super.init(frame: CGRect(x: 0, y: 0, width: hitSize, height: hitSize))
         backgroundColor = .clear

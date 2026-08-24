@@ -87,6 +87,7 @@ actor GooglePlacesService {
 
     func details(for placeID: String) async -> GooglePlaceDetails? {
         if let cached = placeCache[placeID] { return cached }
+
         let url = backendBaseURL.appendingPathComponent("places").appendingPathComponent(placeID)
 
         do {

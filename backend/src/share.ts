@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { cachedJSON } from './cache';
 import type { SharedIdea } from './types';
 
 const SHARE_COLUMNS =
@@ -24,33 +25,35 @@ export async function getSharedIdea(
   supabase: SupabaseClient,
   id: number,
 ): Promise<SharedIdea | null> {
-  const result = await supabase
-    .from('ideas')
-    .select(SHARE_COLUMNS)
-    .eq('id', id)
-    .maybeSingle();
-
-  if (result.error && isSchemaMismatch(result.error)) {
-    const compatible = await supabase
+  return cachedJSON('shared-ideas', String(id), 60, async () => {
+    const result = await supabase
       .from('ideas')
-      .select(COMPATIBLE_SHARE_COLUMNS)
+      .select(SHARE_COLUMNS)
       .eq('id', id)
       .maybeSingle();
 
-    if (compatible.error) throw compatible.error;
-    if (compatible.data == null) return null;
+    if (result.error && isSchemaMismatch(result.error)) {
+      const compatible = await supabase
+        .from('ideas')
+        .select(COMPATIBLE_SHARE_COLUMNS)
+        .eq('id', id)
+        .maybeSingle();
 
-    return {
-      ...compatible.data,
-      location_emoji: null,
-      date: null,
-      time: null,
-    };
-  }
+      if (compatible.error) throw compatible.error;
+      if (compatible.data == null) return null;
 
-  if (result.error) throw result.error;
-  if (result.data == null) return null;
-  return result.data;
+      return {
+        ...compatible.data,
+        location_emoji: null,
+        date: null,
+        time: null,
+      };
+    }
+
+    if (result.error) throw result.error;
+    if (result.data == null) return null;
+    return result.data;
+  });
 }
 
 /** Records a public share-link open for every account that owns the idea. */

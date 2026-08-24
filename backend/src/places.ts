@@ -1,4 +1,5 @@
 import type { MapsPlace } from './types';
+import { cachedJSON, cachedResponse } from './cache';
 import { log, logError } from './log';
 
 export type GoogleMapsCredentials = {
@@ -109,41 +110,43 @@ export async function lookupPlace(
 
   try {
     log('google_places.search_request', logContext);
-    const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
-      method: 'POST',
-      headers: googleHeaders(credentials, 'places.id,places.photos'),
-      body: JSON.stringify({ textQuery: query, maxResultCount: 1 }),
-    });
+    return await cachedJSON('google-places-search', fingerprint, 86400, async () => {
+      const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
+        method: 'POST',
+        headers: googleHeaders(credentials, 'places.id,places.photos'),
+        body: JSON.stringify({ textQuery: query, maxResultCount: 1 }),
+      });
 
-    if (!response.ok) {
+      if (!response.ok) {
+        log('google_places.search_response', {
+          ...logContext,
+          status: response.status,
+          status_text: response.statusText,
+          content_type: responseContentType(response),
+          body_preview: await responseBodyPreview(response),
+          ms: Date.now() - started,
+        });
+        return null;
+      }
+
+      const data = (await response.json()) as GooglePlaceSearchResponse;
+      const result = data.places?.[0];
+      const placeId = result?.id;
       log('google_places.search_response', {
         ...logContext,
         status: response.status,
-        status_text: response.statusText,
-        content_type: responseContentType(response),
-        body_preview: await responseBodyPreview(response),
+        result_count: data.places?.length ?? 0,
+        has_photo: Boolean(result?.photos?.[0]?.name),
         ms: Date.now() - started,
       });
-      return null;
-    }
 
-    const data = (await response.json()) as GooglePlaceSearchResponse;
-    const result = data.places?.[0];
-    const placeId = result?.id;
-    log('google_places.search_response', {
-      ...logContext,
-      status: response.status,
-      result_count: data.places?.length ?? 0,
-      has_photo: Boolean(result?.photos?.[0]?.name),
-      ms: Date.now() - started,
+      return placeId
+        ? {
+            place: { id: placeId },
+            image: result?.photos?.[0]?.name ? photoURL(placeId, credentials) : null,
+          }
+        : null;
     });
-
-    return placeId
-      ? {
-          place: { id: placeId },
-          image: result?.photos?.[0]?.name ? photoURL(placeId, credentials) : null,
-        }
-      : null;
   } catch (err) {
     logError('google_places.search_failed', err, { ...logContext, ms: Date.now() - started });
     return null;
@@ -154,62 +157,66 @@ export async function getPlaceDetails(
   placeId: string,
   credentials: GoogleMapsCredentials,
 ): Promise<PlaceDetails | null> {
-  const response = await fetch(
-    `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`,
-    {
-      headers: googleHeaders(
-        credentials,
-        'id,displayName,location,formattedAddress,regularOpeningHours,currentOpeningHours,photos,googleMapsUri',
-      ),
-    },
-  );
+  return cachedJSON('google-place-details', placeId, 300, async () => {
+    const response = await fetch(
+      `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`,
+      {
+        headers: googleHeaders(
+          credentials,
+          'id,displayName,location,formattedAddress,regularOpeningHours,currentOpeningHours,photos,googleMapsUri',
+        ),
+      },
+    );
 
-  if (!response.ok) return null;
-  const place = (await response.json()) as GooglePlaceResponse;
-  if (!place.id) return null;
+    if (!response.ok) return null;
+    const place = (await response.json()) as GooglePlaceResponse;
+    if (!place.id) return null;
 
-  return {
-    id: place.id,
-    name: place.displayName?.text ?? null,
-    latitude: place.location?.latitude ?? null,
-    longitude: place.location?.longitude ?? null,
-    formattedAddress: place.formattedAddress ?? null,
-    weekdayDescriptions:
-      place.regularOpeningHours?.weekdayDescriptions
-      ?? place.currentOpeningHours?.weekdayDescriptions
-      ?? [],
-    openNow: place.currentOpeningHours?.openNow ?? null,
-    photoUrl: place.photos?.[0]?.name ? photoURL(place.id, credentials) : null,
-    photoAttributions: (place.photos?.[0]?.authorAttributions ?? [])
-      .map((attribution) => attribution.displayName ?? attribution.uri ?? '')
-      .filter(Boolean),
-    googleMapsUri: place.googleMapsUri ?? null,
-  };
+    return {
+      id: place.id,
+      name: place.displayName?.text ?? null,
+      latitude: place.location?.latitude ?? null,
+      longitude: place.location?.longitude ?? null,
+      formattedAddress: place.formattedAddress ?? null,
+      weekdayDescriptions:
+        place.regularOpeningHours?.weekdayDescriptions
+        ?? place.currentOpeningHours?.weekdayDescriptions
+        ?? [],
+      openNow: place.currentOpeningHours?.openNow ?? null,
+      photoUrl: place.photos?.[0]?.name ? photoURL(place.id, credentials) : null,
+      photoAttributions: (place.photos?.[0]?.authorAttributions ?? [])
+        .map((attribution) => attribution.displayName ?? attribution.uri ?? '')
+        .filter(Boolean),
+      googleMapsUri: place.googleMapsUri ?? null,
+    };
+  });
 }
 
 export async function fetchPlacePhoto(
   placeId: string,
   credentials: GoogleMapsCredentials,
 ): Promise<Response | null> {
-  const response = await fetch(
-    `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`,
-    { headers: googleHeaders(credentials, 'photos') },
-  );
-  if (!response.ok) return null;
+  return cachedResponse('google-place-photos', placeId, 86400, async () => {
+    const response = await fetch(
+      `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`,
+      { headers: googleHeaders(credentials, 'photos') },
+    );
+    if (!response.ok) return null;
 
-  const place = (await response.json()) as GooglePlaceResponse;
-  const photoName = place.photos?.[0]?.name;
-  if (!photoName) return null;
+    const place = (await response.json()) as GooglePlaceResponse;
+    const photoName = place.photos?.[0]?.name;
+    if (!photoName) return null;
 
-  const photoResponse = await fetch(
-    `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=1200`,
-    { headers: { 'X-Goog-Api-Key': credentials.GOOGLE_MAPS_API_KEY } },
-  );
-  if (!photoResponse.ok || !photoResponse.body) return null;
+    const photoResponse = await fetch(
+      `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=1200`,
+      { headers: { 'X-Goog-Api-Key': credentials.GOOGLE_MAPS_API_KEY } },
+    );
+    if (!photoResponse.ok || !photoResponse.body) return null;
 
-  const headers = new Headers();
-  const contentType = photoResponse.headers.get('content-type');
-  if (contentType) headers.set('Content-Type', contentType);
-  headers.set('Cache-Control', 'public, max-age=86400');
-  return new Response(photoResponse.body, { status: 200, headers });
+    const headers = new Headers();
+    const contentType = photoResponse.headers.get('content-type');
+    if (contentType) headers.set('Content-Type', contentType);
+    headers.set('Cache-Control', 'public, max-age=86400, s-maxage=86400');
+    return new Response(photoResponse.body, { status: 200, headers });
+  });
 }
