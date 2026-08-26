@@ -7,7 +7,6 @@
 
 import Foundation
 import CoreLocation
-import Photos
 import Supabase
 import SwiftUI
 
@@ -28,111 +27,24 @@ private struct MappedIdea: Identifiable {
     }
 }
 
-private struct DiscoveryIdeaImage: View {
-    let item: SavedIdea
-    @State private var localImage: UIImage?
-    @State private var imageRequestToken = UUID()
-    @State private var placeDetails: GooglePlaceDetails?
-    @State private var didResolveGoogleMedia = false
+private struct PinsDerivedSnapshot {
+    let allLocationItems: [SavedIdea]
+    let foodItems: [SavedIdea]
+    let nearbyLocationItems: [SavedIdea]
+    let filteredEventItems: [SavedIdea]
+    let pastEventItems: [SavedIdea]
+    let filteredLocationItems: [SavedIdea]
+    let visibleIdeas: [MappedIdea]
 
-    private var imageLoadID: String {
-        "\(item.id)-\(item.local_id)-\(item.ideas?.media_url ?? "remote")"
-    }
-
-    private var googleMediaResolutionID: String {
-        "\(item.id)-\(item.ideas?.place_id ?? "no-place")"
-    }
-
-    private var googleMapsMediaURL: URL? {
-        let value = placeDetails?.photoUrl ?? item.ideas?.media_url
-        return value.flatMap(URL.init(string:))
-    }
-
-    private var isWaitingForGoogleMedia: Bool {
-        item.ideas?.place_id != nil
-            && googleMapsMediaURL == nil
-            && !didResolveGoogleMedia
-    }
-
-    var body: some View {
-        ZStack {
-            Color.gray.opacity(0.14)
-
-            if let url = googleMapsMediaURL {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    case .empty:
-                        ProgressView().controlSize(.small)
-                    case .failure:
-                        if let localImage {
-                            Image(uiImage: localImage)
-                                .resizable()
-                                .scaledToFill()
-                        } else {
-                            placeholder
-                        }
-                    @unknown default:
-                        if let localImage {
-                            Image(uiImage: localImage)
-                                .resizable()
-                                .scaledToFill()
-                        } else {
-                            placeholder
-                        }
-                    }
-                }
-            } else if isWaitingForGoogleMedia {
-                ProgressView().controlSize(.small)
-            } else if let localImage {
-                Image(uiImage: localImage)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                placeholder
-            }
-        }
-        // A concrete render size prevents the async image from changing the
-        // carousel's layout or appearing to move independently of its card.
-        .frame(width: 250, height: 150)
-        .clipped()
-        .task(id: imageLoadID) {
-            let requestToken = UUID()
-            imageRequestToken = requestToken
-            localImage = nil
-
-            guard !item.local_id.isEmpty else { return }
-
-            let loadedImage = try? await loadImage(
-                from: item.local_id,
-                targetSize: CGSize(width: 600, height: 600),
-                resizeMode: .fast
-            )
-            guard !Task.isCancelled, imageRequestToken == requestToken else { return }
-            localImage = loadedImage
-        }
-        .task(id: googleMediaResolutionID) {
-            didResolveGoogleMedia = false
-            placeDetails = nil
-
-            guard let placeID = item.ideas?.place_id else {
-                didResolveGoogleMedia = true
-                return
-            }
-
-            let details = await GooglePlacesService.shared.details(for: placeID)
-            guard !Task.isCancelled else { return }
-            placeDetails = details
-            didResolveGoogleMedia = true
-        }
-    }
-
-    private var placeholder: some View {
-        Image(systemName: "photo")
-            .font(.system(size: 24))
-            .foregroundStyle(.secondary)
-    }
+    static let empty = PinsDerivedSnapshot(
+        allLocationItems: [],
+        foodItems: [],
+        nearbyLocationItems: [],
+        filteredEventItems: [],
+        pastEventItems: [],
+        filteredLocationItems: [],
+        visibleIdeas: []
+    )
 }
 
 struct KindlingTranslucentSheetBackground: View {
@@ -256,30 +168,10 @@ struct PinsView: View {
     @State private var isDiscoverySheetPresented = true
     @State private var isSettingsSheetPresented = false
     @State private var discoveryDetent: PresentationDetent = .fraction(0.55)
+    @State private var derivedSnapshot = PinsDerivedSnapshot.empty
 
     private var query: String {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    }
-
-    private var allLocationItems: [SavedIdea] {
-        deduplicatedSavedIdeas(
-            collections
-                .flatMap { $0.collection_items ?? [] }
-                .filter { !isEvent($0) }
-        )
-    }
-
-    private var foodItems: [SavedIdea] {
-        filter(allLocationItems.filter { isFood($0) })
-    }
-
-    private var visibleIdeas: [MappedIdea] {
-        guard !query.isEmpty else { return mappedIdeas }
-        return mappedIdeas.filter { mapped in
-            let idea = mapped.item.ideas
-            return [idea?.name, idea?.location_type]
-                .contains { $0?.lowercased().contains(query) == true }
-        }
     }
 
     var body: some View {
@@ -313,17 +205,21 @@ struct PinsView: View {
         .task {
             locationManager.requestLocation()
             await loadCollections()
-            await screenshotIndexing.scan()
-            // Refresh ideas created by the scan, then resolve all saved place
-            // IDs so nearby results can be complete and accurately ranked.
-            await loadCollections()
+            let scanAddedIdeas = await screenshotIndexing.scan()
+            // Refresh only when the scan actually persisted new ideas, then
+            // resolve saved place IDs so nearby results can be complete.
+            if scanAddedIdeas {
+                await loadCollections()
+            }
             await resolveMissingPlaces()
         }
         .onChange(of: locationManager.location) { _, newLocation in
+            rebuildDerivedSnapshot()
             guard let newLocation, !hasSetInitialCamera, selectedIdeaID == nil else { return }
             centerMapOnUser(newLocation.coordinate)
         }
         .onChange(of: searchText) { _, _ in
+            rebuildDerivedSnapshot()
             selectedIdeaID = nil
             mapCenter = nil
         }
@@ -337,7 +233,7 @@ struct PinsView: View {
                     // is a different identity, so matching on `$0.id` can open
                     // the wrong screenshot/card (or the previously selected
                     // one) when those sequences happen to overlap.
-                    if let item = allLocationItems.first(where: { $0.id == newValue }) {
+                    if let item = derivedSnapshot.allLocationItems.first(where: { $0.id == newValue }) {
                         showIdeaInSheet(item)
                     }
                 }
@@ -352,7 +248,7 @@ struct PinsView: View {
 
     private var map: some View {
         GoogleMapView(
-            markers: visibleIdeas.map {
+            markers: derivedSnapshot.visibleIdeas.map {
                 GoogleMapMarkerData(
                     id: $0.id,
                     coordinate: $0.coordinate,
@@ -560,7 +456,7 @@ struct PinsView: View {
             SectionDetailView(
                 title: "#nomnomnom",
                 subtitle: "food you saved.",
-                items: foodItems,
+                items: derivedSnapshot.foodItems,
                 onBack: dismissSectionPage,
                 onSelect: showIdeaInSheet
             )
@@ -568,7 +464,7 @@ struct PinsView: View {
             SectionDetailView(
                 title: "things near you",
                 subtitle: "within 20 miles, closest first",
-                items: nearbyLocationItems,
+                items: derivedSnapshot.nearbyLocationItems,
                 onBack: dismissSectionPage,
                 onSelect: showIdeaInSheet
             )
@@ -576,7 +472,7 @@ struct PinsView: View {
             SectionDetailView(
                 title: "events coming up in the calendar week",
                 subtitle: "upcoming events this week",
-                items: filteredEventItems,
+                items: derivedSnapshot.filteredEventItems,
                 onBack: dismissSectionPage,
                 onSelect: showIdeaInSheet
             )
@@ -584,7 +480,7 @@ struct PinsView: View {
             SectionDetailView(
                 title: "all saved places",
                 subtitle: "every place you saved",
-                items: filteredLocationItems,
+                items: derivedSnapshot.filteredLocationItems,
                 onBack: dismissSectionPage,
                 onSelect: showIdeaInSheet
             )
@@ -592,7 +488,7 @@ struct PinsView: View {
             SectionDetailView(
                 title: "past events",
                 subtitle: "events you saved that have passed",
-                items: pastEventItems,
+                items: derivedSnapshot.pastEventItems,
                 onBack: dismissSectionPage,
                 onSelect: showIdeaInSheet
             )
@@ -611,38 +507,38 @@ struct PinsView: View {
     private var discoverySheet: some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 18) {
-                if !foodItems.isEmpty {
+                if !derivedSnapshot.foodItems.isEmpty {
                     discoverySection(
                         title: "#nomnomnom",
-                        items: foodItems,
+                        items: derivedSnapshot.foodItems,
                         action: { openSectionPage(.food) }
                     )
                 }
 
                 discoverySection(
                     title: "things near you",
-                    items: nearbyLocationItems,
+                    items: derivedSnapshot.nearbyLocationItems,
                     action: { openSectionPage(.nearby) }
                 )
 
-                if !filteredEventItems.isEmpty {
+                if !derivedSnapshot.filteredEventItems.isEmpty {
                     discoverySection(
                         title: "events coming up in the calendar week",
-                        items: filteredEventItems,
+                        items: derivedSnapshot.filteredEventItems,
                         action: { openSectionPage(.events) }
                     )
                 }
 
                 discoverySection(
                     title: "all saved places",
-                    items: filteredLocationItems,
+                    items: derivedSnapshot.filteredLocationItems,
                     action: { openSectionPage(.allSavedPlaces) }
                 )
 
-                if !pastEventItems.isEmpty {
+                if !derivedSnapshot.pastEventItems.isEmpty {
                     discoverySection(
                         title: "past events",
-                        items: pastEventItems,
+                        items: derivedSnapshot.pastEventItems,
                         action: { openSectionPage(.pastEvents) }
                     )
                 }
@@ -671,54 +567,130 @@ struct PinsView: View {
         discoveryDetent == .height(110)
     }
 
-    private var filteredLocationItems: [SavedIdea] {
-        filter(allLocationItems)
-    }
+    private func rebuildDerivedSnapshot() {
+        let allItems = derivedLocationItems
+        let eventItems = deduplicatedSavedIdeas(
+            collections
+                .flatMap { $0.collection_items ?? [] }
+                .filter { isEvent($0) }
+        )
+        let normalizedQuery = query
+        let matchesQuery: (SavedIdea) -> Bool = { item in
+            guard !normalizedQuery.isEmpty else { return true }
+            let idea = item.ideas
+            return [idea?.name, idea?.location_type]
+                .contains { $0?.lowercased().contains(normalizedQuery) == true }
+        }
 
-    private var nearbyLocationItems: [SavedIdea] {
-        guard let userLocation = locationManager.location else { return [] }
+        let parsedDates = Dictionary(
+            uniqueKeysWithValues: eventItems.map { ($0.id, Self.parsedEventDate(for: $0)) }
+        )
+        let now = Date()
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: now)
+        let week = calendar.dateInterval(of: .weekOfYear, for: now)
+            ?? DateInterval(start: today, duration: 7 * 24 * 60 * 60)
+
+        func isUpcoming(_ item: SavedIdea) -> Bool {
+            guard let parsed = parsedDates[item.id] ?? nil else { return false }
+            let eventDay = calendar.startOfDay(for: parsed.date)
+            guard eventDay >= today, eventDay < week.end else { return false }
+            return !parsed.hasTime || parsed.date >= now
+        }
+
+        func isPast(_ item: SavedIdea) -> Bool {
+            guard let parsed = parsedDates[item.id] ?? nil else { return false }
+            let eventDay = calendar.startOfDay(for: parsed.date)
+            return eventDay < today || (eventDay == today && parsed.hasTime && parsed.date < now)
+        }
+
+        func sortedEvents(_ items: [SavedIdea], ascending: Bool) -> [SavedIdea] {
+            items.sorted { lhs, rhs in
+                let lhsDate = parsedDates[lhs.id] ?? nil
+                let rhsDate = parsedDates[rhs.id] ?? nil
+                switch (lhsDate?.date, rhsDate?.date) {
+                case let (left?, right?):
+                    return ascending ? left < right : left > right
+                case (nil, _?):
+                    return false
+                case (_?, nil):
+                    return true
+                case (nil, nil):
+                    return false
+                }
+            }
+        }
 
         let coordinatesByIdeaID = Dictionary(
             mappedIdeas.map { ($0.id, $0.coordinate) },
             uniquingKeysWith: { first, _ in first }
         )
         let radiusMeters = nearbyRadiusMiles * 1_609.344
-
-        let nearby = allLocationItems.compactMap { item -> (item: SavedIdea, distance: CLLocationDistance)? in
-            guard let coordinate = coordinatesByIdeaID[item.id] else { return nil }
-            let distance = userLocation.distance(
-                from: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-            )
-            guard distance <= radiusMeters else { return nil }
-            return (item, distance)
+        let nearby: [(item: SavedIdea, distance: CLLocationDistance)]
+        if let userLocation = locationManager.location {
+            nearby = allItems.compactMap { item in
+                guard let coordinate = coordinatesByIdeaID[item.id] else { return nil }
+                let distance = userLocation.distance(
+                    from: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+                )
+                guard distance <= radiusMeters else { return nil }
+                return (item, distance)
+            }
+        } else {
+            nearby = []
         }
 
-        return filter(nearby.sorted { $0.distance < $1.distance }.map { $0.item })
-    }
-
-    private var filteredEventItems: [SavedIdea] {
-        let events = deduplicatedSavedIdeas(
-            collections.flatMap { $0.collection_items ?? [] }
-                .filter { isEvent($0) }
+        derivedSnapshot = PinsDerivedSnapshot(
+            allLocationItems: allItems,
+            foodItems: allItems.filter { isFood($0) }.filter(matchesQuery),
+            nearbyLocationItems: nearby.sorted { $0.distance < $1.distance }.map(\.item).filter(matchesQuery),
+            filteredEventItems: sortedEvents(eventItems, ascending: true).filter(isUpcoming).filter(matchesQuery),
+            pastEventItems: sortedEvents(eventItems, ascending: false).filter(isPast).filter(matchesQuery),
+            filteredLocationItems: allItems.filter(matchesQuery),
+            visibleIdeas: normalizedQuery.isEmpty
+                ? mappedIdeas
+                : mappedIdeas.filter { matchesQuery($0.item) }
         )
-        return filter(sortedEvents(events, ascending: true).filter(isUpcomingEvent))
     }
 
-    private var pastEventItems: [SavedIdea] {
-        let events = deduplicatedSavedIdeas(
-            collections.flatMap { $0.collection_items ?? [] }
-                .filter { isEvent($0) }
-        )
-        return filter(sortedEvents(events, ascending: false).filter(isPastEvent))
+    private static let eventDateFormats = ["yyyy-MM-dd", "MM/dd/yyyy", "MMMM d, yyyy", "MMM d, yyyy"]
+    private static let eventTimeFormats = ["h:mm a", "h a", "HH:mm"]
+
+    private struct ParsedEventDate {
+        let date: Date
+        let hasTime: Bool
     }
 
-    private func filter(_ items: [SavedIdea]) -> [SavedIdea] {
-        guard !query.isEmpty else { return items }
-        return items.filter { item in
-            let idea = item.ideas
-            return [idea?.name, idea?.location_type]
-                .contains { $0?.lowercased().contains(query) == true }
+    private static func parsedEventDate(for item: SavedIdea) -> ParsedEventDate? {
+        guard let dateString = item.ideas?.date?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !dateString.isEmpty else { return nil }
+
+        let timeString = item.ideas?.time?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let locale = Locale(identifier: "en_US_POSIX")
+        if let timeString, !timeString.isEmpty {
+            for dateFormat in eventDateFormats {
+                for timeFormat in eventTimeFormats {
+                    let parser = DateFormatter()
+                    parser.locale = locale
+                    parser.calendar = Calendar.current
+                    parser.dateFormat = "\(dateFormat) \(timeFormat)"
+                    if let date = parser.date(from: "\(dateString) \(timeString)") {
+                        return ParsedEventDate(date: date, hasTime: true)
+                    }
+                }
+            }
         }
+
+        for dateFormat in eventDateFormats {
+            let parser = DateFormatter()
+            parser.locale = locale
+            parser.calendar = Calendar.current
+            parser.dateFormat = dateFormat
+            if let date = parser.date(from: dateString) {
+                return ParsedEventDate(date: date, hasTime: false)
+            }
+        }
+        return nil
     }
 
     private func isFood(_ item: SavedIdea) -> Bool {
@@ -731,91 +703,6 @@ struct PinsView: View {
 
     private func isEvent(_ item: CollectionItemWrapper) -> Bool {
         item.ideas?.type?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "event"
-    }
-
-    private struct ParsedEventDate {
-        let date: Date
-        let hasTime: Bool
-    }
-
-    private func parsedEventDate(for item: SavedIdea) -> ParsedEventDate? {
-        guard let dateString = item.ideas?.date?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !dateString.isEmpty else { return nil }
-
-        let timeString = item.ideas?.time?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let dateFormats = ["yyyy-MM-dd", "MM/dd/yyyy", "MMMM d, yyyy", "MMM d, yyyy"]
-        let timeFormats = ["h:mm a", "h a", "HH:mm"]
-        let locale = Locale(identifier: "en_US_POSIX")
-
-        if let timeString, !timeString.isEmpty {
-            for dateFormat in dateFormats {
-                for timeFormat in timeFormats {
-                    let parser = DateFormatter()
-                    parser.locale = locale
-                    parser.calendar = Calendar.current
-                    parser.dateFormat = "\(dateFormat) \(timeFormat)"
-                    if let date = parser.date(from: "\(dateString) \(timeString)") {
-                        return ParsedEventDate(date: date, hasTime: true)
-                    }
-                }
-            }
-        }
-
-        for dateFormat in dateFormats {
-            let parser = DateFormatter()
-            parser.locale = locale
-            parser.calendar = Calendar.current
-            parser.dateFormat = dateFormat
-            if let date = parser.date(from: dateString) {
-                return ParsedEventDate(date: date, hasTime: false)
-            }
-        }
-
-        return nil
-    }
-
-    private var currentCalendarWeek: DateInterval {
-        Calendar.current.dateInterval(of: .weekOfYear, for: Date())
-            ?? DateInterval(start: Calendar.current.startOfDay(for: Date()), duration: 7 * 24 * 60 * 60)
-    }
-
-    private func isUpcomingEvent(_ item: SavedIdea) -> Bool {
-        guard let parsed = parsedEventDate(for: item) else { return false }
-        let calendar = Calendar.current
-        let now = Date()
-        let today = calendar.startOfDay(for: now)
-        let eventDay = calendar.startOfDay(for: parsed.date)
-        let week = currentCalendarWeek
-
-        guard eventDay >= today, eventDay < week.end else { return false }
-        return !parsed.hasTime || parsed.date >= now
-    }
-
-    private func isPastEvent(_ item: SavedIdea) -> Bool {
-        guard let parsed = parsedEventDate(for: item) else { return false }
-        let calendar = Calendar.current
-        let now = Date()
-        let today = calendar.startOfDay(for: now)
-        let eventDay = calendar.startOfDay(for: parsed.date)
-
-        return eventDay < today || (eventDay == today && parsed.hasTime && parsed.date < now)
-    }
-
-    private func sortedEvents(_ items: [SavedIdea], ascending: Bool) -> [SavedIdea] {
-        items.sorted { lhs, rhs in
-            let lhsDate = parsedEventDate(for: lhs)?.date
-            let rhsDate = parsedEventDate(for: rhs)?.date
-            switch (lhsDate, rhsDate) {
-            case let (left?, right?):
-                return ascending ? left < right : left > right
-            case (nil, _?):
-                return false
-            case (_?, nil):
-                return true
-            case (nil, nil):
-                return false
-            }
-        }
     }
 
     private func discoverySection(
@@ -887,34 +774,16 @@ struct PinsView: View {
     }
 
     private func discoveryCard(_ item: SavedIdea) -> some View {
-        let displayName = mappedIdeas.first {
-            $0.id == item.id
-        }?.displayName ?? item.ideas?.name ?? "Untitled"
-
-        return Button {
-            focusOnMap(item)
-        } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                DiscoveryIdeaImage(item: item)
-                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-
-                Text(displayName)
-                    .font(.system(size: 19, weight: .medium))
-                    .tracking(-0.45)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-
-                Text(item.ideas?.locationTypeLabel ?? "saved place")
-                    .font(.system(size: 14))
-                    .tracking(-0.3)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
-            }
-            .frame(width: 250, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
+        Card(
+            card: item,
+            tapAction: { focusOnMap(item) },
+            loadsMapData: false,
+            loadsPlaceDetails: true,
+            loadsRemoteMedia: true,
+            allowsDetailPresentation: false,
+            allowsDeletion: false
+        )
+        .frame(width: 250, alignment: .topLeading)
     }
 
     private func showIdeaInSheet(_ item: SavedIdea) {
@@ -980,6 +849,7 @@ struct PinsView: View {
             let mapped = MappedIdea(item: item, coordinate: coordinate, mapName: place.name)
             if !mappedIdeas.contains(where: { $0.id == ideaID }) {
                 mappedIdeas.append(mapped)
+                rebuildDerivedSnapshot()
             }
             focusOnMap(mapped, presenting: item)
         }
@@ -1005,6 +875,11 @@ struct PinsView: View {
     }
 
     private func loadCollections() async {
+        let signpostID = KindlingProfiling.begin(KindlingProfiling.collectionLoad)
+        defer {
+            KindlingProfiling.end(KindlingProfiling.collectionLoad, id: signpostID)
+        }
+
         isLoading = true
         await migrateLegacyDefaultCollectionName()
         do {
@@ -1026,7 +901,7 @@ struct PinsView: View {
             uniquingKeysWith: { current, _ in current }
         )
 
-        mappedIdeas = allLocationItems.compactMap { item in
+        mappedIdeas = derivedLocationItems.compactMap { item in
             let id = item.id
             // Coordinates are Google Places response data and stay in memory only.
             // Keep a successfully resolved pin visible while a collection
@@ -1034,35 +909,75 @@ struct PinsView: View {
             guard let (coordinate, mapName) = previous[id] else { return nil }
             return MappedIdea(item: item, coordinate: coordinate, mapName: mapName)
         }
+        rebuildDerivedSnapshot()
     }
 
     private func resolveMissingPlaces() async {
-        let candidates = allLocationItems.filter { item in
+        let candidates = derivedLocationItems.filter { item in
             item.ideas?.place_id != nil
         }
 
-        for item in candidates {
-            let ideaID = item.id
-            guard !mappedIdeas.contains(where: { $0.id == ideaID }),
-                  !resolvingIdeaIDs.contains(ideaID),
-                  !failedIdeaIDs.contains(ideaID) else { continue }
+        let mappedIDs = Set(mappedIdeas.map(\.id))
+        let pending = candidates.filter {
+            !mappedIDs.contains($0.id)
+                && !resolvingIdeaIDs.contains($0.id)
+                && !failedIdeaIDs.contains($0.id)
+        }
+        guard !pending.isEmpty else { return }
 
-            resolvingIdeaIDs.insert(ideaID)
-            defer { resolvingIdeaIDs.remove(ideaID) }
+        let pendingIDs = Set(pending.map(\.id))
+        resolvingIdeaIDs.formUnion(pendingIDs)
+        defer { resolvingIdeaIDs.subtract(pendingIDs) }
 
-            guard let place = await resolvePlace(for: item) else {
-                failedIdeaIDs.insert(ideaID)
+        let results = await withTaskGroup(of: (Int, GooglePlaceDetails?).self) { group in
+            var iterator = pending.makeIterator()
+            for _ in 0..<min(4, pending.count) {
+                guard let item = iterator.next() else { break }
+                let ideaID = item.id
+                group.addTask {
+                    guard !Task.isCancelled else { return (ideaID, nil) }
+                    return (ideaID, await self.resolvePlace(for: item))
+                }
+            }
+
+            var results: [(Int, GooglePlaceDetails?)] = []
+            while let result = await group.next() {
+                results.append(result)
+                if let item = iterator.next() {
+                    let ideaID = item.id
+                    group.addTask {
+                        guard !Task.isCancelled else { return (ideaID, nil) }
+                        return (ideaID, await self.resolvePlace(for: item))
+                    }
+                }
+            }
+            return results
+        }
+
+        guard !Task.isCancelled else { return }
+        var updatedMappedIdeas = mappedIdeas
+        var failedIDs: Set<Int> = []
+        for (ideaID, place) in results {
+            guard let place, let coordinate = place.coordinate,
+                  let item = pending.first(where: { $0.id == ideaID }) else {
+                failedIDs.insert(ideaID)
                 continue
             }
-            guard let coordinate = place.coordinate else {
-                failedIdeaIDs.insert(ideaID)
-                continue
-            }
-
-            mappedIdeas.append(
+            updatedMappedIdeas.append(
                 MappedIdea(item: item, coordinate: coordinate, mapName: place.name)
             )
         }
+        failedIdeaIDs.formUnion(failedIDs)
+        mappedIdeas = updatedMappedIdeas
+        rebuildDerivedSnapshot()
+    }
+
+    private var derivedLocationItems: [SavedIdea] {
+        deduplicatedSavedIdeas(
+            collections
+                .flatMap { $0.collection_items ?? [] }
+                .filter { !isEvent($0) }
+        )
     }
 
     private func resolvePlace(for item: SavedIdea) async -> GooglePlaceDetails? {

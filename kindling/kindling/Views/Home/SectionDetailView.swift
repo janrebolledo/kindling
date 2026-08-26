@@ -48,6 +48,7 @@ struct SectionDetailView: View {
                             card: item,
                             tapAction: { onSelect?(item) },
                             loadsMapData: false,
+                            loadsPlaceDetails: true,
                             allowsDetailPresentation: false
                         )
                     }
@@ -143,10 +144,10 @@ struct SectionDetailView: View {
             Text(label(for: filter))
                 .font(.system(size: 16))
                 .tracking(-0.4)
-                .foregroundStyle(.primary)
+                .foregroundStyle(isSelected ? Color.white : Color.primary)
         }
         .if(isSelected) {
-            $0.buttonStyle(.glassProminent).tint(.primary)
+            $0.buttonStyle(.glassProminent).tint(.black)
         }
         .if(!isSelected) {
             $0.buttonStyle(.glass).tint(.primary)

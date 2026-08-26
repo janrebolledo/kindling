@@ -8,6 +8,8 @@ export type Idea = {
   location_type: string | null;
   location_emoji: string | null;
   duration: string | null;
+  distance_miles: number | null;
+  completion_time: string | null;
   date: string | null;
   time: string | null;
   place_id: string | null;
@@ -47,6 +49,8 @@ export type SharedIdea = Pick<
   | 'location_type'
   | 'location_emoji'
   | 'duration'
+  | 'distance_miles'
+  | 'completion_time'
   | 'place_id'
   | 'date'
   | 'time'

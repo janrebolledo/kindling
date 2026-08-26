@@ -18,20 +18,33 @@ if (!idea) {
 const venue = idea?.place?.name ?? idea?.name ?? 'Untitled';
 const title = idea ? `${venue} · kindling` : 'kindling';
 const description = idea?.description || 'saved with kindling.';
-const googleMediaUrl = idea?.place?.photoUrl ?? idea?.media_url;
+const googlePhotoUrl = idea?.place?.photoUrl ?? null;
+const mediaUrl = googlePhotoUrl ?? idea?.media_url;
 const placeStatus = idea?.place
   ? resolvePlaceStatus(idea.place.weekdayDescriptions, idea.place.openNow)
   : null;
-const hasMap = Boolean(
-  idea?.place?.latitude != null
-    && idea.place.longitude != null,
+const activityDetails = idea
+  ? [
+      idea.distance_miles != null
+        ? `${Number.isInteger(idea.distance_miles) ? idea.distance_miles : idea.distance_miles.toFixed(1)} mi`
+        : null,
+      idea.completion_time,
+    ].filter(Boolean).join(' · ')
+  : null;
+const googlePlace = idea?.place ?? null;
+const hasCoordinates = Boolean(
+  googlePlace?.latitude != null && googlePlace.longitude != null,
 );
-const mapEmbedUrl = hasMap
-  ? `https://www.google.com/maps?q=${idea?.place?.latitude},${idea?.place?.longitude}&z=15&output=embed`
+const googleMapsUrl = googlePlace?.googleMapsUri
+  ?? (googlePlace?.id
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(venue)}&query_place_id=${encodeURIComponent(googlePlace.id)}`
+    : null);
+const mapEmbedUrl = hasCoordinates
+  ? `https://www.google.com/maps?q=${encodeURIComponent(`${googlePlace?.latitude},${googlePlace?.longitude}`)}&z=15&output=embed`
   : null;
 ---
 
-<Layout title={title} description={description} image={googleMediaUrl}>
+<Layout title={title} description={description} image={mediaUrl}>
   {
     !idea ? (
       <div class='flex min-h-dvh flex-col items-center justify-center px-6 text-center'>
@@ -51,10 +64,12 @@ const mapEmbedUrl = hasMap
     ) : (
       <div class='mx-auto flex min-h-dvh w-full max-w-[402px] flex-col bg-white'>
         <div class='relative h-[487px] w-full overflow-hidden'>
-          {googleMediaUrl ? (
+          {mediaUrl ? (
             <img
-              src={googleMediaUrl}
-              alt=''
+              src={mediaUrl}
+              alt={`${venue} photo`}
+              data-fallback-src={googlePhotoUrl && idea.media_url ? idea.media_url : undefined}
+              onerror="if (this.dataset.fallbackSrc && this.src !== this.dataset.fallbackSrc) { this.src = this.dataset.fallbackSrc; } else { this.hidden = true; }"
               width={804}
               height={974}
               class='absolute inset-0 size-full object-cover'
@@ -66,19 +81,40 @@ const mapEmbedUrl = hasMap
             class='pointer-events-none absolute inset-0'
             style='background-image: linear-gradient(to right, #fff 0%, transparent 20%, transparent 80%, #fff 100%), linear-gradient(to top, #fff 0%, transparent 52%);'
           />
+          {googlePhotoUrl && googlePlace?.photoAttributions.length ? (
+            <p class='absolute bottom-3 right-3 max-w-[70%] text-right text-[10px] leading-tight text-black/55'>
+              Photo:{' '}
+              {googlePlace.photoAttributions.map((attribution, index) => {
+                const href = googlePlace.photoAttributionUrls?.[index];
+                return href ? (
+                  <a href={href} target='_blank' rel='noreferrer' class='underline'>
+                    {attribution}
+                  </a>
+                ) : (
+                  <span>{attribution}</span>
+                );
+              })}
+            </p>
+          ) : null}
         </div>
 
         <div class='flex flex-col gap-2 overflow-hidden px-2 py-2'>
           <h1 class='text-[32px] font-medium tracking-[-0.8px] text-black'>
             {venue}
           </h1>
-          {(placeStatus || idea.location_type || idea.location_emoji || idea.duration) && (
+          {(activityDetails || placeStatus || idea.location_type || idea.location_emoji || idea.duration) && (
             <div class='flex items-center gap-2 text-[16px] tracking-[-0.4px] text-muted'>
-              {placeStatus ? (
-                <>
-                  <span class='font-medium'>{placeStatus.isOpen ? 'Open' : 'Closed'}</span>
+              {activityDetails ? (
+                <span>{activityDetails}</span>
+              ) : placeStatus ? (
+                placeStatus.detail.startsWith('Opens') ? (
                   <span>{placeStatus.detail}</span>
-                </>
+                ) : (
+                  <>
+                    <span class='font-medium'>{placeStatus.isOpen ? 'Open' : 'Closed'}</span>
+                    <span>{placeStatus.detail}</span>
+                  </>
+                )
               ) : (idea.location_emoji || idea.location_type) ? (
                 <span class='font-medium'>
                   {[idea.location_emoji, idea.location_type]
@@ -86,7 +122,7 @@ const mapEmbedUrl = hasMap
                     .join(' ')}
                 </span>
               ) : null}
-              {!placeStatus && idea.duration && <span>{idea.duration}</span>}
+              {!placeStatus && !activityDetails && idea.duration && <span>{idea.duration}</span>}
             </div>
           )}
         </div>
@@ -109,7 +145,7 @@ const mapEmbedUrl = hasMap
           </div>
         )}
 
-        {idea.place?.weekdayDescriptions.length ? (
+        {idea.place?.weekdayDescriptions.length && !activityDetails ? (
           <div class='mx-4 mt-8 flex flex-col gap-3 px-2'>
             <p class='text-[14px] font-medium tracking-[-0.35px] text-muted'>hours</p>
             <div class='flex flex-col gap-3'>
@@ -126,35 +162,44 @@ const mapEmbedUrl = hasMap
           </div>
         ) : null}
 
-        {hasMap && mapEmbedUrl ? (
+        {googleMapsUrl ? (
           <div class='mx-[13px] mt-8 overflow-hidden rounded-3xl'>
-            <div class='relative h-[203px]'>
-              <iframe
-                title={`Google Maps location for ${venue}`}
-                src={mapEmbedUrl}
-                loading='lazy'
-                referrerpolicy='no-referrer-when-downgrade'
-                class='absolute inset-0 size-full border-0'
-              />
-              {idea.place?.googleMapsUri && (
+            {mapEmbedUrl ? (
+              <div class='relative h-[203px]'>
+                <iframe
+                  title={`Google Maps location for ${venue}`}
+                  src={mapEmbedUrl}
+                  loading='lazy'
+                  referrerpolicy='no-referrer-when-downgrade'
+                  class='absolute inset-0 size-full border-0'
+                />
                 <a
-                  href={idea.place.googleMapsUri}
+                  href={googleMapsUrl}
                   target='_blank'
                   rel='noreferrer'
                   class='absolute right-4 top-4 rounded-full bg-black/25 px-3 py-2 text-[16px] font-medium text-white backdrop-blur-sm'
                 >
                   open in Maps ↗
                 </a>
-              )}
-            </div>
-            {idea.place.formattedAddress && (
+              </div>
+            ) : (
               <a
-                href={idea.place.googleMapsUri ?? mapEmbedUrl}
+                href={googleMapsUrl}
+                target='_blank'
+                rel='noreferrer'
+                class='flex h-[203px] items-end bg-[linear-gradient(135deg,#e8f0e8,#c8d9c8)] p-4 text-[16px] font-medium text-black'
+              >
+                view this place on Google Maps ↗
+              </a>
+            )}
+            {googlePlace?.formattedAddress && (
+              <a
+                href={googleMapsUrl}
                 target='_blank'
                 rel='noreferrer'
                 class='block bg-surface px-3 py-2 text-[14px] font-medium tracking-[-0.35px] text-muted'
               >
-                {idea.place.formattedAddress}
+                {googlePlace.formattedAddress}
               </a>
             )}
           </div>

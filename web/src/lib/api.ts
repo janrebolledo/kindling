@@ -7,6 +7,8 @@ export type SharedIdea = {
   location_type: string | null;
   location_emoji: string | null;
   duration: string | null;
+  distance_miles: number | null;
+  completion_time: string | null;
   place_id: string | null;
   date: string | null;
   time: string | null;
@@ -24,6 +26,7 @@ export type SharedPlace = {
   openNow: boolean | null;
   photoUrl: string | null;
   photoAttributions: string[];
+  photoAttributionUrls?: Array<string | null>;
   googleMapsUri: string | null;
 };
 

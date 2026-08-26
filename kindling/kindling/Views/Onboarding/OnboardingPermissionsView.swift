@@ -78,7 +78,7 @@ struct OnboardingPermissionsView: View {
 
             VStack(spacing: 24) {
                 OnboardingCardCarousel(cards: showcaseCards)
-                .frame(height: 271)
+                .frame(height: 250)
                 .padding(.top, 16)
                 .padding(.horizontal, -48)
 

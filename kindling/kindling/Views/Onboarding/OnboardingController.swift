@@ -20,6 +20,11 @@ class ScreenshotManager {
 
     // Fetch all screenshots from the photo library
     nonisolated func fetchScreenshots() -> [PHAsset] {
+        let signpostID = KindlingProfiling.begin(KindlingProfiling.screenshotEnumeration)
+        defer {
+            KindlingProfiling.end(KindlingProfiling.screenshotEnumeration, id: signpostID)
+        }
+
         let fetchOptions = PHFetchOptions()
 
         // Filter for screenshots using mediaSubtypes

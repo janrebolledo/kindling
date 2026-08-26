@@ -8,6 +8,23 @@ struct GoogleMapMarkerData: Identifiable {
     let coordinate: CLLocationCoordinate2D
     let title: String
     let emoji: String
+    let clusterMemberIDs: [Int]?
+
+    var isCluster: Bool { clusterMemberIDs != nil }
+
+    init(
+        id: Int,
+        coordinate: CLLocationCoordinate2D,
+        title: String,
+        emoji: String,
+        clusterMemberIDs: [Int]? = nil
+    ) {
+        self.id = id
+        self.coordinate = coordinate
+        self.title = title
+        self.emoji = emoji
+        self.clusterMemberIDs = clusterMemberIDs
+    }
 }
 
 struct GoogleMapView: UIViewRepresentable {
@@ -50,45 +67,90 @@ struct GoogleMapView: UIViewRepresentable {
         mapView.settings.myLocationButton = false
         mapView.isMyLocationEnabled = isInteractive
         mapView.mapType = .normal
+        context.coordinator.lastIsInteractive = isInteractive
         return mapView
     }
 
     func updateUIView(_ mapView: GMSMapView, context: Context) {
-        context.coordinator.onSelect = onSelect
-        context.coordinator.onDeselect = onDeselect
-        context.coordinator.hitTargets = markers.map {
-            MarkerHitTarget(
+        let signpostID = KindlingProfiling.begin(KindlingProfiling.mapUpdateUIView)
+        defer {
+            KindlingProfiling.end(KindlingProfiling.mapUpdateUIView, id: signpostID)
+        }
+
+        let coordinator = context.coordinator
+        coordinator.onSelect = onSelect
+        coordinator.onDeselect = onDeselect
+
+        let rawMarkerInputSignatures = markers.map {
+            MarkerInputSignature(
                 id: $0.id,
                 coordinate: $0.coordinate,
-                isSelected: selectedID == $0.id
+                title: $0.title,
+                emoji: $0.emoji,
+                isSelected: selectedID == $0.id,
+                clusterMemberIDs: $0.clusterMemberIDs
             )
         }
+        let markerInputsChanged = coordinator.lastRawMarkerInputSignatures != rawMarkerInputSignatures
+        let zoomBucket = Coordinator.zoomBucket(for: mapView.camera.zoom)
+        let zoomBucketChanged = coordinator.lastDisplayedZoomBucket != zoomBucket
 
         // SwiftUI can call updateUIView for unrelated state changes, such as
         // an image finishing its load in a sibling view. Re-parsing the style
         // and rebuilding every overlay on each call causes visible map work
         // during scrolling and navigation transitions.
         let isDark = colorScheme == .dark
-        if context.coordinator.appliedIsDark != isDark {
-            mapView.mapStyle = try? GMSMapStyle(jsonString: KindlingMapStyle.json(for: colorScheme))
-            context.coordinator.appliedIsDark = isDark
+        let colorSchemeChanged = coordinator.appliedIsDark != isDark
+        let interactionFlagsChanged = coordinator.lastIsInteractive != isInteractive
+        let hasPendingCameraRequest = coordinator.lastCenterRequestID != centerRequestID
+            && center != nil
+
+        guard markerInputsChanged
+            || zoomBucketChanged
+            || colorSchemeChanged
+            || interactionFlagsChanged
+            || hasPendingCameraRequest else {
+            return
         }
 
-        context.coordinator.updateMarkers(markers, selectedID: selectedID, on: mapView)
+        if markerInputsChanged || zoomBucketChanged {
+            coordinator.rawMarkerData = markers
+            coordinator.rawSelectedID = selectedID
+            coordinator.lastRawMarkerInputSignatures = rawMarkerInputSignatures
+            coordinator.updateMarkerDisplay(on: mapView, zoom: mapView.camera.zoom)
+        }
+
+        if colorSchemeChanged {
+            mapView.mapStyle = try? GMSMapStyle(jsonString: KindlingMapStyle.json(for: colorScheme))
+            coordinator.appliedIsDark = isDark
+        }
+
+        if interactionFlagsChanged {
+            mapView.isUserInteractionEnabled = isInteractive
+            mapView.settings.scrollGestures = isInteractive
+            mapView.settings.zoomGestures = isInteractive
+            mapView.settings.rotateGestures = isInteractive
+            mapView.settings.tiltGestures = isInteractive
+            mapView.isMyLocationEnabled = isInteractive
+            coordinator.lastIsInteractive = isInteractive
+        }
 
         if let center {
-            let current = mapView.camera.target
-            let moved = abs(current.latitude - center.latitude) > 0.0001
-                || abs(current.longitude - center.longitude) > 0.0001
-            let requestedAgain = context.coordinator.lastCenterRequestID != centerRequestID
-            if moved || mapView.camera.zoom != zoom || requestedAgain {
+            let requestedAgain = coordinator.lastCenterRequestID != centerRequestID
+            // `updateUIView` can run several times while a camera animation is
+            // in flight (for example when selecting a pin also presents the
+            // detail sheet). Re-triggering from the camera's intermediate
+            // position restarts the animation and makes it look stuttery.
+            // Camera changes are explicitly versioned by the request ID, so
+            // animate only when a new request arrives.
+            if requestedAgain {
                 mapView.animate(to: GMSCameraPosition(
                     latitude: center.latitude,
                     longitude: center.longitude,
                     zoom: zoom
                 ))
             }
-            context.coordinator.lastCenterRequestID = centerRequestID
+            coordinator.lastCenterRequestID = centerRequestID
         }
     }
 
@@ -96,14 +158,97 @@ struct GoogleMapView: UIViewRepresentable {
         var onSelect: (Int) -> Void
         var onDeselect: () -> Void
         fileprivate var hitTargets: [MarkerHitTarget] = []
+        fileprivate var lastHitTargetSignatures: [MarkerHitTargetSignature]?
+        fileprivate var lastMarkerInputSignatures: [MarkerInputSignature]?
+        fileprivate var lastRawMarkerInputSignatures: [MarkerInputSignature]?
+        fileprivate var lastDisplayedZoomBucket: Int?
         fileprivate var lastCenterRequestID: Int?
         fileprivate var appliedIsDark: Bool?
+        fileprivate var lastIsInteractive: Bool?
+        fileprivate var rawMarkerData: [GoogleMapMarkerData] = []
+        fileprivate var rawSelectedID: Int?
         private var markersByID: [Int: GMSMarker] = [:]
-        private var markerSignatures: [Int: MarkerSignature] = [:]
+        private var markerSignatures: [Int: MarkerInputSignature] = [:]
 
         init(onSelect: @escaping (Int) -> Void, onDeselect: @escaping () -> Void) {
             self.onSelect = onSelect
             self.onDeselect = onDeselect
+        }
+
+        static func zoomBucket(for zoom: Float) -> Int {
+            Int((zoom * 2).rounded())
+        }
+
+        func updateMarkerDisplay(on mapView: GMSMapView, zoom: Float) {
+            let displayMarkers = clusteredMarkers(rawMarkerData, zoom: zoom)
+            let hitTargetSignatures = displayMarkers.map {
+                MarkerHitTargetSignature(
+                    id: $0.id,
+                    coordinate: $0.coordinate,
+                    isSelected: rawSelectedID == $0.id,
+                    clusterMemberIDs: $0.clusterMemberIDs
+                )
+            }
+
+            if lastHitTargetSignatures != hitTargetSignatures {
+                hitTargets = hitTargetSignatures.map { MarkerHitTarget($0) }
+                lastHitTargetSignatures = hitTargetSignatures
+            }
+
+            updateMarkers(displayMarkers, selectedID: rawSelectedID, on: mapView)
+            lastDisplayedZoomBucket = Self.zoomBucket(for: zoom)
+        }
+
+        private func clusteredMarkers(
+            _ markers: [GoogleMapMarkerData],
+            zoom: Float
+        ) -> [GoogleMapMarkerData] {
+            guard markers.count > MapClusteringMetrics.minimumMarkersToCluster,
+                  zoom < MapClusteringMetrics.stopClusteringAtZoom else {
+                return markers
+            }
+
+            let cellSize = MapClusteringMetrics.cellPoints
+                / (256 * pow(2, CGFloat(zoom)))
+            var buckets: [ClusterGridKey: [GoogleMapMarkerData]] = [:]
+
+            for marker in markers {
+                let worldPoint = Self.worldPoint(for: marker.coordinate)
+                let key = ClusterGridKey(
+                    x: Int(floor(worldPoint.x / cellSize)),
+                    y: Int(floor(worldPoint.y / cellSize))
+                )
+                buckets[key, default: []].append(marker)
+            }
+
+            return buckets.keys.sorted().flatMap { key in
+                let members = buckets[key, default: []]
+                guard members.count > 1 else { return members }
+
+                let latitude = members.map { $0.coordinate.latitude }.reduce(0, +)
+                    / CLLocationDegrees(members.count)
+                let longitude = members.map { $0.coordinate.longitude }.reduce(0, +)
+                    / CLLocationDegrees(members.count)
+                let memberIDs = members.map(\.id).sorted()
+                let clusterID = -(key.x * 100_000 + key.y + 1)
+
+                return [GoogleMapMarkerData(
+                    id: clusterID,
+                    coordinate: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
+                    title: "\(members.count) saved places",
+                    emoji: "\(members.count)",
+                    clusterMemberIDs: memberIDs
+                )]
+            }
+        }
+
+        private static func worldPoint(for coordinate: CLLocationCoordinate2D) -> CGPoint {
+            let latitude = max(-85.05112878, min(85.05112878, coordinate.latitude))
+            let sinLatitude = sin(latitude * .pi / 180)
+            return CGPoint(
+                x: (coordinate.longitude + 180) / 360,
+                y: 0.5 - log((1 + sinLatitude) / (1 - sinLatitude)) / (4 * .pi)
+            )
         }
 
         func updateMarkers(
@@ -111,6 +256,26 @@ struct GoogleMapView: UIViewRepresentable {
             selectedID: Int?,
             on mapView: GMSMapView
         ) {
+            let signpostID = KindlingProfiling.begin(KindlingProfiling.mapUpdateMarkers)
+            defer {
+                KindlingProfiling.end(KindlingProfiling.mapUpdateMarkers, id: signpostID)
+            }
+
+            let markerInputSignatures = markerData.map {
+                MarkerInputSignature(
+                    id: $0.id,
+                    coordinate: $0.coordinate,
+                    title: $0.title,
+                    emoji: $0.emoji,
+                    isSelected: selectedID == $0.id,
+                    clusterMemberIDs: $0.clusterMemberIDs
+                )
+            }
+            guard lastMarkerInputSignatures != markerInputSignatures else {
+                return
+            }
+            lastMarkerInputSignatures = markerInputSignatures
+
             let incomingIDs = Set(markerData.map(\.id))
 
             let staleIDs = markersByID.keys.filter { !incomingIDs.contains($0) }
@@ -121,11 +286,13 @@ struct GoogleMapView: UIViewRepresentable {
             }
 
             for data in markerData {
-                let signature = MarkerSignature(
+                let signature = MarkerInputSignature(
+                    id: data.id,
                     coordinate: data.coordinate,
                     title: data.title,
                     emoji: data.emoji,
-                    isSelected: selectedID == data.id
+                    isSelected: selectedID == data.id,
+                    clusterMemberIDs: data.clusterMemberIDs
                 )
 
                 if let marker = markersByID[data.id] {
@@ -137,31 +304,38 @@ struct GoogleMapView: UIViewRepresentable {
                         marker.title = data.title
                     }
                     if oldSignature?.emoji != signature.emoji
+                        || oldSignature?.clusterMemberIDs != signature.clusterMemberIDs
                         || oldSignature?.isSelected != signature.isSelected {
-                        marker.iconView = MarkerEmojiView(
-                            emoji: data.emoji,
-                            isSelected: signature.isSelected
-                        )
+                        marker.iconView = data.isCluster
+                            ? MarkerClusterView(count: data.clusterMemberIDs?.count ?? 0)
+                            : MarkerEmojiView(emoji: data.emoji, isSelected: signature.isSelected)
                     }
                     if oldSignature?.isSelected != signature.isSelected {
                         marker.zIndex = signature.isSelected ? 1 : 0
                     }
-                    marker.groundAnchor = CGPoint(
-                        x: 0.5,
-                        y: MarkerInteractionMetrics.groundAnchorY
-                    )
-                    marker.userData = data.id
+                    if oldSignature?.clusterMemberIDs != signature.clusterMemberIDs {
+                        marker.userData = MarkerPayload(
+                            id: data.id,
+                            clusterMemberIDs: data.clusterMemberIDs
+                        )
+                        marker.groundAnchor = CGPoint(
+                            x: 0.5,
+                            y: data.isCluster ? 0.5 : MarkerInteractionMetrics.groundAnchorY
+                        )
+                    }
                 } else {
                     let marker = GMSMarker(position: data.coordinate)
                     marker.title = data.title
-                    marker.userData = data.id
-                    marker.iconView = MarkerEmojiView(
-                        emoji: data.emoji,
-                        isSelected: signature.isSelected
+                    marker.userData = MarkerPayload(
+                        id: data.id,
+                        clusterMemberIDs: data.clusterMemberIDs
                     )
+                    marker.iconView = data.isCluster
+                        ? MarkerClusterView(count: data.clusterMemberIDs?.count ?? 0)
+                        : MarkerEmojiView(emoji: data.emoji, isSelected: signature.isSelected)
                     marker.groundAnchor = CGPoint(
                         x: 0.5,
-                        y: MarkerInteractionMetrics.groundAnchorY
+                        y: data.isCluster ? 0.5 : MarkerInteractionMetrics.groundAnchorY
                     )
                     marker.zIndex = signature.isSelected ? 1 : 0
                     marker.map = mapView
@@ -172,8 +346,24 @@ struct GoogleMapView: UIViewRepresentable {
             }
         }
 
+        func mapView(_ mapView: GMSMapView, idleAt position: GMSCameraPosition) {
+            guard !rawMarkerData.isEmpty,
+                  lastDisplayedZoomBucket != Self.zoomBucket(for: position.zoom) else {
+                return
+            }
+            updateMarkerDisplay(on: mapView, zoom: position.zoom)
+        }
+
         func mapView(_ mapView: GMSMapView, didTap marker: GMSMarker) -> Bool {
-            if let id = marker.userData as? Int {
+            if let payload = marker.userData as? MarkerPayload {
+                if let memberIDs = payload.clusterMemberIDs, !memberIDs.isEmpty {
+                    zoomIntoCluster(at: marker.position, on: mapView)
+                } else {
+                    onSelect(payload.id)
+                }
+            } else if let id = marker.userData as? Int {
+                // Preserve compatibility with any marker created before the
+                // cluster payload was introduced.
                 onSelect(id)
             }
             return true
@@ -191,7 +381,7 @@ struct GoogleMapView: UIViewRepresentable {
             on mapView: GMSMapView
         ) {
             let tapPoint = mapView.projection.point(for: coordinate)
-            var nearestID: Int?
+            var nearestTarget: MarkerHitTarget?
             var nearestDistance = CGFloat.greatestFiniteMagnitude
 
             for target in hitTargets {
@@ -205,15 +395,27 @@ struct GoogleMapView: UIViewRepresentable {
                 let distance = sqrt(dx * dx + dy * dy)
                 guard distance <= MarkerInteractionMetrics.fallbackHitRadius,
                       distance < nearestDistance else { continue }
-                nearestID = target.id
+                nearestTarget = target
                 nearestDistance = distance
             }
 
-            if let nearestID {
-                onSelect(nearestID)
+            if let nearestTarget {
+                if let memberIDs = nearestTarget.clusterMemberIDs, !memberIDs.isEmpty {
+                    zoomIntoCluster(at: nearestTarget.coordinate, on: mapView)
+                } else {
+                    onSelect(nearestTarget.id)
+                }
             } else {
                 onDeselect()
             }
+        }
+
+        private func zoomIntoCluster(
+            at coordinate: CLLocationCoordinate2D,
+            on mapView: GMSMapView
+        ) {
+            let nextZoom = min(mapView.camera.zoom + 2, 18)
+            mapView.animate(to: GMSCameraPosition(target: coordinate, zoom: nextZoom))
         }
 
         func mapView(
@@ -234,10 +436,27 @@ fileprivate struct MarkerHitTarget {
     let id: Int
     let coordinate: CLLocationCoordinate2D
     let hitCenterOffsetY: CGFloat
+    let clusterMemberIDs: [Int]?
+
+    init(_ signature: MarkerHitTargetSignature) {
+        self.id = signature.id
+        self.coordinate = signature.coordinate
+        self.clusterMemberIDs = signature.clusterMemberIDs
+        let hitSize = signature.isSelected
+            ? MarkerInteractionMetrics.selectedHitSize
+            : signature.clusterMemberIDs == nil
+                ? MarkerInteractionMetrics.hitSize
+                : MarkerInteractionMetrics.clusterHitSize
+        let groundAnchorY = signature.clusterMemberIDs == nil
+            ? MarkerInteractionMetrics.groundAnchorY
+            : 0.5
+        self.hitCenterOffsetY = (0.5 - groundAnchorY) * hitSize
+    }
 
     init(id: Int, coordinate: CLLocationCoordinate2D, isSelected: Bool) {
         self.id = id
         self.coordinate = coordinate
+        self.clusterMemberIDs = nil
         let hitSize = isSelected
             ? MarkerInteractionMetrics.selectedHitSize
             : MarkerInteractionMetrics.hitSize
@@ -245,14 +464,61 @@ fileprivate struct MarkerHitTarget {
     }
 }
 
+fileprivate struct MarkerHitTargetSignature: Equatable {
+    let id: Int
+    let latitude: CLLocationDegrees
+    let longitude: CLLocationDegrees
+    let isSelected: Bool
+    let clusterMemberIDs: [Int]?
+
+    init(
+        id: Int,
+        coordinate: CLLocationCoordinate2D,
+        isSelected: Bool,
+        clusterMemberIDs: [Int]? = nil
+    ) {
+        self.id = id
+        self.latitude = coordinate.latitude
+        self.longitude = coordinate.longitude
+        self.isSelected = isSelected
+        self.clusterMemberIDs = clusterMemberIDs
+    }
+
+    var coordinate: CLLocationCoordinate2D {
+        CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
+}
+
 private enum MarkerInteractionMetrics {
     static let hitSize: CGFloat = 72
     static let selectedHitSize: CGFloat = 72
+    static let clusterHitSize: CGFloat = 64
     static let fallbackHitRadius: CGFloat = 38
     static let groundAnchorY: CGFloat = 0.875
 }
 
-private struct MarkerSignature: Equatable {
+private enum MapClusteringMetrics {
+    static let minimumMarkersToCluster = 24
+    static let stopClusteringAtZoom: Float = 13
+    static let cellPoints: CGFloat = 72
+}
+
+private struct ClusterGridKey: Hashable, Comparable {
+    let x: Int
+    let y: Int
+
+    static func < (lhs: ClusterGridKey, rhs: ClusterGridKey) -> Bool {
+        lhs.x == rhs.x ? lhs.y < rhs.y : lhs.x < rhs.x
+    }
+}
+
+private struct MarkerPayload {
+    let id: Int
+    let clusterMemberIDs: [Int]?
+}
+
+fileprivate struct MarkerInputSignature: Equatable {
+    let id: Int
     struct Coordinate: Equatable {
         let latitude: CLLocationDegrees
         let longitude: CLLocationDegrees
@@ -262,13 +528,17 @@ private struct MarkerSignature: Equatable {
     let title: String
     let emoji: String
     let isSelected: Bool
+    let clusterMemberIDs: [Int]?
 
     init(
+        id: Int,
         coordinate: CLLocationCoordinate2D,
         title: String,
         emoji: String,
-        isSelected: Bool
+        isSelected: Bool,
+        clusterMemberIDs: [Int]? = nil
     ) {
+        self.id = id
         self.coordinate = Coordinate(
             latitude: coordinate.latitude,
             longitude: coordinate.longitude
@@ -276,6 +546,7 @@ private struct MarkerSignature: Equatable {
         self.title = title
         self.emoji = emoji
         self.isSelected = isSelected
+        self.clusterMemberIDs = clusterMemberIDs
     }
 }
 
@@ -343,6 +614,7 @@ extension GoogleMapView {
     init(
         coordinate: CLLocationCoordinate2D,
         title: String,
+        emoji: String = "✦",
         isInteractive: Bool = true
     ) {
         self.init(
@@ -351,7 +623,7 @@ extension GoogleMapView {
                     id: 0,
                     coordinate: coordinate,
                     title: title,
-                    emoji: ""
+                    emoji: emoji
                 )
             ],
             center: coordinate,
@@ -391,6 +663,52 @@ private final class MarkerEmojiView: UIView {
         label.font = .systemFont(ofSize: isSelected ? 24 : 19)
         label.textAlignment = .center
         bubble.addSubview(label)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+}
+
+private final class MarkerClusterView: UIView {
+    init(count: Int) {
+        let size: CGFloat = MarkerInteractionMetrics.clusterHitSize
+        super.init(frame: CGRect(x: 0, y: 0, width: size, height: size))
+        backgroundColor = .clear
+
+        let visibleSize = size - 8
+        let bubble = UIView(frame: CGRect(
+            x: (size - visibleSize) / 2,
+            y: (size - visibleSize) / 2,
+            width: visibleSize,
+            height: visibleSize
+        ))
+        bubble.backgroundColor = Self.color(for: count)
+        bubble.layer.cornerRadius = visibleSize / 2
+        bubble.layer.borderColor = UIColor.white.withAlphaComponent(0.95).cgColor
+        bubble.layer.borderWidth = 2
+        bubble.layer.shadowColor = UIColor.black.cgColor
+        bubble.layer.shadowOpacity = 0.18
+        bubble.layer.shadowRadius = 4
+        bubble.layer.shadowOffset = CGSize(width: 0, height: 2)
+        addSubview(bubble)
+
+        let label = UILabel(frame: bubble.bounds)
+        label.text = "\(count)"
+        label.font = .systemFont(ofSize: count >= 100 ? 15 : 18, weight: .semibold)
+        label.textAlignment = .center
+        label.textColor = .white
+        bubble.addSubview(label)
+    }
+
+    private static func color(for count: Int) -> UIColor {
+        switch count {
+        case 20...:
+            return UIColor(red: 0.89, green: 0.30, blue: 0.17, alpha: 0.97)
+        case 8...:
+            return UIColor(red: 0.95, green: 0.46, blue: 0.20, alpha: 0.97)
+        default:
+            return UIColor(red: 0.98, green: 0.62, blue: 0.28, alpha: 0.97)
+        }
     }
 
     @available(*, unavailable)

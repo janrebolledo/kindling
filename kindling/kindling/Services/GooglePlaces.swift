@@ -83,22 +83,39 @@ actor GooglePlacesService {
     static let shared = GooglePlacesService()
 
     private var placeCache: [String: GooglePlaceDetails] = [:]
+    private var placeRequests: [String: Task<GooglePlaceDetails?, Never>] = [:]
     private var routeCache: [String: String] = [:]
+    private var routeRequests: [String: Task<String?, Never>] = [:]
 
     func details(for placeID: String) async -> GooglePlaceDetails? {
+        let signpostID = KindlingProfiling.begin(KindlingProfiling.placeResolution)
+        defer {
+            KindlingProfiling.end(KindlingProfiling.placeResolution, id: signpostID)
+        }
+
         if let cached = placeCache[placeID] { return cached }
 
-        let url = backendBaseURL.appendingPathComponent("places").appendingPathComponent(placeID)
-
-        do {
-            let (data, response) = try await URLSession.shared.data(from: url)
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
-            let details = try JSONDecoder().decode(GooglePlaceDetails.self, from: data)
-            placeCache[placeID] = details
-            return details
-        } catch {
-            return nil
+        if let request = placeRequests[placeID] {
+            return await request.value
         }
+
+        let request = Task<GooglePlaceDetails?, Never> {
+            let url = backendBaseURL.appendingPathComponent("places").appendingPathComponent(placeID)
+
+            do {
+                let (data, response) = try await URLSession.shared.data(from: url)
+                guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+                return try JSONDecoder().decode(GooglePlaceDetails.self, from: data)
+            } catch {
+                return nil
+            }
+        }
+        placeRequests[placeID] = request
+
+        let details = await request.value
+        placeRequests[placeID] = nil
+        if let details { placeCache[placeID] = details }
+        return details
     }
 
     func route(
@@ -109,6 +126,10 @@ actor GooglePlacesService {
         let key = "\(origin.latitude),\(origin.longitude)|\(destination.latitude),\(destination.longitude)|\(transportType.rawValue)"
         if let cached = routeCache[key] { return cached }
 
+        if let request = routeRequests[key] {
+            return await request.value
+        }
+
         let mode: String
         switch transportType {
         case .driving: mode = "DRIVE"
@@ -116,28 +137,34 @@ actor GooglePlacesService {
         case .transit: mode = "TRANSIT"
         }
 
-        guard let url = URL(string: backendBaseURL.absoluteString + "/routes") else { return nil }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        if let session = try? await supabase.auth.session {
-            request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
-        }
-        request.httpBody = try? JSONSerialization.data(withJSONObject: [
-            "origin": ["latitude": origin.latitude, "longitude": origin.longitude],
-            "destination": ["latitude": destination.latitude, "longitude": destination.longitude],
-            "travelMode": mode,
-        ])
+        let request = Task<String?, Never> {
+            guard let url = URL(string: backendBaseURL.absoluteString + "/routes") else { return nil }
+            var urlRequest = URLRequest(url: url)
+            urlRequest.httpMethod = "POST"
+            urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            if let session = try? await supabase.auth.session {
+                urlRequest.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
+            }
+            urlRequest.httpBody = try? JSONSerialization.data(withJSONObject: [
+                "origin": ["latitude": origin.latitude, "longitude": origin.longitude],
+                "destination": ["latitude": destination.latitude, "longitude": destination.longitude],
+                "travelMode": mode,
+            ])
 
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
-            let route = try JSONDecoder().decode(GoogleRouteResponse.self, from: data)
-            guard let formattedDuration = route.formattedDuration else { return nil }
-            routeCache[key] = formattedDuration
-            return formattedDuration
-        } catch {
-            return nil
+            do {
+                let (data, response) = try await URLSession.shared.data(for: urlRequest)
+                guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+                let route = try JSONDecoder().decode(GoogleRouteResponse.self, from: data)
+                return route.formattedDuration
+            } catch {
+                return nil
+            }
         }
+        routeRequests[key] = request
+
+        let formattedDuration = await request.value
+        routeRequests[key] = nil
+        if let formattedDuration { routeCache[key] = formattedDuration }
+        return formattedDuration
     }
 }

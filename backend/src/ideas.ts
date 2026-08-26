@@ -1,4 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { GoogleGenAI } from '@google/genai';
+import { isDistanceBasedActivity, lookupActivityDetails, type ActivityDetails } from './activity';
 import { lookupPlace, type GoogleMapsCredentials } from './places';
 import type { ExtractedItem, ExtractionResult } from './utils/parseScreenshot';
 import type { DraftCollectionItem, Idea, MapsPlace } from './types';
@@ -66,10 +68,34 @@ async function getOrCreateIdeaForPlace(
   place: MapsPlace,
   image: string | null,
   item: ExtractedItem,
+  ai: GoogleGenAI,
 ): Promise<{ idea: Idea; via: LinkedVia } | null> {
   const placeId = place.id!;
   const existing = await findIdeaByPlaceId(supabase, placeId);
-  if (existing) return { idea: existing, via: 'place_id' };
+  if (existing) {
+    const needsDetails = isDistanceBasedActivity(item)
+      && (existing.distance_miles == null || existing.completion_time == null);
+    if (needsDetails) {
+      const details = await lookupActivityDetails(ai, item);
+      if (details) {
+        const updates: Partial<ActivityDetails> = {};
+        if (existing.distance_miles == null) updates.distance_miles = details.distance_miles;
+        if (existing.completion_time == null) updates.completion_time = details.completion_time;
+        if (Object.values(updates).some((value) => value != null)) {
+          const { data: updated } = await supabase
+            .from('ideas')
+            .update(updates)
+            .eq('id', existing.id)
+            .select()
+            .single();
+          if (updated) return { idea: updated, via: 'place_id' };
+        }
+      }
+    }
+    return { idea: existing, via: 'place_id' };
+  }
+
+  const activityDetails = await lookupActivityDetails(ai, item);
 
   const newIdea = {
     // `item.venue` comes from the user's screenshot extraction, not Apple
@@ -82,6 +108,8 @@ async function getOrCreateIdeaForPlace(
     location_type: item.activity_type ?? null,
     location_emoji: item.activity_emoji ?? null,
     duration: null,
+    distance_miles: activityDetails?.distance_miles ?? null,
+    completion_time: activityDetails?.completion_time ?? null,
     date: item.date,
     time: item.time,
     place_id: placeId,
@@ -108,6 +136,7 @@ async function getOrCreateIdeaForPlace(
 export async function processEntry(
   supabase: SupabaseClient,
   googleMaps: GoogleMapsCredentials,
+  ai: GoogleGenAI,
   entry: ExtractionResult,
 ): Promise<ProcessResult> {
   const { id, data } = entry;
@@ -137,6 +166,7 @@ export async function processEntry(
       mapsData.place,
       mapsData.image,
       item,
+      ai,
     );
     if (created == null) {
       return { status: 'dropped', reason: 'insert_failed', venue };

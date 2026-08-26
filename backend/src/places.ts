@@ -22,6 +22,7 @@ export type PlaceDetails = {
   openNow: boolean | null;
   photoUrl: string | null;
   photoAttributions: string[];
+  photoAttributionUrls: Array<string | null>;
   googleMapsUri: string | null;
 };
 
@@ -58,11 +59,15 @@ function publicAPIBaseURL(credentials: GoogleMapsCredentials): string {
   return (credentials.PUBLIC_API_URL ?? 'https://api.getkindl.ing').replace(/\/$/, '');
 }
 
+function googlePlaceId(placeId: string): string {
+  return placeId.startsWith('places/') ? placeId.slice('places/'.length) : placeId;
+}
+
 export function photoURL(
   placeId: string,
   credentials: GoogleMapsCredentials,
 ): string {
-  return `${publicAPIBaseURL(credentials)}/places/${encodeURIComponent(placeId)}/photo`;
+  return `${publicAPIBaseURL(credentials)}/places/${encodeURIComponent(googlePlaceId(placeId))}/photo`;
 }
 
 function responseContentType(response: Response): string | null {
@@ -157,9 +162,10 @@ export async function getPlaceDetails(
   placeId: string,
   credentials: GoogleMapsCredentials,
 ): Promise<PlaceDetails | null> {
-  return cachedJSON('google-place-details', placeId, 300, async () => {
+  const normalizedPlaceId = googlePlaceId(placeId);
+  return cachedJSON('google-place-details', normalizedPlaceId, 300, async () => {
     const response = await fetch(
-      `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`,
+      `https://places.googleapis.com/v1/places/${encodeURIComponent(normalizedPlaceId)}`,
       {
         headers: googleHeaders(
           credentials,
@@ -187,6 +193,8 @@ export async function getPlaceDetails(
       photoAttributions: (place.photos?.[0]?.authorAttributions ?? [])
         .map((attribution) => attribution.displayName ?? attribution.uri ?? '')
         .filter(Boolean),
+      photoAttributionUrls: (place.photos?.[0]?.authorAttributions ?? [])
+        .map((attribution) => attribution.uri ?? null),
       googleMapsUri: place.googleMapsUri ?? null,
     };
   });
@@ -196,9 +204,10 @@ export async function fetchPlacePhoto(
   placeId: string,
   credentials: GoogleMapsCredentials,
 ): Promise<Response | null> {
-  return cachedResponse('google-place-photos', placeId, 86400, async () => {
+  const normalizedPlaceId = googlePlaceId(placeId);
+  return cachedResponse('google-place-photos', normalizedPlaceId, 86400, async () => {
     const response = await fetch(
-      `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`,
+      `https://places.googleapis.com/v1/places/${encodeURIComponent(normalizedPlaceId)}`,
       { headers: googleHeaders(credentials, 'photos') },
     );
     if (!response.ok) return null;

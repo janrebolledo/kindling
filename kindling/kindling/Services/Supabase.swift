@@ -44,6 +44,8 @@ struct Item: Codable, Identifiable {
     let location_type: String?
     let location_emoji: String?
     let duration: String?
+    let distance_miles: Double?
+    let completion_time: String?
     let date: String?
     let time: String?
     let place_id: String?
@@ -58,6 +60,20 @@ struct Item: Codable, Identifiable {
             .joined(separator: " ")
 
         return label.isEmpty ? nil : label
+    }
+
+    var activityDetailsLabel: String? {
+        var values: [String] = []
+        if let distance = distance_miles, distance >= 0 {
+            let formatted = distance.rounded() == distance
+                ? String(Int(distance))
+                : String(format: "%.1f", distance)
+            values.append("\(formatted) mi")
+        }
+        if let completion_time, !completion_time.isEmpty {
+            values.append(completion_time)
+        }
+        return values.isEmpty ? nil : values.joined(separator: " · ")
     }
 }
 

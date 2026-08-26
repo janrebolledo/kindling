@@ -204,6 +204,7 @@ async function streamExtractedIdeas(
     GOOGLE_MAPS_API_KEY: c.env.GOOGLE_MAPS_API_KEY,
     PUBLIC_API_URL: c.env.PUBLIC_API_URL,
   };
+  const ai = createAI(c.env);
 
   return streamSSE(c, async (stream) => {
     await Promise.all(
@@ -225,7 +226,7 @@ async function streamExtractedIdeas(
             return;
           }
 
-          const result = await processEntry(supabase, googleMaps, entry);
+          const result = await processEntry(supabase, googleMaps, ai, entry);
           if (result.status === 'dropped') {
             summary.dropped += 1;
             summary.items.push({

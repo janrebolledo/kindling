@@ -82,8 +82,9 @@ nonisolated func resolveOpenStatus(from openHours: [String]) -> OpenStatus? {
         }
     }
 
-    // Today is closed or all periods have passed — scan ahead up to 6 days
-    for daysAhead in 1...6 {
+    // Today is closed or all periods have passed — scan through the next
+    // occurrence of every weekday, including the same weekday next week.
+    for daysAhead in 1...7 {
         let nextWeekday = (weekday - 1 + daysAhead) % 7
         let nextName = dayNames[nextWeekday]
         guard let nextEntry = openHours.first(where: { $0.hasPrefix(nextName) }),
@@ -92,14 +93,18 @@ nonisolated func resolveOpenStatus(from openHours: [String]) -> OpenStatus? {
         guard nextHours.lowercased() != "closed",
               nextHours.lowercased() != "open 24 hours" else {
             if nextHours.lowercased() == "open 24 hours" {
-                let dayLabel = daysAhead == 1 ? "" : "\(nextName) "
-                return OpenStatus(isOpen: false, detail: "Opens \(dayLabel)24 hours")
+                if daysAhead == 1 {
+                    return OpenStatus(isOpen: false, detail: "Opens 24 hours")
+                }
+                return OpenStatus(isOpen: false, detail: "Opens on \(nextName)")
             }
             continue
         }
         if let (openStr, _) = extractTimes(from: nextHours) {
-            let dayLabel = daysAhead == 1 ? "" : "\(nextName) "
-            return OpenStatus(isOpen: false, detail: "Opens \(dayLabel)at \(openStr)")
+            if daysAhead == 1 {
+                return OpenStatus(isOpen: false, detail: "Opens at \(openStr)")
+            }
+            return OpenStatus(isOpen: false, detail: "Opens on \(nextName)")
         }
     }
     return OpenStatus(isOpen: false, detail: "Closed")

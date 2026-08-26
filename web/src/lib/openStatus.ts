@@ -73,7 +73,7 @@ export function resolveOpenStatus(openHours: string[], now = new Date()): OpenSt
     }
   }
 
-  for (let daysAhead = 1; daysAhead <= 6; daysAhead++) {
+  for (let daysAhead = 1; daysAhead <= 7; daysAhead++) {
     const nextName = dayNames[(weekday + daysAhead) % 7];
     const nextEntry = openHours.find((row) => row.startsWith(nextName));
     if (!nextEntry) continue;
@@ -82,13 +82,15 @@ export function resolveOpenStatus(openHours: string[], now = new Date()): OpenSt
     const nextHours = nextEntry.slice(nextColon + 2).trim();
     if (nextHours.toLowerCase() === 'closed') continue;
     if (nextHours.toLowerCase() === 'open 24 hours') {
-      const dayLabel = daysAhead === 1 ? '' : `${nextName} `;
-      return { isOpen: false, detail: `Opens ${dayLabel}24 hours` };
+      return daysAhead === 1
+        ? { isOpen: false, detail: 'Opens 24 hours' }
+        : { isOpen: false, detail: `Opens on ${nextName}` };
     }
     const times = extractTimes(nextHours);
     if (times) {
-      const dayLabel = daysAhead === 1 ? '' : `${nextName} `;
-      return { isOpen: false, detail: `Opens ${dayLabel}at ${times.open}` };
+      return daysAhead === 1
+        ? { isOpen: false, detail: `Opens at ${times.open}` }
+        : { isOpen: false, detail: `Opens on ${nextName}` };
     }
   }
 

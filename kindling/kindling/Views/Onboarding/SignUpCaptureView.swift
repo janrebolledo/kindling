@@ -7,7 +7,7 @@ struct SignUpCaptureView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var activeCardIndex = 0
     @State private var dragOffset: CGSize = .zero
-    @State private var isDismissingCard = false
+    @State private var isCyclingCard = false
     @State private var promotionProgress: CGFloat = 0
     @State private var frontSlideProgress: CGFloat = 1
 
@@ -73,14 +73,7 @@ struct SignUpCaptureView: View {
                         allowsDeletion: false,
                         animatesImageLoading: true
                     )
-                        .frame(width: 260, height: 293, alignment: .top)
-                        .background {
-                            if cards[index].ideas?.type?.lowercased() != "event" {
-                                RoundedRectangle(cornerRadius: 20)
-                                    .fill(Color.white)
-                            }
-                        }
-                        .clipShape(RoundedRectangle(cornerRadius: 20))
+                        .frame(width: 250, alignment: .top)
                         .scaleEffect(scale(for: depth))
                         .blur(radius: blur(for: depth))
                         .opacity(opacity(for: depth))
@@ -144,7 +137,7 @@ struct SignUpCaptureView: View {
             let entranceOffset: CGFloat = reduceMotion
                 ? 0
                 : interpolate(12, 0, progress: frontSlideProgress)
-            return dragOffset.height * 0.12 + entranceOffset
+            return dragOffset.height + entranceOffset
         }
 
         switch depth {
@@ -211,59 +204,84 @@ struct SignUpCaptureView: View {
     }
 
     private var swipeGesture: some Gesture {
-        DragGesture(minimumDistance: 12)
+        DragGesture(minimumDistance: 8)
             .onChanged { value in
-                guard !isDismissingCard else { return }
-                dragOffset = value.translation
+                guard !isCyclingCard else { return }
+                dragOffset = CGSize(
+                    width: value.translation.width,
+                    height: min(max(value.translation.height, -35), 35)
+                )
             }
             .onEnded { value in
-                guard !isDismissingCard else { return }
-                let projectedWidth = value.predictedEndTranslation.width
-                guard abs(projectedWidth) > 90, cards.count > 1 else {
-                    withAnimation(
-                        reduceMotion
-                            ? .linear(duration: 0.01)
-                            : .spring(duration: 0.32, bounce: 0.22)
-                    ) {
+                guard !isCyclingCard else { return }
+                let isHorizontal = abs(value.translation.width) > abs(value.translation.height)
+                guard isHorizontal else {
+                    withAnimation(cardResetAnimation) {
                         dragOffset = .zero
-                        promotionProgress = 0
                     }
                     return
                 }
 
-                isDismissingCard = true
-                let direction: CGFloat = projectedWidth < 0 ? -1 : 1
-                let duration = reduceMotion ? 0.01 : 0.42
-                withAnimation(
-                    reduceMotion
-                        ? .linear(duration: duration)
-                        : .spring(duration: duration, bounce: 0.08)
-                ) {
-                    dragOffset = CGSize(width: direction * 520, height: value.translation.height)
-                    promotionProgress = 1
+                let projectedWidth = value.predictedEndTranslation.width
+                guard cards.count > 1,
+                      abs(value.translation.width) > 45 || abs(projectedWidth) > 90
+                else {
+                    withAnimation(cardResetAnimation) {
+                        dragOffset = .zero
+                    }
+                    return
                 }
 
-                Task {
-                    try? await Task.sleep(
-                        nanoseconds: UInt64(duration * 1_000_000_000)
-                    )
-                    var transaction = Transaction()
-                    transaction.disablesAnimations = true
-                    withTransaction(transaction) {
-                        activeCardIndex = (activeCardIndex + 1) % cards.count
-                        dragOffset = .zero
-                        promotionProgress = 0
-                        frontSlideProgress = reduceMotion ? 1 : 0
-                        isDismissingCard = false
-                    }
-                    if !reduceMotion {
-                        withAnimation(
-                            .spring(response: 0.3, dampingFraction: 1)
-                        ) {
-                            frontSlideProgress = 1
-                        }
-                    }
-                }
+                cycleCard(direction: projectedWidth < 0 ? 1 : -1)
             }
+    }
+
+    private var cardResetAnimation: Animation {
+        reduceMotion
+            ? .easeOut(duration: 0.12)
+            : .easeInOut(duration: 0.28)
+    }
+
+    private func cycleCard(direction: Int) {
+        guard cards.count > 1, !isCyclingCard else { return }
+
+        isCyclingCard = true
+        let outgoingOffset: CGFloat = direction > 0 ? -260 : 260
+        let incomingOffset = -outgoingOffset
+        let verticalOvershoot = dragOffset.height * 1.5
+        let exitAnimation: Animation = reduceMotion
+            ? .easeOut(duration: 0.12)
+            : .easeInOut(duration: 0.28)
+        let promotionAnimation: Animation = reduceMotion
+            ? .easeOut(duration: 0.12)
+            : .easeInOut(duration: 0.34)
+
+        withAnimation(exitAnimation) {
+            dragOffset = CGSize(width: outgoingOffset, height: verticalOvershoot)
+        }
+
+        withAnimation(promotionAnimation) {
+            promotionProgress = 1
+        }
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 280_000_000)
+            guard !Task.isCancelled else { return }
+
+            var transaction = Transaction()
+            transaction.animation = nil
+            withTransaction(transaction) {
+                activeCardIndex = (activeCardIndex + direction + cards.count) % cards.count
+                dragOffset = CGSize(width: incomingOffset, height: 0)
+                promotionProgress = 0
+                frontSlideProgress = reduceMotion ? 1 : 0
+            }
+
+            withAnimation(promotionAnimation) {
+                dragOffset = .zero
+                frontSlideProgress = 1
+                isCyclingCard = false
+            }
+        }
     }
 }

@@ -9,6 +9,31 @@ import Photos
 import os
 import SwiftUI
 
+private actor CardImageCache {
+    static let shared = CardImageCache()
+
+    private var images: [String: UIImage] = [:]
+    private var requests: [String: Task<UIImage?, Never>] = [:]
+
+    func image(
+        for key: String,
+        loader: @escaping @Sendable () async -> UIImage?
+    ) async -> UIImage? {
+        if let image = images[key] { return image }
+        if let request = requests[key] { return await request.value }
+
+        let request = Task<UIImage?, Never> {
+            await loader()
+        }
+        requests[key] = request
+
+        let image = await request.value
+        requests[key] = nil
+        if let image { images[key] = image }
+        return image
+    }
+}
+
 struct Card: View {
     @State var image: UIImage? = nil
     @State private var imageRequestToken = UUID()
@@ -30,6 +55,8 @@ struct Card: View {
     var mapName: String? = nil
     var tapAction: (() -> Void)? = nil
     var loadsMapData = true
+    var loadsPlaceDetails = false
+    var loadsRemoteMedia = true
     var allowsDetailPresentation = true
     var allowsDeletion = true
     var animatesImageLoading = false
@@ -43,6 +70,7 @@ struct Card: View {
     }
 
     private var googleMapsMediaURL: URL? {
+        guard loadsRemoteMedia else { return nil }
         let value = placeDetails?.photoUrl ?? card.ideas?.media_url
         return value.flatMap(URL.init(string:))
     }
@@ -83,16 +111,25 @@ struct Card: View {
             }
         }
         .task(id: imageLoadID) {
+            let signpostID = KindlingProfiling.begin(KindlingProfiling.cardImageLoad)
+            defer {
+                KindlingProfiling.end(KindlingProfiling.cardImageLoad, id: signpostID)
+            }
+
             let requestToken = UUID()
             imageRequestToken = requestToken
             image = nil
             guard !card.local_id.isEmpty else { return }
 
-            let loadedImage = try? await loadImage(
-                from: card.local_id,
-                targetSize: thumbnailSize,
-                resizeMode: .fast
-            )
+            let localID = card.local_id
+            let targetSize = thumbnailSize
+            let loadedImage = await CardImageCache.shared.image(for: localID) {
+                try? await loadImage(
+                    from: localID,
+                    targetSize: targetSize,
+                    resizeMode: .fast
+                )
+            }
             guard !Task.isCancelled, imageRequestToken == requestToken else { return }
 
             if animatesImageLoading {
@@ -107,7 +144,6 @@ struct Card: View {
             guard shouldLoadPlaceData else { return }
             applyCachedDirections()
             await fetchPlaceDetails()
-            googlePlaceHours = placeDetails?.hours
 
             guard shouldFetchDirections else { return }
             if placeDetails != nil, etaString != nil { return }
@@ -229,7 +265,7 @@ struct Card: View {
 
                 googlePlaceStatusOrFallbackRow(
                     fontSize: 14,
-                    color: .primary.opacity(0.5)
+                    color: .secondary
                 )
             }
             .padding(8)
@@ -311,7 +347,8 @@ struct Card: View {
     }
 
     private var shouldLoadPlaceData: Bool {
-        loadsMapData && card.ideas?.place_id != nil && isNearViewport
+        card.ideas?.place_id != nil
+            && (loadsPlaceDetails || (loadsMapData && isNearViewport))
     }
 
     private var mapDataTaskID: String {
@@ -345,8 +382,19 @@ struct Card: View {
 
     private func fetchPlaceDetails() async {
         guard placeDetails == nil, let placeID = card.ideas?.place_id else { return }
-        placeDetails = await GooglePlacesService.shared.details(for: placeID)
-        googlePlaceHours = placeDetails?.hours
+        let signpostID = KindlingProfiling.begin(KindlingProfiling.cardPlaceDetails)
+        defer {
+            KindlingProfiling.end(KindlingProfiling.cardPlaceDetails, id: signpostID)
+        }
+
+        let details = await GooglePlacesService.shared.details(for: placeID)
+        guard !Task.isCancelled else { return }
+        var transaction = Transaction()
+        transaction.animation = nil
+        withTransaction(transaction) {
+            placeDetails = details
+            googlePlaceHours = details?.hours
+        }
     }
 
     private func requestLocationIfNeeded() {
@@ -360,14 +408,22 @@ struct Card: View {
     @ViewBuilder
     private func googlePlaceStatusRow(fontSize: CGFloat, color: some ShapeStyle) -> some View {
         if let status = googlePlaceHours?.status {
-            HStack(spacing: 8) {
-                Text(status.isOpen ? "Open" : "Closed").fontWeight(.medium)
+            if !status.isOpen && status.detail.hasPrefix("Opens") {
                 Text(status.detail)
+                    .font(.system(size: fontSize))
+                    .tracking(-0.35)
+                    .foregroundStyle(color)
+                    .lineLimit(1)
+            } else {
+                HStack(spacing: 8) {
+                    Text(status.isOpen ? "Open" : "Closed").fontWeight(.medium)
+                    Text(status.detail)
+                }
+                .font(.system(size: fontSize))
+                .tracking(-0.35)
+                .foregroundStyle(color)
+                .lineLimit(1)
             }
-            .font(.system(size: fontSize))
-            .tracking(-0.35)
-            .foregroundStyle(color)
-            .lineLimit(1)
         }
     }
 
@@ -376,14 +432,26 @@ struct Card: View {
         fontSize: CGFloat,
         color: some ShapeStyle
     ) -> some View {
-        if googlePlaceHours?.status != nil {
+        if let activityDetails = card.ideas?.activityDetailsLabel {
+            HStack(spacing: 8) {
+                if let locationType = card.ideas?.locationTypeLabel {
+                    Text(locationType).fontWeight(.medium)
+                }
+                Text(activityDetails)
+            }
+            .font(.system(size: fontSize))
+            .tracking(-0.35)
+            .foregroundStyle(color)
+        } else if googlePlaceHours?.status != nil {
             googlePlaceStatusRow(fontSize: fontSize, color: color)
         } else {
             HStack(spacing: 8) {
                 if let locationType = card.ideas?.locationTypeLabel {
                     Text(locationType).fontWeight(.medium)
                 }
-                if let duration = card.ideas?.duration {
+                if let activityDetails = card.ideas?.activityDetailsLabel {
+                    Text(activityDetails)
+                } else if let duration = card.ideas?.duration {
                     Text(duration)
                 }
             }

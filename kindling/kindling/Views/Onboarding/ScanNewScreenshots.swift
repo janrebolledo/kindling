@@ -40,23 +40,28 @@ final class ScreenshotIndexingController {
         case progressRefresh
     }
 
-    private var currentOperation: Task<Void, Error>?
+    private var currentOperation: Task<Bool, Error>?
     private var currentOperationKind: OperationKind?
 
     private init() {}
 
     /// Runs the automatic app-open scan. The caller only coordinates the
     /// lifecycle; all indexing state remains in this controller.
-    func scan(limit: Int = 5) async {
+    func scan(limit: Int = 5) async -> Bool {
+        let signpostID = KindlingProfiling.begin(KindlingProfiling.screenshotScan)
+        defer {
+            KindlingProfiling.end(KindlingProfiling.screenshotScan, id: signpostID)
+        }
+
         if let currentOperation {
             let operationKind = currentOperationKind
             _ = try? await currentOperation.value
-            if operationKind != .progressRefresh { return }
+            if operationKind != .progressRefresh { return false }
         }
 
-        let operation = Task { [weak self] in
-            guard let self else { return }
-            try await self.performAutomaticScan(limit: limit)
+        let operation = Task<Bool, Error> { [weak self] in
+            guard let self else { return false }
+            return try await self.performAutomaticScan(limit: limit)
         }
         currentOperation = operation
         currentOperationKind = .automaticScan
@@ -65,11 +70,12 @@ final class ScreenshotIndexingController {
             currentOperationKind = nil
         }
         do {
-            try await operation.value
+            return try await operation.value
         } catch {
             Self.logger.error(
                 "Automatic screenshot scan failed: \(String(describing: error), privacy: .public)"
             )
+            return false
         }
     }
 
@@ -82,9 +88,10 @@ final class ScreenshotIndexingController {
             if operationKind != .progressRefresh { return }
         }
 
-        let operation = Task { [weak self] in
-            guard let self else { return }
+        let operation = Task<Bool, Error> { [weak self] in
+            guard let self else { return false }
             try await self.performSelectedPhotos(items)
+            return true
         }
         currentOperation = operation
         currentOperationKind = .selectedPhotos
@@ -92,7 +99,7 @@ final class ScreenshotIndexingController {
             currentOperation = nil
             currentOperationKind = nil
         }
-        try await operation.value
+            _ = try await operation.value
     }
 
     /// Refreshes the account-screen progress without doing any work on the
@@ -105,11 +112,12 @@ final class ScreenshotIndexingController {
         }
 
         guard let userID = supabase.auth.currentUser?.id else { return }
-        let operation = Task<Void, Error> { [weak self] in
-            guard let self else { return }
+        let operation = Task<Bool, Error> { [weak self] in
+            guard let self else { return false }
             let progress = await Self.readProgress(for: userID)
             self.totalScreenshotCount = progress.total
             self.processedScreenshotCount = progress.processed
+            return true
         }
         currentOperation = operation
         currentOperationKind = .progressRefresh
@@ -120,8 +128,8 @@ final class ScreenshotIndexingController {
         _ = try? await operation.value
     }
 
-    private func performAutomaticScan(limit: Int) async throws {
-        guard let userID = supabase.auth.currentUser?.id else { return }
+    private func performAutomaticScan(limit: Int) async throws -> Bool {
+        guard let userID = supabase.auth.currentUser?.id else { return false }
 
         isProcessing = true
         defer {
@@ -136,7 +144,7 @@ final class ScreenshotIndexingController {
         try? await service.fetchAndMergeFromSupabase(userID: userID)
 
         let manager = ScreenshotManager()
-        guard await manager.requestPhotoLibraryAccess() else { return }
+        guard await manager.requestPhotoLibraryAccess() else { return false }
 
         // PhotoKit enumeration and image loading happen in the utility task,
         // keeping both the home screen and account screen responsive.
@@ -147,7 +155,7 @@ final class ScreenshotIndexingController {
         totalScreenshotCount = prepared.totalScreenshotCount
         processedScreenshotCount = prepared.processedScreenshotCount
 
-        guard !prepared.images.isEmpty else { return }
+        guard !prepared.images.isEmpty else { return false }
         print("Scanning \(prepared.images.count) new screenshot(s)")
 
         processingImageCount = prepared.images.count
@@ -182,6 +190,7 @@ final class ScreenshotIndexingController {
             totalScreenshotCount,
             processedScreenshotCount + processedIDs.count
         )
+        return !cards.isEmpty
     }
 
     private func performSelectedPhotos(_ items: [PhotosPickerItem]) async throws {

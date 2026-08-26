@@ -3,7 +3,7 @@ import { cachedJSON } from './cache';
 import type { SharedIdea } from './types';
 
 const SHARE_COLUMNS =
-  'id, name, type, description, media_url, location_type, location_emoji, duration, date, time, place_id, created_at';
+  'id, name, type, description, media_url, location_type, location_emoji, duration, distance_miles, completion_time, date, time, place_id, created_at';
 
 // These columns are shared by the old and current ideas schemas. Keep this
 // projection as a compatibility path while PostgREST refreshes after a
@@ -45,6 +45,8 @@ export async function getSharedIdea(
       return {
         ...compatible.data,
         location_emoji: null,
+        distance_miles: null,
+        completion_time: null,
         date: null,
         time: null,
       };

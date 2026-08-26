@@ -7,9 +7,9 @@ struct OnboardingCardCarousel: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private let cardWidth: CGFloat = 300
-    private let cardHeight: CGFloat = 271
-    private let spacing: CGFloat = 20
+    private let cardWidth: CGFloat = 250
+    private let cardHeight: CGFloat = 250
+    private let spacing: CGFloat = 14
 
     var body: some View {
         GeometryReader { geometry in

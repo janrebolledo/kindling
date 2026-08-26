@@ -38,6 +38,10 @@ struct IdeaView: View {
     @Environment(\.displayScale) private var displayScale
     @State private var localImage: UIImage?
     @State private var savedScreenshots: [SavedScreenshot] = []
+    @State private var selectedScreenshotIndex = 0
+    @State private var screenshotDragOffset: CGFloat = 0
+    @State private var screenshotVerticalDragOffset: CGFloat = 0
+    @State private var isCyclingScreenshot = false
     @State private var imageRequestToken = UUID()
     @State private var screenshotDate: Date?
     @State private var showQuickLook = false
@@ -122,21 +126,42 @@ struct IdeaView: View {
                 .padding(.bottom, 8)
 
                 // Status row
-                if let status = placeHours?.status {
-                    HStack(spacing: 8) {
-                        Text(status.isOpen ? "Open" : "Closed").fontWeight(.medium)
-                        Text(status.detail)
-                    }
-                    .font(.system(size: 16))
-                    .tracking(-0.4)
-                    .foregroundStyle(.secondary)
-                } else if card.ideas?.locationTypeLabel != nil || card.ideas?.duration != nil {
+                if let activityDetails = card.ideas?.activityDetailsLabel {
                     HStack(spacing: 8) {
                         if let locationType = card.ideas?.locationTypeLabel {
                             Text(locationType).fontWeight(.medium)
                         }
-                        if let hrs = card.ideas?.duration {
-                            Text(hrs)
+                        Text(activityDetails)
+                    }
+                    .font(.system(size: 16))
+                    .tracking(-0.4)
+                    .foregroundStyle(.secondary)
+                } else if let status = placeHours?.status {
+                    if !status.isOpen && status.detail.hasPrefix("Opens") {
+                        Text(status.detail)
+                            .font(.system(size: 16))
+                            .tracking(-0.4)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        HStack(spacing: 8) {
+                            Text(status.isOpen ? "Open" : "Closed").fontWeight(.medium)
+                            Text(status.detail)
+                        }
+                        .font(.system(size: 16))
+                        .tracking(-0.4)
+                        .foregroundStyle(.secondary)
+                    }
+                } else if card.ideas?.locationTypeLabel != nil
+                    || card.ideas?.duration != nil
+                    || card.ideas?.activityDetailsLabel != nil {
+                    HStack(spacing: 8) {
+                        if let locationType = card.ideas?.locationTypeLabel {
+                            Text(locationType).fontWeight(.medium)
+                        }
+                        if let activityDetails = card.ideas?.activityDetailsLabel {
+                            Text(activityDetails)
+                        } else if let duration = card.ideas?.duration {
+                            Text(duration)
                         }
                     }
                     .font(.system(size: 16))
@@ -178,7 +203,7 @@ struct IdeaView: View {
                 .padding(.bottom, 32)
             }
 
-            if let placeHours {
+            if let placeHours, card.ideas?.activityDetailsLabel == nil {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("hours")
                         .font(.system(size: 14, weight: .medium))
@@ -295,6 +320,10 @@ struct IdeaView: View {
             imageRequestToken = requestToken
             localImage = nil
             savedScreenshots = []
+            selectedScreenshotIndex = 0
+            screenshotDragOffset = 0
+            screenshotVerticalDragOffset = 0
+            isCyclingScreenshot = false
             screenshotDate = nil
 
             let assets = PHAsset.fetchAssets(
@@ -339,7 +368,6 @@ struct IdeaView: View {
         }
         .task(id: card.ideas?.place_id) {
             await resolvePlaceDetailsIfNeeded()
-            resolvedGooglePlaceHours = resolvedPlace?.hours
         }
         .sheet(isPresented: $showShareSheet) {
             IdeaShareSheet(items: [shareURL])
@@ -414,15 +442,34 @@ struct IdeaView: View {
                 GoogleMapView(
                     coordinate: coordinate,
                     title: venueTitle,
+                    emoji: card.ideas?.location_emoji ?? "✦",
                     isInteractive: false
                 )
                     .allowsHitTesting(false)
                     .frame(height: 203)
                     .clipShape(RoundedRectangle(cornerRadius: 24))
 
-                Button {
-                    if let url = resolvedPlace?.googleMapsUri.flatMap(URL.init(string:)) {
-                        openURL(url)
+                Menu {
+                    Button {
+                        if let url = appleMapsURL {
+                            openURL(url)
+                        }
+                    } label: {
+                        Label("Open in Apple Maps", systemImage: "map")
+                    }
+
+                    Button {
+                        if let url = resolvedPlace?.googleMapsUri.flatMap(URL.init(string:)) {
+                            openURL(url)
+                        }
+                    } label: {
+                        Label("Open in Google Maps", systemImage: "globe")
+                    }
+
+                    Button {
+                        copyAddress()
+                    } label: {
+                        Label("Copy address", systemImage: "doc.on.doc")
                     }
                 } label: {
                     Text("open in Maps ↗")
@@ -447,11 +494,36 @@ struct IdeaView: View {
         .clipShape(RoundedRectangle(cornerRadius: 24))
     }
 
+    private var appleMapsURL: URL? {
+        guard let coordinate = resolvedPlace?.coordinate else { return nil }
+
+        var components = URLComponents(string: "https://maps.apple.com/")
+        components?.queryItems = [
+            URLQueryItem(
+                name: "ll",
+                value: "\(coordinate.latitude),\(coordinate.longitude)"
+            ),
+            URLQueryItem(name: "q", value: venueTitle),
+        ]
+        return components?.url
+    }
+
+    private func copyAddress() {
+        let address = resolvedPlace?.formattedAddress ?? venueTitle
+        UIPasteboard.general.string = address
+    }
+
     private func resolvePlaceDetailsIfNeeded() async {
         guard placeDetails == nil, resolvedPlaceDetails == nil,
               let placeID = card.ideas?.place_id else { return }
-        resolvedPlaceDetails = await GooglePlacesService.shared.details(for: placeID)
-        resolvedGooglePlaceHours = resolvedPlaceDetails?.hours
+        let details = await GooglePlacesService.shared.details(for: placeID)
+        guard !Task.isCancelled else { return }
+        var transaction = Transaction()
+        transaction.animation = nil
+        withTransaction(transaction) {
+            resolvedPlaceDetails = details
+            resolvedGooglePlaceHours = details?.hours
+        }
     }
 
     private func resolveGooglePlaceHoursIfNeeded() async {
@@ -499,13 +571,6 @@ struct IdeaView: View {
                 .background(pillBackground)
                 .clipShape(Capsule())
                 .disabled(savedScreenshots.isEmpty && localImage == nil)
-                .sheet(isPresented: $showQuickLook) {
-                    if !savedScreenshots.isEmpty {
-                        ImagePreviewSheet(images: savedScreenshots.map(\.image))
-                    } else if let image = localImage {
-                        ImagePreviewSheet(image: image)
-                    }
-                }
 
                 if allowsDeletion {
                     Button {
@@ -530,6 +595,13 @@ struct IdeaView: View {
                 }
             }
         }
+        .sheet(isPresented: $showQuickLook) {
+            if !savedScreenshots.isEmpty {
+                ImagePreviewSheet(images: savedScreenshots.map(\.image))
+            } else if let image = localImage {
+                ImagePreviewSheet(image: image)
+            }
+        }
     }
 
     @ViewBuilder
@@ -540,11 +612,15 @@ struct IdeaView: View {
                     polaroid(image: localImage, index: 0)
                 } else {
                     ForEach(Array(savedScreenshots.enumerated()), id: \.element.id) { index, screenshot in
+                        let distance = screenshotStackDistance(for: index)
                         polaroid(image: screenshot.image, index: index)
-                            .scaleEffect(1 - CGFloat(min(index, 3)) * 0.04)
-                            .opacity(index > 3 ? 0 : 1)
-                            .offset(x: CGFloat(min(index, 3)) * 5, y: CGFloat(min(index, 3)) * 2)
-                            .zIndex(Double(-index))
+                            .scaleEffect(distance == 0 ? 1 : 1 - CGFloat(min(distance, 3)) * 0.04)
+                            .opacity(distance > 3 ? 0 : 1)
+                            .offset(
+                                x: distance == 0 ? screenshotDragOffset : CGFloat(min(distance, 3)) * 5,
+                                y: distance == 0 ? screenshotVerticalDragOffset : CGFloat(min(distance, 3)) * 2
+                            )
+                            .zIndex(distance == 0 ? 10 : Double(-distance))
                     }
                 }
             }
@@ -554,6 +630,84 @@ struct IdeaView: View {
                 if !savedScreenshots.isEmpty || localImage != nil {
                     showQuickLook = true
                 }
+            }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 8)
+                    .onChanged { value in
+                        guard !isCyclingScreenshot else { return }
+                        screenshotDragOffset = value.translation.width
+                        screenshotVerticalDragOffset = min(max(value.translation.height, -35), 35)
+                    }
+                    .onEnded { value in
+                        guard !isCyclingScreenshot else { return }
+                        let isHorizontal = abs(value.translation.width) > abs(value.translation.height)
+                        let projectedWidth = value.predictedEndTranslation.width
+                        guard savedScreenshots.count > 1,
+                              isHorizontal,
+                              abs(value.translation.width) > 45 || abs(projectedWidth) > 90
+                        else {
+                            withAnimation(reducedMotionCarouselAnimation) {
+                                screenshotDragOffset = 0
+                                screenshotVerticalDragOffset = 0
+                            }
+                            return
+                        }
+
+                        cycleScreenshot(direction: value.translation.width < 0 ? 1 : -1)
+                    }
+            )
+        }
+        .animation(
+            reduceMotion
+                ? .easeOut(duration: 0.12)
+                : .easeInOut(duration: 0.28),
+            value: selectedScreenshotIndex
+        )
+    }
+
+    private var reducedMotionCarouselAnimation: Animation {
+        reduceMotion
+            ? .easeOut(duration: 0.12)
+            : .easeInOut(duration: 0.28)
+    }
+
+    private func screenshotStackDistance(for index: Int) -> Int {
+        guard !savedScreenshots.isEmpty else { return 0 }
+        return (index - selectedScreenshotIndex + savedScreenshots.count)
+            % savedScreenshots.count
+    }
+
+    private func cycleScreenshot(direction: Int) {
+        guard savedScreenshots.count > 1, !isCyclingScreenshot else { return }
+
+        isCyclingScreenshot = true
+        let outgoingOffset: CGFloat = direction > 0 ? -230 : 230
+        let animation: Animation = reduceMotion
+            ? .easeOut(duration: 0.12)
+            : .easeInOut(duration: 0.28)
+
+        withAnimation(animation) {
+            screenshotDragOffset = outgoingOffset
+            screenshotVerticalDragOffset = 0
+        }
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            guard !Task.isCancelled else { return }
+
+            var transaction = Transaction()
+            transaction.animation = nil
+            withTransaction(transaction) {
+                selectedScreenshotIndex = (selectedScreenshotIndex + direction + savedScreenshots.count)
+                    % savedScreenshots.count
+                screenshotDragOffset = -outgoingOffset
+                screenshotVerticalDragOffset = 0
+            }
+
+            withAnimation(animation) {
+                screenshotDragOffset = 0
+                screenshotVerticalDragOffset = 0
+                isCyclingScreenshot = false
             }
         }
     }
@@ -764,7 +918,7 @@ struct ImagePreviewSheet: View {
                             .gesture(magnificationGesture)
                             .simultaneousGesture(panGesture, including: allowsPan ? .all : .none)
                             .onTapGesture(count: 2, perform: resetZoom)
-                            .animation(.interactiveSpring, value: scale)
+                            .animation(.easeInOut(duration: 0.28), value: scale)
                     }
                     .tag(index)
                 }
@@ -820,7 +974,7 @@ struct ImagePreviewSheet: View {
     }
 
     private func resetZoom() {
-        withAnimation(.spring) {
+        withAnimation(.easeInOut(duration: 0.28)) {
             scale = 1
             lastScale = 1
             offset = .zero
