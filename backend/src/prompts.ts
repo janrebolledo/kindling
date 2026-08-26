@@ -72,28 +72,40 @@ Extract the following when available in the OCR text:
    - Extract only if present in OCR text
    - Set to null if not mentioned
 
-7. **tag**: Category of the item
+7. **distance_miles**: Activity or route length in miles
+   - Extract only when an explicit distance/length is present in the OCR text
+   - Convert feet to miles when the OCR gives feet (for example, 2.5 mi or 1,200 ft)
+   - Do not use a driving distance or infer a route length
+   - Set to null when not explicitly stated
+
+8. **completion_time**: Typical time to complete an activity or route
+   - Extract only when an explicit duration is present in the OCR text (for example, 1h 30m or 45 minutes)
+   - Do not use an event start time or business hours
+   - Preserve a range when the OCR gives one
+   - Set to null when not explicitly stated
+
+9. **tag**: Category of the item
    - "event": Named events, concerts, shows, performances, festivals, classes
    - "activity": Trails, hikes, outdoor activities, attractions, experiences
    - "food": Restaurants, cafes, bars, food trucks, bakeries
    - Use the most appropriate tag based on the primary purpose
 
-8. **activity_type**: Text-only type/classifier for the location, without an emoji
+10. **activity_type**: Text-only type/classifier for the location, without an emoji
    - Examples: "Outdoors", "Music", "Coffee Shop", "Festival", "Sports", "Art", "Restaurant", "Dessert"
 
-9. **activity_emoji**: One emoji classifier for the location type, without any text
+11. **activity_emoji**: One emoji classifier for the location type, without any text
    - Examples: "⛰️", "🎷", "☕", "🎡", "🏅", "🎨", "🍽️", "🍦"
 
-10. **description**: A soft description of item
+12. **description**: A soft description of item
    - Examples: "A whimsical, picturesque, hiking trail surrounded by mooing friends.", "A Mexico City inspired cafe framed by the LA Metro."
 
-11. **highlights**: A short AI-generated one-liner summarizing standout details about the place
+13. **highlights**: A short AI-generated one-liner summarizing standout details about the place
     - Only extract if there are notable highlights mentioned (e.g., hours, amenities, unique features, tips)
     - Write as a punchy, lowercase, ampersand-joined summary
     - Examples: "open late & has outlets on every table", "dog friendly & great for remote work", "cash only & worth the wait"
     - Set to null if no highlights are mentioned
 
-12. **highlights_sources**: The raw text strings that were used to produce the highlights one-liner
+14. **highlights_sources**: The raw text strings that were used to produce the highlights one-liner
     - Return as an array of the exact quoted/comment strings you pulled from the OCR text
     - Set to null if highlights is null
 
@@ -123,6 +135,8 @@ Structure:
     "address": "string or null",
     "date": "YYYY-MM-DD or null",
     "time": "HH:MM AM/PM or null",
+    "distance_miles": "number or null",
+    "completion_time": "string or null",
     "tag": "activity" | "event" | "food",
     "activity_type": "string or null",
     "activity_emoji": "string or null",
@@ -148,6 +162,8 @@ Output:
     "address": "4730 Crystal Springs Dr, Los Angeles, CA",
     "date": "2024-07-15",
     "time": "6:00 PM",
+    "distance_miles": null,
+    "completion_time": null,
     "tag": "event",
     "activity_type": "Music",
     "activity_emoji": "🎷",
@@ -171,6 +187,8 @@ Output:
     "address": null,
     "date": null,
     "time": null,
+    "distance_miles": null,
+    "completion_time": null,
     "tag": "food",
     "activity_type": "Restaurant",
     "activity_emoji": "🍽️",
@@ -194,6 +212,8 @@ Output:
     "address": null,
     "date": null,
     "time": null,
+    "distance_miles": null,
+    "completion_time": null,
     "tag": "food",
     "activity_type": "Bubble Tea Shop",
     "activity_emoji": "🧋",
@@ -204,7 +224,7 @@ Output:
 }
 
 Example 4 - Trail/Activity:
-OCR Input: "Eucalyptus Trail · Chino Hills, incredible views of the landscape"
+OCR Input: "Eucalyptus Trail · Chino Hills · 4.2 mi · 1 hr 30 min, incredible views of the landscape"
 
 Output:
 {
@@ -217,6 +237,8 @@ Output:
     "address": null,
     "date": null,
     "time": null,
+    "distance_miles": 4.2,
+    "completion_time": "1 hr 30 min",
     "tag": "activity",
     "activity_type": "Outdoor",
     "activity_emoji": "⛰️",
@@ -299,8 +321,9 @@ CRITICAL REMINDERS
 8. Skip expired events (past dates)
 9. activity_type must contain text only; never include an emoji in it
 10. activity_emoji must contain only one emoji; never include descriptive text in it
-11. highlights should be null if no notable highlights are present in the OCR text
-12. highlights_sources must be the exact strings from the OCR that informed the highlights
+11. activity metrics must be copied exactly from OCR when explicitly present; never invent them
+12. highlights should be null if no notable highlights are present in the OCR text
+13. highlights_sources must be the exact strings from the OCR that informed the highlights
 
 Screenshot Data:
 

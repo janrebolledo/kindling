@@ -23,6 +23,10 @@ private struct LocalExtractedItem {
     var date: String?
     @Guide(description: "Time as written, if present")
     var time: String?
+    @Guide(description: "Explicit activity or route length in miles, if present")
+    var distanceMiles: Double?
+    @Guide(description: "Explicit activity or route completion time, if present")
+    var completionTime: String?
     @Guide(description: "One of: activity, event, food")
     var tag: String
     @Guide(description: "Specific activity category, such as restaurant or hike")
@@ -63,6 +67,8 @@ struct LocalExtractionItem: Encodable {
     let address: String?
     let date: String?
     let time: String?
+    let distance_miles: Double?
+    let completion_time: String?
     let tag: String
     let activity_type: String?
     let activity_emoji: String?
@@ -97,7 +103,8 @@ enum LocalScreenshotInference {
             Apple Maps place card is valid source material when it identifies a useful place.
             Mark financial, medical, authentication, or other private content sensitive. Skip
             content without a useful idea. Never invent a venue, address, date, or time. Use null
-            when absent.
+            when absent. For activities, copy an explicitly shown route length and completion
+            time into the activity metric fields; never use an event start time or business hours.
             """)
 
         var results: [LocalExtractionResult] = []
@@ -132,7 +139,9 @@ enum LocalScreenshotInference {
                     address: $0.address,
                     date: $0.date,
                     time: $0.time,
-                    tag: ["activity", "event", "food"].contains($0.tag) ? $0.tag : "activity",
+                    distance_miles: $0.distanceMiles,
+                    completion_time: $0.completionTime,
+                    tag: ["activity", "event", "food"].contains($0.tag.lowercased()) ? $0.tag.lowercased() : "activity",
                     activity_type: $0.activityType,
                     activity_emoji: $0.activityEmoji,
                     description: $0.description,

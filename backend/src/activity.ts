@@ -9,6 +9,35 @@ export type ActivityDetails = {
   completion_time: string | null;
 };
 
+function normalizeDistance(value: unknown): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value >= 0 && value <= 1000
+      ? Math.round(value * 10) / 10
+      : null;
+  }
+  if (typeof value !== 'string') return null;
+
+  const match = value.replace(/,/g, '').match(/(\d+(?:\.\d+)?)\s*(mi|miles?|km|kilometers?|ft|feet)?/i);
+  if (!match) return null;
+  const rawDistance = Number.parseFloat(match[1]);
+  const unit = match[2]?.toLowerCase();
+  const distance = unit?.startsWith('ft') || unit === 'feet'
+    ? rawDistance / 5280
+    : unit === 'km' || unit?.startsWith('kilometer')
+      ? rawDistance * 0.621371
+      : rawDistance;
+
+  return Number.isFinite(distance) && distance >= 0 && distance <= 1000
+    ? Math.round(distance * 10) / 10
+    : null;
+}
+
+function normalizeCompletionTime(value: unknown): string | null {
+  return typeof value === 'string'
+    ? value.trim().slice(0, 120) || null
+    : null;
+}
+
 const activityDetailsSchema = {
   type: Type.OBJECT,
   properties: {
@@ -39,10 +68,22 @@ function searchableActivityText(item: ExtractedItem): string {
     .toLowerCase();
 }
 
+/** Metrics explicitly present in the screenshot should survive without a web lookup. */
+export function activityDetailsFromExtraction(item: ExtractedItem): ActivityDetails | null {
+  const details = {
+    distance_miles: normalizeDistance(item.distance_miles),
+    completion_time: normalizeCompletionTime(item.completion_time),
+  };
+  return details.distance_miles == null && details.completion_time == null
+    ? null
+    : details;
+}
+
 /** Restrict web lookups to activities where route distance/time are useful. */
 export function isDistanceBasedActivity(item: ExtractedItem): boolean {
-  if (item.tag !== 'activity') return false;
-  return /\b(hike|hiking|trail|trek|walk|waterfall|canyon|peak|summit|loop|outdoor|bike|biking|cycling|climb|mountain|preserve|reserve)\b/i.test(
+  if (item.tag?.trim().toLowerCase() !== 'activity') return false;
+  if (item.distance_miles != null || item.completion_time != null) return true;
+  return /\b(hike|hiking|trail|trek|walk|waterfall|canyon|peak|summit|loop|outdoor|bike|biking|cycling|climb|mountain|preserve|reserve|park|forest|garden|zoo|botanical|cave|beach|lake|falls)\b/i.test(
     searchableActivityText(item),
   );
 }
@@ -54,15 +95,8 @@ function normalizeDetails(value: unknown): ActivityDetails | null {
     completion_time?: unknown;
   };
 
-  const distance = typeof candidate.distance_miles === 'number'
-    && Number.isFinite(candidate.distance_miles)
-    && candidate.distance_miles >= 0
-    && candidate.distance_miles <= 1000
-    ? Math.round(candidate.distance_miles * 10) / 10
-    : null;
-  const completion = typeof candidate.completion_time === 'string'
-    ? candidate.completion_time.trim().slice(0, 120) || null
-    : null;
+  const distance = normalizeDistance(candidate.distance_miles);
+  const completion = normalizeCompletionTime(candidate.completion_time);
 
   return distance == null && completion == null
     ? null
@@ -88,7 +122,11 @@ export async function lookupActivityDetails(
   ai: GoogleGenAI,
   item: ExtractedItem,
 ): Promise<ActivityDetails | null> {
-  if (!isDistanceBasedActivity(item) || !item.venue) return null;
+  const extractedDetails = activityDetailsFromExtraction(item);
+  if (!isDistanceBasedActivity(item) || !item.venue) return extractedDetails;
+  if (extractedDetails?.distance_miles != null && extractedDetails.completion_time != null) {
+    return extractedDetails;
+  }
 
   const query = [item.venue, item.location, item.address]
     .filter(Boolean)
@@ -118,9 +156,12 @@ Return the route distance in miles and the typical time to complete the route. P
       found_distance: details?.distance_miles != null,
       found_completion_time: details?.completion_time != null,
     });
-    return details;
+    return {
+      distance_miles: extractedDetails?.distance_miles ?? details?.distance_miles ?? null,
+      completion_time: extractedDetails?.completion_time ?? details?.completion_time ?? null,
+    };
   } catch (err) {
     logError('gemini_activity.search_failed', err, { venue: item.venue });
-    return null;
+    return extractedDetails;
   }
 }

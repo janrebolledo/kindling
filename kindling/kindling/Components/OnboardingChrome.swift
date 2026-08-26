@@ -16,6 +16,15 @@ enum OnboardingMotion {
     }
 }
 
+enum CardSwipeMotion {
+    static let outgoingOffset: CGFloat = 230
+    static let handoffNanoseconds: UInt64 = 180_000_000
+
+    static func transition(_ reduceMotion: Bool) -> Animation {
+        reduceMotion ? .easeOut(duration: 0.12) : .easeInOut(duration: 0.28)
+    }
+}
+
 struct OnboardingPressStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 

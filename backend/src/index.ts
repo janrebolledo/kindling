@@ -44,10 +44,14 @@ app.use(
 app.get('/health', (c) => c.json({ ok: true }));
 
 app.get('/places/:id', async (c) => {
-  const place = await getPlaceDetails(c.req.param('id'), {
-    GOOGLE_MAPS_API_KEY: c.env.GOOGLE_MAPS_API_KEY,
-    PUBLIC_API_URL: c.env.PUBLIC_API_URL,
-  });
+  const place = await getPlaceDetails(
+    c.req.param('id'),
+    {
+      GOOGLE_MAPS_API_KEY: c.env.GOOGLE_MAPS_API_KEY,
+      PUBLIC_API_URL: c.env.PUBLIC_API_URL,
+    },
+    createSupabase(c.env),
+  );
   if (!place) return c.json({ error: 'Place not found' }, 404);
   c.header('Cache-Control', 'public, max-age=300, s-maxage=300');
   return c.json(place);
@@ -144,7 +148,7 @@ app.get('/share/:id', async (c) => {
       place = await getPlaceDetails(idea.place_id, {
         GOOGLE_MAPS_API_KEY: c.env.GOOGLE_MAPS_API_KEY,
         PUBLIC_API_URL: c.env.PUBLIC_API_URL,
-      });
+      }, createSupabase(c.env));
     } catch (err) {
       logError('share.place_fetch_failed', err, { idea_id: id, place_id: idea.place_id });
     }

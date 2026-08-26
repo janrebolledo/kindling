@@ -66,6 +66,10 @@ struct OnboardingCardCarousel: View {
                     allowsDetailPresentation: false
                 )
                 .frame(width: cardWidth, height: cardHeight, alignment: .top)
+                .background(
+                    Color.white,
+                    in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+                )
             }
         }
     }

@@ -72,6 +72,8 @@ struct Item: Codable, Identifiable {
         }
         if let completion_time, !completion_time.isEmpty {
             values.append(completion_time)
+        } else if let duration, !duration.isEmpty {
+            values.append(duration)
         }
         return values.isEmpty ? nil : values.joined(separator: " · ")
     }

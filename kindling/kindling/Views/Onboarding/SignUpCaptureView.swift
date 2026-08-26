@@ -9,7 +9,6 @@ struct SignUpCaptureView: View {
     @State private var dragOffset: CGSize = .zero
     @State private var isCyclingCard = false
     @State private var promotionProgress: CGFloat = 0
-    @State private var frontSlideProgress: CGFloat = 1
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -74,6 +73,10 @@ struct SignUpCaptureView: View {
                         animatesImageLoading: true
                     )
                         .frame(width: 250, alignment: .top)
+                        .background(
+                            Color.white,
+                            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        )
                         .scaleEffect(scale(for: depth))
                         .blur(radius: blur(for: depth))
                         .opacity(opacity(for: depth))
@@ -134,10 +137,7 @@ struct SignUpCaptureView: View {
 
     private func verticalOffset(for depth: Int) -> CGFloat {
         if depth == 0 {
-            let entranceOffset: CGFloat = reduceMotion
-                ? 0
-                : interpolate(12, 0, progress: frontSlideProgress)
-            return dragOffset.height + entranceOffset
+            return dragOffset.height
         }
 
         switch depth {
@@ -232,40 +232,34 @@ struct SignUpCaptureView: View {
                     return
                 }
 
-                cycleCard(direction: projectedWidth < 0 ? 1 : -1)
+                cycleCard(direction: value.translation.width < 0 ? 1 : -1)
             }
     }
 
     private var cardResetAnimation: Animation {
-        reduceMotion
-            ? .easeOut(duration: 0.12)
-            : .easeInOut(duration: 0.28)
+        CardSwipeMotion.transition(reduceMotion)
     }
 
     private func cycleCard(direction: Int) {
         guard cards.count > 1, !isCyclingCard else { return }
 
         isCyclingCard = true
-        let outgoingOffset: CGFloat = direction > 0 ? -260 : 260
+        let outgoingOffset = direction > 0
+            ? -CardSwipeMotion.outgoingOffset
+            : CardSwipeMotion.outgoingOffset
         let incomingOffset = -outgoingOffset
-        let verticalOvershoot = dragOffset.height * 1.5
-        let exitAnimation: Animation = reduceMotion
-            ? .easeOut(duration: 0.12)
-            : .easeInOut(duration: 0.28)
-        let promotionAnimation: Animation = reduceMotion
-            ? .easeOut(duration: 0.12)
-            : .easeInOut(duration: 0.34)
+        let animation = CardSwipeMotion.transition(reduceMotion)
 
-        withAnimation(exitAnimation) {
-            dragOffset = CGSize(width: outgoingOffset, height: verticalOvershoot)
+        withAnimation(animation) {
+            dragOffset = CGSize(width: outgoingOffset, height: 0)
         }
 
-        withAnimation(promotionAnimation) {
+        withAnimation(animation) {
             promotionProgress = 1
         }
 
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 280_000_000)
+            try? await Task.sleep(nanoseconds: CardSwipeMotion.handoffNanoseconds)
             guard !Task.isCancelled else { return }
 
             var transaction = Transaction()
@@ -274,12 +268,10 @@ struct SignUpCaptureView: View {
                 activeCardIndex = (activeCardIndex + direction + cards.count) % cards.count
                 dragOffset = CGSize(width: incomingOffset, height: 0)
                 promotionProgress = 0
-                frontSlideProgress = reduceMotion ? 1 : 0
             }
 
-            withAnimation(promotionAnimation) {
+            withAnimation(animation) {
                 dragOffset = .zero
-                frontSlideProgress = 1
                 isCyclingCard = false
             }
         }

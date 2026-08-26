@@ -54,6 +54,8 @@ export type ExtractedItem = {
   address: string | null;
   date: string | null;
   time: string | null;
+  distance_miles: number | null;
+  completion_time: string | null;
   tag: ExtractionTag;
   activity_type: string | null;
   activity_emoji: string | null;

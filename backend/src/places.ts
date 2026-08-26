@@ -1,4 +1,5 @@
 import type { MapsPlace } from './types';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { cachedJSON, cachedResponse } from './cache';
 import { log, logError } from './log';
 
@@ -161,43 +162,82 @@ export async function lookupPlace(
 export async function getPlaceDetails(
   placeId: string,
   credentials: GoogleMapsCredentials,
+  supabase: SupabaseClient,
 ): Promise<PlaceDetails | null> {
   const normalizedPlaceId = googlePlaceId(placeId);
-  return cachedJSON('google-place-details', normalizedPlaceId, 300, async () => {
-    const response = await fetch(
-      `https://places.googleapis.com/v1/places/${encodeURIComponent(normalizedPlaceId)}`,
-      {
-        headers: googleHeaders(
-          credentials,
-          'id,displayName,location,formattedAddress,regularOpeningHours,currentOpeningHours,photos,googleMapsUri',
-        ),
-      },
-    );
-
-    if (!response.ok) return null;
-    const place = (await response.json()) as GooglePlaceResponse;
-    if (!place.id) return null;
-
+  const { data: saved } = await supabase
+    .from('google_places')
+    .select()
+    .eq('place_id', normalizedPlaceId)
+    .maybeSingle();
+  if (saved) {
     return {
-      id: place.id,
-      name: place.displayName?.text ?? null,
-      latitude: place.location?.latitude ?? null,
-      longitude: place.location?.longitude ?? null,
-      formattedAddress: place.formattedAddress ?? null,
-      weekdayDescriptions:
-        place.regularOpeningHours?.weekdayDescriptions
-        ?? place.currentOpeningHours?.weekdayDescriptions
-        ?? [],
-      openNow: place.currentOpeningHours?.openNow ?? null,
-      photoUrl: place.photos?.[0]?.name ? photoURL(place.id, credentials) : null,
-      photoAttributions: (place.photos?.[0]?.authorAttributions ?? [])
-        .map((attribution) => attribution.displayName ?? attribution.uri ?? '')
-        .filter(Boolean),
-      photoAttributionUrls: (place.photos?.[0]?.authorAttributions ?? [])
-        .map((attribution) => attribution.uri ?? null),
-      googleMapsUri: place.googleMapsUri ?? null,
+      id: saved.place_id,
+      name: saved.name,
+      latitude: saved.latitude,
+      longitude: saved.longitude,
+      formattedAddress: saved.formatted_address,
+      weekdayDescriptions: saved.weekday_descriptions ?? [],
+      openNow: null,
+      photoUrl: saved.photo_name ? photoURL(saved.place_id, credentials) : null,
+      photoAttributions: saved.photo_attributions ?? [],
+      photoAttributionUrls: saved.photo_attribution_uris ?? [],
+      googleMapsUri: saved.google_maps_uri,
     };
-  });
+  }
+
+  const response = await fetch(
+    `https://places.googleapis.com/v1/places/${encodeURIComponent(normalizedPlaceId)}`,
+    {
+      headers: googleHeaders(
+        credentials,
+        'id,displayName,location,formattedAddress,regularOpeningHours,currentOpeningHours,photos,googleMapsUri',
+      ),
+    },
+  );
+
+  if (!response.ok) return null;
+  const place = (await response.json()) as GooglePlaceResponse;
+  if (!place.id) return null;
+
+  const details: PlaceDetails = {
+    id: place.id,
+    name: place.displayName?.text ?? null,
+    latitude: place.location?.latitude ?? null,
+    longitude: place.location?.longitude ?? null,
+    formattedAddress: place.formattedAddress ?? null,
+    weekdayDescriptions:
+      place.regularOpeningHours?.weekdayDescriptions
+      ?? place.currentOpeningHours?.weekdayDescriptions
+      ?? [],
+    openNow: place.currentOpeningHours?.openNow ?? null,
+    photoUrl: place.photos?.[0]?.name ? photoURL(place.id, credentials) : null,
+    photoAttributions: (place.photos?.[0]?.authorAttributions ?? [])
+      .map((attribution) => attribution.displayName ?? attribution.uri ?? '')
+      .filter(Boolean),
+    photoAttributionUrls: (place.photos?.[0]?.authorAttributions ?? [])
+      .map((attribution) => attribution.uri ?? null),
+    googleMapsUri: place.googleMapsUri ?? null,
+  };
+
+  const { error } = await supabase.from('google_places').upsert(
+    {
+      place_id: googlePlaceId(place.id),
+      name: details.name,
+      latitude: details.latitude,
+      longitude: details.longitude,
+      formatted_address: details.formattedAddress,
+      weekday_descriptions: details.weekdayDescriptions,
+      photo_name: place.photos?.[0]?.name ?? null,
+      photo_attributions: details.photoAttributions,
+      photo_attribution_uris: details.photoAttributionUrls,
+      google_maps_uri: details.googleMapsUri,
+    },
+    { onConflict: 'place_id', ignoreDuplicates: true },
+  );
+  if (error) logError('google_places.save_failed', error, { place_id: details.id });
+
+  return details;
 }
 
 export async function fetchPlacePhoto(

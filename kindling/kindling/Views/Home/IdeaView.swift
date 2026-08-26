@@ -658,17 +658,13 @@ struct IdeaView: View {
             )
         }
         .animation(
-            reduceMotion
-                ? .easeOut(duration: 0.12)
-                : .easeInOut(duration: 0.28),
+            CardSwipeMotion.transition(reduceMotion),
             value: selectedScreenshotIndex
         )
     }
 
     private var reducedMotionCarouselAnimation: Animation {
-        reduceMotion
-            ? .easeOut(duration: 0.12)
-            : .easeInOut(duration: 0.28)
+        CardSwipeMotion.transition(reduceMotion)
     }
 
     private func screenshotStackDistance(for index: Int) -> Int {
@@ -681,10 +677,10 @@ struct IdeaView: View {
         guard savedScreenshots.count > 1, !isCyclingScreenshot else { return }
 
         isCyclingScreenshot = true
-        let outgoingOffset: CGFloat = direction > 0 ? -230 : 230
-        let animation: Animation = reduceMotion
-            ? .easeOut(duration: 0.12)
-            : .easeInOut(duration: 0.28)
+        let outgoingOffset = direction > 0
+            ? -CardSwipeMotion.outgoingOffset
+            : CardSwipeMotion.outgoingOffset
+        let animation = CardSwipeMotion.transition(reduceMotion)
 
         withAnimation(animation) {
             screenshotDragOffset = outgoingOffset
@@ -692,7 +688,7 @@ struct IdeaView: View {
         }
 
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 180_000_000)
+            try? await Task.sleep(nanoseconds: CardSwipeMotion.handoffNanoseconds)
             guard !Task.isCancelled else { return }
 
             var transaction = Transaction()

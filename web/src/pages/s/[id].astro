@@ -29,6 +29,7 @@ const activityDetails = idea
         ? `${Number.isInteger(idea.distance_miles) ? idea.distance_miles : idea.distance_miles.toFixed(1)} mi`
         : null,
       idea.completion_time,
+      idea.completion_time ? null : idea.duration,
     ].filter(Boolean).join(' · ')
   : null;
 const googlePlace = idea?.place ?? null;

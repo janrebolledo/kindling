@@ -1,7 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { GoogleGenAI } from '@google/genai';
 import { isDistanceBasedActivity, lookupActivityDetails, type ActivityDetails } from './activity';
-import { lookupPlace, type GoogleMapsCredentials } from './places';
+import { lookupPlace, getPlaceDetails, type GoogleMapsCredentials } from './places';
+import { logError } from './log';
 import type { ExtractedItem, ExtractionResult } from './utils/parseScreenshot';
 import type { DraftCollectionItem, Idea, MapsPlace } from './types';
 
@@ -59,12 +60,16 @@ async function findIdeaByPlaceId(
     .select()
     .eq('place_id', placeId)
     .maybeSingle();
-  if (error) return null;
+  if (error) {
+    logError('ideas.lookup_failed', error, { place_id: placeId });
+    return null;
+  }
   return data;
 }
 
 async function getOrCreateIdeaForPlace(
   supabase: SupabaseClient,
+  googleMaps: GoogleMapsCredentials,
   place: MapsPlace,
   image: string | null,
   item: ExtractedItem,
@@ -73,29 +78,43 @@ async function getOrCreateIdeaForPlace(
   const placeId = place.id!;
   const existing = await findIdeaByPlaceId(supabase, placeId);
   if (existing) {
-    const needsDetails = isDistanceBasedActivity(item)
-      && (existing.distance_miles == null || existing.completion_time == null);
-    if (needsDetails) {
-      const details = await lookupActivityDetails(ai, item);
-      if (details) {
-        const updates: Partial<ActivityDetails> = {};
-        if (existing.distance_miles == null) updates.distance_miles = details.distance_miles;
-        if (existing.completion_time == null) updates.completion_time = details.completion_time;
-        if (Object.values(updates).some((value) => value != null)) {
-          const { data: updated } = await supabase
-            .from('ideas')
-            .update(updates)
-            .eq('id', existing.id)
-            .select()
-            .single();
-          if (updated) return { idea: updated, via: 'place_id' };
+    if (isDistanceBasedActivity(item)) {
+      const needsLookup = existing.distance_miles == null
+        || (existing.completion_time == null && existing.duration == null);
+      const details = needsLookup ? await lookupActivityDetails(ai, item) : null;
+      const completionTime = details?.completion_time ?? existing.completion_time ?? existing.duration;
+      const updates: Partial<ActivityDetails> & { duration?: string | null } = {};
+      if (existing.distance_miles == null && details?.distance_miles != null) {
+        updates.distance_miles = details.distance_miles;
+      }
+      if (existing.completion_time == null && completionTime != null) {
+        updates.completion_time = completionTime;
+      }
+      if (existing.duration == null && completionTime != null) {
+        updates.duration = completionTime;
+      }
+      if (Object.values(updates).some((value) => value != null)) {
+        const { data: updated, error: updateError } = await supabase
+          .from('ideas')
+          .update(updates)
+          .eq('id', existing.id)
+          .select()
+          .single();
+        if (updated) return { idea: updated, via: 'place_id' };
+        if (updateError) {
+          logError('ideas.activity_details_update_failed', updateError, {
+            idea_id: existing.id,
+          });
         }
       }
     }
     return { idea: existing, via: 'place_id' };
   }
 
-  const activityDetails = await lookupActivityDetails(ai, item);
+  const [activityDetails, placeDetails] = await Promise.all([
+    lookupActivityDetails(ai, item),
+    getPlaceDetails(placeId, googleMaps, supabase),
+  ]);
 
   const newIdea = {
     // `item.venue` comes from the user's screenshot extraction, not Apple
@@ -104,10 +123,12 @@ async function getOrCreateIdeaForPlace(
     name: item.name ?? item.venue,
     type: item.tag,
     description: item.description ?? null,
-    media_url: image,
+    media_url: placeDetails?.photoUrl ?? image,
     location_type: item.activity_type ?? null,
     location_emoji: item.activity_emoji ?? null,
-    duration: null,
+    // Keep the legacy field populated while newer clients use the canonical
+    // activity fields. This also makes metrics visible to older app builds.
+    duration: activityDetails?.completion_time ?? null,
     distance_miles: activityDetails?.distance_miles ?? null,
     completion_time: activityDetails?.completion_time ?? null,
     date: item.date,
@@ -129,7 +150,15 @@ async function getOrCreateIdeaForPlace(
     const winner = await findIdeaByPlaceId(supabase, placeId);
     return winner ? { idea: winner, via: 'conflict' } : null;
   }
-  if (uploadError || inserted == null) return null;
+  if (uploadError || inserted == null) {
+    if (uploadError) {
+      logError('ideas.insert_failed', uploadError, {
+        place_id: placeId,
+        has_activity_details: activityDetails != null,
+      });
+    }
+    return null;
+  }
   return { idea: inserted, via: 'insert' };
 }
 
@@ -163,6 +192,7 @@ export async function processEntry(
   if (mapsData?.place.id) {
     const created = await getOrCreateIdeaForPlace(
       supabase,
+      googleMaps,
       mapsData.place,
       mapsData.image,
       item,
