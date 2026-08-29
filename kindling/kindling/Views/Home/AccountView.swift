@@ -120,6 +120,10 @@ struct AccountView: View {
         supabase.auth.currentUser?.email ?? ""
     }
 
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+    }
+
     private var lowercaseUsernameBinding: Binding<String> {
         Binding(
             get: { draftUsername },
@@ -362,7 +366,7 @@ struct AccountView: View {
                 )
             }
 
-            Text("v1.00 • jan rebolledo")
+            Text("v\(appVersion) • jan rebolledo")
                 .font(.system(size: 16))
                 .tracking(-0.16)
                 .foregroundStyle(figmaGray)
