@@ -22,6 +22,10 @@ import os
 final class ScreenshotIndexingController {
     static let shared = ScreenshotIndexingController()
 
+    private static let screenshotsPerProcess = 5
+    private static let processesPerTurn = 5
+    private static let screenshotsPerTurn = screenshotsPerProcess * processesPerTurn
+
     private static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "kindling",
         category: "ScreenshotIndexing"
@@ -47,7 +51,7 @@ final class ScreenshotIndexingController {
 
     /// Runs the automatic app-open scan. The caller only coordinates the
     /// lifecycle; all indexing state remains in this controller.
-    func scan(limit: Int = 5) async -> Bool {
+    func scan() async -> Bool {
         let signpostID = KindlingProfiling.begin(KindlingProfiling.screenshotScan)
         defer {
             KindlingProfiling.end(KindlingProfiling.screenshotScan, id: signpostID)
@@ -61,7 +65,7 @@ final class ScreenshotIndexingController {
 
         let operation = Task<Bool, Error> { [weak self] in
             guard let self else { return false }
-            return try await self.performAutomaticScan(limit: limit)
+            return try await self.performAutomaticScan()
         }
         currentOperation = operation
         currentOperationKind = .automaticScan
@@ -128,7 +132,7 @@ final class ScreenshotIndexingController {
         _ = try? await operation.value
     }
 
-    private func performAutomaticScan(limit: Int) async throws -> Bool {
+    private func performAutomaticScan() async throws -> Bool {
         guard let userID = supabase.auth.currentUser?.id else { return false }
 
         isProcessing = true
@@ -146,51 +150,109 @@ final class ScreenshotIndexingController {
         let manager = ScreenshotManager()
         guard await manager.requestPhotoLibraryAccess() else { return false }
 
-        // PhotoKit enumeration and image loading happen in the utility task,
-        // keeping both the home screen and account screen responsive.
-        let prepared = await Self.prepareAutomaticScan(
-            limit: limit,
-            userID: userID
-        )
-        totalScreenshotCount = prepared.totalScreenshotCount
-        processedScreenshotCount = prepared.processedScreenshotCount
+        // A turn consists of five concurrent five-screenshot requests. Once a
+        // turn completes, enumerate PhotoKit again so screenshots added while
+        // processing are picked up in the next turn as well.
+        var addedIdeas = false
+        while true {
+            // PhotoKit enumeration and image loading happen in the utility
+            // task, keeping both the home screen and account screen responsive.
+            let prepared = await Self.prepareAutomaticScan(
+                limit: Self.screenshotsPerTurn,
+                userID: userID
+            )
+            totalScreenshotCount = prepared.totalScreenshotCount
+            processedScreenshotCount = prepared.processedScreenshotCount
 
-        guard !prepared.images.isEmpty else { return false }
-        print("Scanning \(prepared.images.count) new screenshot(s)")
+            guard !prepared.images.isEmpty else { break }
+            print("Scanning \(prepared.images.count) new screenshot(s)")
 
-        processingImageCount = prepared.images.count
-        processedProcessingImageCount = 0
+            processingImageCount = prepared.images.count
+            processedProcessingImageCount = 0
 
-        // Parse via the backend, collecting both ideas and explicit per-
-        // screenshot acknowledgements. A missing acknowledgement remains
-        // eligible for retry.
+            let result = await Self.processAutomaticTurn(images: prepared.images) {
+                [weak self] processedCount in
+                self?.processedProcessingImageCount += processedCount
+            }
+
+            // Persist server-side via /finalize (verifies our JWT, attaches
+            // user_id, and saves the per-screenshot highlights).
+            if !result.cards.isEmpty {
+                try await finalizeItems(result.cards)
+                addedIdeas = true
+            }
+
+            // Only mark backend-acknowledged screenshots after all produced
+            // cards have been saved. Load/parse/save failures remain eligible
+            // for retry in a later app-open scan.
+            service.markAsParsed(Array(result.processedIDs))
+            try? await service.syncToSupabase(userID: userID)
+            processedScreenshotCount = min(
+                totalScreenshotCount,
+                processedScreenshotCount + result.processedIDs.count
+            )
+
+            // Do not spin forever when every request in a turn fails and no
+            // screenshot receives a backend acknowledgement.
+            guard !result.processedIDs.isEmpty else { break }
+        }
+
+        return addedIdeas
+    }
+
+    private static func processAutomaticTurn(
+        images: [(String, UIImage?)],
+        onBatchFinished: @escaping @MainActor (Int) -> Void
+    ) async -> AutomaticTurnResult {
+        let batches = stride(
+            from: 0,
+            to: images.count,
+            by: screenshotsPerProcess
+        ).map { index in
+            Array(images[index..<min(index + screenshotsPerProcess, images.count)])
+        }
+
+        return await withTaskGroup(of: AutomaticBatchResult.self) { group in
+            for batch in batches {
+                group.addTask {
+                    await processAutomaticBatch(images: batch)
+                }
+            }
+
+            var cards: [ItemWrapper] = []
+            var processedIDs = Set<String>()
+            for await result in group {
+                cards.append(contentsOf: result.cards)
+                processedIDs.formUnion(result.processedIDs)
+                onBatchFinished(result.processedIDs.count)
+            }
+
+            return AutomaticTurnResult(cards: cards, processedIDs: processedIDs)
+        }
+    }
+
+    private static func processAutomaticBatch(
+        images: [(String, UIImage?)]
+    ) async -> AutomaticBatchResult {
         var cards: [ItemWrapper] = []
         var processedIDs = Set<String>()
-        for try await event in uploadImagesStreaming(images: prepared.images) {
-            switch event {
-            case .idea(let item):
-                cards.append(item)
-            case .processed(let id):
-                processedIDs.insert(id)
-                processedProcessingImageCount = processedIDs.count
+
+        do {
+            for try await event in uploadImagesStreaming(images: images) {
+                switch event {
+                case .idea(let item):
+                    cards.append(item)
+                case .processed(let id):
+                    processedIDs.insert(id)
+                }
             }
+        } catch {
+            logger.error(
+                "Automatic screenshot batch failed: \(String(describing: error), privacy: .public)"
+            )
         }
 
-        // Persist server-side via /finalize (verifies our JWT, attaches
-        // user_id, and saves the per-screenshot highlights).
-        if !cards.isEmpty {
-            try await finalizeItems(cards)
-        }
-
-        // Only mark backend-acknowledged screenshots after all produced cards
-        // have been saved. Load/parse/save failures remain eligible for retry.
-        service.markAsParsed(Array(processedIDs))
-        try? await service.syncToSupabase(userID: userID)
-        processedScreenshotCount = min(
-            totalScreenshotCount,
-            processedScreenshotCount + processedIDs.count
-        )
-        return !cards.isEmpty
+        return AutomaticBatchResult(cards: cards, processedIDs: processedIDs)
     }
 
     private func performSelectedPhotos(_ items: [PhotosPickerItem]) async throws {
@@ -338,6 +400,16 @@ private struct PreparedAutomaticScan {
     let totalScreenshotCount: Int
     let processedScreenshotCount: Int
     let images: [(String, UIImage?)]
+}
+
+private struct AutomaticBatchResult {
+    let cards: [ItemWrapper]
+    let processedIDs: Set<String>
+}
+
+private struct AutomaticTurnResult {
+    let cards: [ItemWrapper]
+    let processedIDs: Set<String>
 }
 
 enum ScreenshotIndexingError: LocalizedError {

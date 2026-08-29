@@ -13,7 +13,11 @@ let supabase = SupabaseClient(
     supabaseKey: "sb_publishable_Q3wc-o2JVqIYPQVw47306w_zpKAE0VI",
     options: SupabaseClientOptions(
         auth: SupabaseClientOptions.AuthOptions(
-            emitLocalSessionAsInitialSession: true
+            // Let the SDK refresh a cached session before emitting the first
+            // auth state. The app still keeps a loading state until that
+            // decision arrives, so onboarding is never shown as a fallback
+            // while auth is bootstrapping.
+            emitLocalSessionAsInitialSession: false
         )
     )
 )

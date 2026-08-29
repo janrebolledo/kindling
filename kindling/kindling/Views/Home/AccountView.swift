@@ -772,10 +772,21 @@ struct AccountView: View {
         VStack(spacing: 20) {
             VStack(alignment: .leading, spacing: 17) {
                 HStack {
-                    Text("screenshots processed")
+                    HStack(spacing: 6) {
+                        if screenshotIndexing.isProcessing {
+                            SpinningRaysIcon(reduceMotion: reduceMotion)
+                                .font(.system(size: 16, weight: .medium))
+                        }
+
+                        Text(
+                            screenshotIndexing.isProcessing
+                                ? "processing screenshots"
+                                : "screenshots processed"
+                        )
                         .font(.system(size: 16, weight: .medium))
                         .tracking(-0.4)
                         .foregroundStyle(.primary)
+                    }
 
                     Spacer()
 
@@ -821,40 +832,30 @@ struct AccountView: View {
             }
             .padding(14)
 
-            HStack(spacing: 16) {
-                screenshotActionButton(
-                    title: screenshotIndexing.isProcessing ? "processing" : "process more",
-                    systemName: screenshotIndexing.isProcessing ? "rays" : "plus",
-                    isDisabled: screenshotIndexing.isBusy,
-                    isSpinning: screenshotIndexing.isProcessing,
-                    action: processMoreScreenshots
-                )
-
-                Button {
-                    isPhotoPickerPresented = true
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "photo")
-                            .font(.system(size: 16, weight: .medium))
-                        Text("upload photos")
-                            .font(.system(size: 16, weight: .medium))
-                            .tracking(-0.4)
-                    }
-                    .foregroundStyle(.primary)
-                    .opacity(screenshotIndexing.isBusy ? 0.5 : 1)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 42)
-                    .background(Color("raisedSurface"), in: Capsule())
+            Button {
+                isPhotoPickerPresented = true
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "photo")
+                        .font(.system(size: 16, weight: .medium))
+                    Text("upload photos")
+                        .font(.system(size: 16, weight: .medium))
+                        .tracking(-0.4)
                 }
-                .buttonStyle(.plain)
-                .disabled(screenshotIndexing.isBusy)
-                .photosPicker(
-                    isPresented: $isPhotoPickerPresented,
-                    selection: $selectedPhotoItems,
-                    maxSelectionCount: 5,
-                    matching: .images
-                )
+                .foregroundStyle(.primary)
+                .opacity(screenshotIndexing.isBusy ? 0.5 : 1)
+                .frame(maxWidth: .infinity)
+                .frame(height: 42)
+                .background(Color("raisedSurface"), in: Capsule())
             }
+            .buttonStyle(.plain)
+            .disabled(screenshotIndexing.isBusy)
+            .photosPicker(
+                isPresented: $isPhotoPickerPresented,
+                selection: $selectedPhotoItems,
+                maxSelectionCount: 5,
+                matching: .images
+            )
 
             HStack(spacing: 4) {
                 Image(systemName: "info.circle")
@@ -908,37 +909,6 @@ struct AccountView: View {
         }
 
         return min(displayedScreenshotProgress + indicatorWidth, 1)
-    }
-
-    private func screenshotActionButton(
-        title: String,
-        systemName: String,
-        isDisabled: Bool = false,
-        isSpinning: Bool = false,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Group {
-                    if isSpinning {
-                        SpinningRaysIcon(reduceMotion: reduceMotion)
-                    } else {
-                        Image(systemName: systemName)
-                    }
-                }
-                .font(.system(size: 16, weight: .medium))
-                Text(title)
-                    .font(.system(size: 16, weight: .medium))
-                    .tracking(-0.4)
-            }
-            .foregroundStyle(.primary)
-            .opacity(isDisabled ? 0.5 : 1)
-            .frame(maxWidth: .infinity)
-            .frame(height: 42)
-            .background(Color("raisedSurface"), in: Capsule())
-        }
-        .buttonStyle(.plain)
-        .disabled(isDisabled)
     }
 
     @ViewBuilder
@@ -1080,11 +1050,6 @@ struct AccountView: View {
     }
 
     // MARK: - Actions
-
-    private func processMoreScreenshots() {
-        guard !screenshotIndexing.isBusy else { return }
-        Task { await screenshotIndexing.scan(limit: 5) }
-    }
 
     private func processSelectedPhotos(_ items: [PhotosPickerItem]) {
         guard !items.isEmpty, !screenshotIndexing.isBusy else { return }

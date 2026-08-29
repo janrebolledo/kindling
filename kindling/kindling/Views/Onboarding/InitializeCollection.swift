@@ -123,15 +123,20 @@ func finalizeItems(_ items: [ItemWrapper]) async throws {
 /// Called at sign-up completion. Loads the cached onboarding drafts into the
 /// user's collection, clears the draft cache, and syncs parsed IDs to Supabase.
 func InitializeCollection(items: [ItemWrapper]) async {
+    guard let userID = supabase.auth.currentUser?.id else { return }
+
+    // Persist the handoff before the network insert. Auth state can make the
+    // homepage visible while this function is still finalizing the rows.
+    OnboardingHomeCache.save(items, for: userID)
+    OnboardingHomeCache.clearPending()
+
     do {
         try await finalizeItems(items)
         OnboardingDraftCache.clear()
 
-        if let userID = supabase.auth.currentUser?.id {
-            ParsedScreenshotsService.claimOnboardingIDs(for: userID)
-            let service = ParsedScreenshotsService(userID: userID)
-            try? await service.syncToSupabase(userID: userID)
-        }
+        ParsedScreenshotsService.claimOnboardingIDs(for: userID)
+        let service = ParsedScreenshotsService(userID: userID)
+        try? await service.syncToSupabase(userID: userID)
     } catch {
         print(error)
     }

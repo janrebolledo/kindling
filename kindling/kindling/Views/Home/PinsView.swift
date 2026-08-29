@@ -112,6 +112,11 @@ private enum SheetSectionDestination: Hashable, Identifiable {
 private enum SheetDestination: Hashable {
     case section(SheetSectionDestination)
     case idea(Int)
+
+    var isIdea: Bool {
+        if case .idea = self { return true }
+        return false
+    }
 }
 
 @Observable
@@ -150,6 +155,7 @@ struct PinsView: View {
     @Environment(ScreenshotIndexingController.self) private var screenshotIndexing
 
     @State private var collections: [CollectionWrapper] = []
+    @State private var onboardingHomeItems: [ItemWrapper] = []
     @State private var mappedIdeas: [MappedIdea] = []
     @State private var resolvingIdeaIDs = Set<Int>()
     @State private var failedIdeaIDs = Set<Int>()
@@ -167,7 +173,11 @@ struct PinsView: View {
     @State private var sheetPath: [SheetDestination] = []
     @State private var isDiscoverySheetPresented = true
     @State private var isSettingsSheetPresented = false
+    @State private var isLocationControlVisible = true
+    // Start discovery at the native half-sheet detent. Navigation can still
+    // return to whichever detent the user was previously viewing.
     @State private var discoveryDetent: PresentationDetent = .fraction(0.55)
+    @State private var discoveryDetentBeforeNavigation: PresentationDetent?
     @State private var derivedSnapshot = PinsDerivedSnapshot.empty
 
     private var query: String {
@@ -204,6 +214,10 @@ struct PinsView: View {
         }
         .task {
             locationManager.requestLocation()
+            if let userID = supabase.auth.currentUser?.id {
+                onboardingHomeItems = OnboardingHomeCache.load(for: userID)
+                rebuildDerivedSnapshot()
+            }
             await loadCollections()
             let scanAddedIdeas = await screenshotIndexing.scan()
             // Refresh only when the scan actually persisted new ideas, then
@@ -225,7 +239,15 @@ struct PinsView: View {
         }
         .onChange(of: selectedIdeaID) { _, newValue in
             if newValue == nil {
-                discoveryDetent = .fraction(0.55)
+                if case .idea(_) = sheetPath.last {
+                    sheetPath.removeLast()
+                    detailIdea = nil
+                }
+                if discoveryDetentBeforeNavigation == nil {
+                    discoveryDetent = .height(110)
+                } else if sheetPath.isEmpty {
+                    restoreDiscoveryDetentIfNeeded()
+                }
                 isDiscoverySheetPresented = true
             } else {
                 if let newValue {
@@ -239,10 +261,22 @@ struct PinsView: View {
                 }
             }
         }
-        .onChange(of: sheetPath) { _, path in
-            if path.isEmpty {
-                discoveryDetent = .fraction(0.55)
+        .onChange(of: sheetPath) { oldPath, path in
+            let leftIdeaDestination = oldPath.last?.isIdea == true
+                && path.last?.isIdea != true
+            let willClearSelectedIdea = leftIdeaDestination && selectedIdeaID != nil
+
+            if leftIdeaDestination {
+                selectedIdeaID = nil
+                detailIdea = nil
             }
+
+            if path.isEmpty && !willClearSelectedIdea {
+                restoreDiscoveryDetentIfNeeded()
+            }
+        }
+        .onChange(of: discoveryDetent) { _, newDetent in
+            transitionLocationControl(to: newDetent)
         }
     }
 
@@ -261,7 +295,13 @@ struct PinsView: View {
             centerRequestID: centerRequestID,
             isInteractive: true,
             selectedID: selectedIdeaID,
-            onSelect: { selectedIdeaID = $0 },
+            onSelect: {
+                // A marker tap is an intentional map-to-detail transition;
+                // bring the discovery sheet up enough to show the detail.
+                rememberDiscoveryDetentBeforeNavigation()
+                discoveryDetent = .fraction(0.55)
+                selectedIdeaID = $0
+            },
             onDeselect: { selectedIdeaID = nil }
         )
         .background {
@@ -293,15 +333,19 @@ struct PinsView: View {
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(.primary)
                             .frame(width: 42, height: 42)
-                            .background(.regularMaterial, in: Circle())
+                            .glassEffect(.regular.interactive(), in: Circle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Center map on your location")
-                        .padding(.trailing, 16)
-                        .padding(.bottom, mapUserLocationButtonBottomPadding(for: proxy.size.height))
+                    .padding(.trailing, 16)
+                    .padding(.bottom, mapUserLocationButtonBottomPadding(for: proxy.size.height))
+                    .opacity(isLocationControlVisible ? 1 : 0)
+                    .animation(
+                        reduceMotion ? nil : .easeInOut(duration: 0.28),
+                        value: discoveryDetent
+                    )
                 }
             }
-            .opacity(discoveryDetent == .large ? 0 : 1)
             .allowsHitTesting(discoveryDetent != .large)
         }
     }
@@ -325,7 +369,6 @@ struct PinsView: View {
                 .offset(y: -2)
                 .opacity(isSelected ? 1 : 0)
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.82), value: isSelected)
         .accessibilityLabel(mapped.displayName)
     }
 
@@ -421,7 +464,7 @@ struct PinsView: View {
                         IdeaView(
                             card: detailIdea,
                             function: { _ in await loadCollections() },
-                            allowsDeletion: true,
+                            allowsDeletion: !detailIdea.isOnboardingCached,
                             isPreview: isDiscoverySheetTranslucent
                         )
                         // `detailIdea` is separate state from the navigation
@@ -501,6 +544,7 @@ struct PinsView: View {
     }
 
     private func openSectionPage(_ destination: SheetSectionDestination) {
+        rememberDiscoveryDetentBeforeNavigation()
         sheetPath.append(.section(destination))
     }
 
@@ -570,8 +614,7 @@ struct PinsView: View {
     private func rebuildDerivedSnapshot() {
         let allItems = derivedLocationItems
         let eventItems = deduplicatedSavedIdeas(
-            collections
-                .flatMap { $0.collection_items ?? [] }
+            allCollectionItems
                 .filter { isEvent($0) }
         )
         let normalizedQuery = query
@@ -774,19 +817,26 @@ struct PinsView: View {
     }
 
     private func discoveryCard(_ item: SavedIdea) -> some View {
-        Card(
-            card: item,
-            tapAction: { focusOnMap(item) },
-            loadsMapData: false,
-            loadsPlaceDetails: true,
-            loadsRemoteMedia: true,
-            allowsDetailPresentation: false,
-            allowsDeletion: false
-        )
-        .frame(width: 250, alignment: .topLeading)
+        Button {
+            focusOnMap(item)
+        } label: {
+            Card(
+                card: item,
+                loadsMapData: false,
+                loadsPlaceDetails: true,
+                loadsRemoteMedia: true,
+                handlesTap: false,
+                allowsDetailPresentation: false,
+                allowsDeletion: false
+            )
+            .frame(width: 250, alignment: .topLeading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func showIdeaInSheet(_ item: SavedIdea) {
+        rememberDiscoveryDetentBeforeNavigation()
         detailIdea = item
         isDiscoverySheetPresented = true
         let ideaID = item.id
@@ -797,6 +847,17 @@ struct PinsView: View {
         } else {
             sheetPath.append(.idea(ideaID))
         }
+    }
+
+    private func rememberDiscoveryDetentBeforeNavigation() {
+        guard sheetPath.isEmpty, discoveryDetentBeforeNavigation == nil else { return }
+        discoveryDetentBeforeNavigation = discoveryDetent
+    }
+
+    private func restoreDiscoveryDetentIfNeeded() {
+        guard let detent = discoveryDetentBeforeNavigation else { return }
+        discoveryDetent = detent
+        discoveryDetentBeforeNavigation = nil
     }
 
     private func focusOnMap(_ item: SavedIdea) {
@@ -883,11 +944,26 @@ struct PinsView: View {
         isLoading = true
         await migrateLegacyDefaultCollectionName()
         do {
-            collections = try await supabase
+            let fetchedCollections: [CollectionWrapper] = try await supabase
                 .from("collections")
                 .select("*, collection_items(*, ideas(*))")
                 .execute()
                 .value
+            collections = fetchedCollections
+
+            if let userID = supabase.auth.currentUser?.id {
+                let fetchedItems = fetchedCollections.flatMap { $0.collection_items ?? [] }
+                let confirmedLocalIDs = Set(fetchedItems.map(\.local_id))
+                if !confirmedLocalIDs.isEmpty {
+                    onboardingHomeItems.removeAll {
+                        confirmedLocalIDs.contains($0.local_id)
+                    }
+                    OnboardingHomeCache.removeConfirmedItems(
+                        localIDs: confirmedLocalIDs,
+                        for: userID
+                    )
+                }
+            }
             refreshMappedIdeas()
         } catch {
             dump(error)
@@ -974,10 +1050,35 @@ struct PinsView: View {
 
     private var derivedLocationItems: [SavedIdea] {
         deduplicatedSavedIdeas(
-            collections
-                .flatMap { $0.collection_items ?? [] }
+            allCollectionItems
                 .filter { !isEvent($0) }
         )
+    }
+
+    private var allCollectionItems: [CollectionItemWrapper] {
+        let remoteItems = collections.flatMap { $0.collection_items ?? [] }
+        let remoteLocalIDs = Set(remoteItems.map(\.local_id))
+        guard let userID = supabase.auth.currentUser?.id else {
+            return remoteItems
+        }
+
+        let cachedItems = onboardingHomeItems
+            .filter { !remoteLocalIDs.contains($0.local_id) }
+            .map { item in
+                CollectionItemWrapper(
+                    // Cached onboarding rows do not have collection-item IDs
+                    // yet. Negative IDs keep them distinct and prevent a
+                    // premature delete from targeting a real server row.
+                    id: -max(1, item.id),
+                    created_at: "",
+                    local_id: item.local_id,
+                    idea_id: item.idea_id,
+                    user_id: userID,
+                    collection_id: nil,
+                    ideas: item.ideas
+                )
+            }
+        return remoteItems + cachedItems
     }
 
     private func resolvePlace(for item: SavedIdea) async -> GooglePlaceDetails? {
@@ -994,9 +1095,31 @@ struct PinsView: View {
         }
     }
 
+    private func transitionLocationControl(to detent: PresentationDetent) {
+        guard !reduceMotion else {
+            isLocationControlVisible = detent != .large
+            return
+        }
+
+        withAnimation(.easeOut(duration: 0.14)) {
+            isLocationControlVisible = false
+        }
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            guard !Task.isCancelled, discoveryDetent == detent else { return }
+
+            withAnimation(.easeOut(duration: 0.18)) {
+                isLocationControlVisible = detent != .large
+            }
+        }
+    }
+
     private func mapUserLocationButtonBottomPadding(for height: CGFloat) -> CGFloat {
         if discoveryDetent == .height(110) {
-            return 126
+            // A fixed-height presentation detent also leaves room for the
+            // bottom safe area. Keep the control completely above the sheet.
+            return 160
         }
 
         // The default half-sheet covers 55% of the map. Keep the native

@@ -16,6 +16,7 @@ export type PlacesLookup = {
 export type PlaceDetails = {
   id: string;
   name: string | null;
+  priceLevel: string | null;
   latitude: number | null;
   longitude: number | null;
   formattedAddress: string | null;
@@ -37,6 +38,7 @@ type GooglePlaceSearchResponse = {
 type GooglePlaceResponse = {
   id?: string;
   displayName?: { text?: string };
+  priceLevel?: string;
   location?: { latitude?: number; longitude?: number };
   formattedAddress?: string;
   regularOpeningHours?: { weekdayDescriptions?: string[] };
@@ -170,10 +172,13 @@ export async function getPlaceDetails(
     .select()
     .eq('place_id', normalizedPlaceId)
     .maybeSingle();
-  if (saved) {
+  // Rows written before price support need one refresh so their details can
+  // include priceLevel. Once refreshed, keep using the durable place cache.
+  if (saved && saved.price_level_fetched) {
     return {
       id: saved.place_id,
       name: saved.name,
+      priceLevel: saved.price_level,
       latitude: saved.latitude,
       longitude: saved.longitude,
       formattedAddress: saved.formatted_address,
@@ -191,7 +196,7 @@ export async function getPlaceDetails(
     {
       headers: googleHeaders(
         credentials,
-        'id,displayName,location,formattedAddress,regularOpeningHours,currentOpeningHours,photos,googleMapsUri',
+        'id,displayName,priceLevel,location,formattedAddress,regularOpeningHours,currentOpeningHours,photos,googleMapsUri',
       ),
     },
   );
@@ -203,6 +208,7 @@ export async function getPlaceDetails(
   const details: PlaceDetails = {
     id: place.id,
     name: place.displayName?.text ?? null,
+    priceLevel: place.priceLevel ?? null,
     latitude: place.location?.latitude ?? null,
     longitude: place.location?.longitude ?? null,
     formattedAddress: place.formattedAddress ?? null,
@@ -224,6 +230,8 @@ export async function getPlaceDetails(
     {
       place_id: googlePlaceId(place.id),
       name: details.name,
+      price_level: details.priceLevel,
+      price_level_fetched: true,
       latitude: details.latitude,
       longitude: details.longitude,
       formatted_address: details.formattedAddress,

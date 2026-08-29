@@ -36,6 +36,7 @@ struct IdeaView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayScale) private var displayScale
+    @Environment(DirectionsCache.self) private var directionsCache
     @State private var localImage: UIImage?
     @State private var savedScreenshots: [SavedScreenshot] = []
     @State private var selectedScreenshotIndex = 0
@@ -50,6 +51,9 @@ struct IdeaView: View {
     @State private var showShareSheet = false
     @State private var resolvedPlaceDetails: GooglePlaceDetails?
     @State private var resolvedGooglePlaceHours: GooglePlaceHours?
+    @State private var resolvedETA: String?
+    @State private var isFetchingETA = false
+    @State private var locationManager = IdeaLocationManager()
     @State private var scrollPosition = ScrollPosition()
 
     private var venueTitle: String {
@@ -65,7 +69,9 @@ struct IdeaView: View {
     }
 
     private var locationText: String {
-        card.ideas?.locationTypeLabel ?? "saved place"
+        resolvedPlace?.cityStateLabel
+            ?? card.ideas?.locationTypeLabel
+            ?? "saved place"
     }
 
     private var displayedHeroHeight: CGFloat {
@@ -132,13 +138,21 @@ struct IdeaView: View {
                             Text(locationType).fontWeight(.medium)
                         }
                         Text(activityDetails)
+                        if let priceLevel = resolvedPlace?.priceLevelLabel {
+                            Text(priceLevel)
+                        }
                     }
                     .font(.system(size: 16))
                     .tracking(-0.4)
                     .foregroundStyle(.secondary)
                 } else if let status = placeHours?.status {
                     if !status.isOpen && status.detail.hasPrefix("Opens") {
-                        Text(status.detail)
+                        HStack(spacing: 8) {
+                            Text(status.detail)
+                            if let priceLevel = resolvedPlace?.priceLevelLabel {
+                                Text(priceLevel)
+                            }
+                        }
                             .font(.system(size: 16))
                             .tracking(-0.4)
                             .foregroundStyle(.secondary)
@@ -146,6 +160,9 @@ struct IdeaView: View {
                         HStack(spacing: 8) {
                             Text(status.isOpen ? "Open" : "Closed").fontWeight(.medium)
                             Text(status.detail)
+                            if let priceLevel = resolvedPlace?.priceLevelLabel {
+                                Text(priceLevel)
+                            }
                         }
                         .font(.system(size: 16))
                         .tracking(-0.4)
@@ -153,7 +170,8 @@ struct IdeaView: View {
                     }
                 } else if card.ideas?.locationTypeLabel != nil
                     || card.ideas?.duration != nil
-                    || card.ideas?.activityDetailsLabel != nil {
+                    || card.ideas?.activityDetailsLabel != nil
+                    || resolvedPlace?.priceLevelLabel != nil {
                     HStack(spacing: 8) {
                         if let locationType = card.ideas?.locationTypeLabel {
                             Text(locationType).fontWeight(.medium)
@@ -162,6 +180,9 @@ struct IdeaView: View {
                             Text(activityDetails)
                         } else if let duration = card.ideas?.duration {
                             Text(duration)
+                        }
+                        if let priceLevel = resolvedPlace?.priceLevelLabel {
+                            Text(priceLevel)
                         }
                     }
                     .font(.system(size: 16))
@@ -241,7 +262,7 @@ struct IdeaView: View {
 
                 HStack(spacing: 4) {
                     Image(systemName: transportType.icon)
-                    Text(etaString ?? "—")
+                    Text(etaString ?? resolvedETA ?? "—")
                 }
                 .font(.system(size: 16))
             }
@@ -366,8 +387,15 @@ struct IdeaView: View {
             guard !Task.isCancelled, imageRequestToken == requestToken else { return }
             savedScreenshots = loadedScreenshots
         }
-        .task(id: card.ideas?.place_id) {
+        .task(id: "\(card.ideas?.place_id ?? "")-\(transportType.rawValue)") {
             await resolvePlaceDetailsIfNeeded()
+            applyCachedETA()
+            await fetchETAIfNeeded()
+        }
+        .onChange(of: locationManager.location) { _, _ in
+            if etaString == nil, resolvedETA == nil {
+                Task { await fetchETAIfNeeded() }
+            }
         }
         .sheet(isPresented: $showShareSheet) {
             IdeaShareSheet(items: [shareURL])
@@ -532,6 +560,58 @@ struct IdeaView: View {
         }
         await resolvePlaceDetailsIfNeeded()
         resolvedGooglePlaceHours = resolvedPlace?.hours
+    }
+
+    private var ideaID: Int {
+        card.ideas?.id ?? card.id
+    }
+
+    private func applyCachedETA() {
+        guard etaString == nil, resolvedETA == nil,
+              let cached = directionsCache.eta(for: ideaID, transport: transportType) else {
+            return
+        }
+        resolvedETA = cached
+    }
+
+    private func fetchETAIfNeeded() async {
+        guard etaString == nil, resolvedETA == nil, !isFetchingETA,
+              let destination = resolvedPlace?.coordinate else { return }
+
+        isFetchingETA = true
+        defer { isFetchingETA = false }
+
+        locationManager.requestLocation()
+
+        do {
+            for _ in 0..<30 {
+                if let origin = locationManager.location?.coordinate {
+                    let eta = await GooglePlacesService.shared.route(
+                        from: origin,
+                        to: destination,
+                        transportType: transportType
+                    )
+                    try Task.checkCancellation()
+
+                    if let eta {
+                        resolvedETA = eta
+                        directionsCache.store(
+                            eta: eta,
+                            for: ideaID,
+                            transport: transportType
+                        )
+                    }
+                    return
+                }
+
+                try await Task.sleep(nanoseconds: 100_000_000)
+                try Task.checkCancellation()
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            return
+        }
     }
 
     @ViewBuilder
@@ -796,6 +876,37 @@ struct IdeaView: View {
     private func polaroidRotation(for index: Int) -> Double {
         [-5.0, 3.5, -2.5, 4.0][index % 4]
     }
+}
+
+@Observable
+private final class IdeaLocationManager: NSObject, CLLocationManagerDelegate {
+    var location: CLLocation?
+    private let manager = CLLocationManager()
+
+    override init() {
+        super.init()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyKilometer
+    }
+
+    func requestLocation() {
+        manager.requestWhenInUseAuthorization()
+        guard manager.authorizationStatus == .authorizedWhenInUse
+                || manager.authorizationStatus == .authorizedAlways else { return }
+        manager.requestLocation()
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        guard manager.authorizationStatus == .authorizedWhenInUse
+                || manager.authorizationStatus == .authorizedAlways else { return }
+        manager.requestLocation()
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        location = locations.last
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}
 }
 
 private struct IdeaInteractivePopGestureEnabler: UIViewControllerRepresentable {

@@ -57,6 +57,7 @@ struct Card: View {
     var loadsMapData = true
     var loadsPlaceDetails = false
     var loadsRemoteMedia = true
+    var handlesTap = true
     var allowsDetailPresentation = true
     var allowsDeletion = true
     var animatesImageLoading = false
@@ -79,18 +80,75 @@ struct Card: View {
         card.ideas?.type?.lowercased() == "event"
     }
 
+    private var eventCardPrimaryColor: Color {
+        .white
+    }
+
+    private var eventCardSecondaryColor: Color {
+        .white.opacity(0.78)
+    }
+
+    private var eventCardDateBackground: Color {
+        .white.opacity(0.22)
+    }
+
+    private var eventCardDateStroke: Color {
+        .white.opacity(0.38)
+    }
+
     private var eventDayString: String? {
-        guard let dateStr = card.ideas?.date, !dateStr.isEmpty else { return nil }
-        let dayFmt = DateFormatter()
-        dayFmt.dateFormat = "EEEE"
-        for fmt in ["yyyy-MM-dd", "MM/dd/yyyy", "MMMM d, yyyy", "MMM d, yyyy"] {
-            let parser = DateFormatter()
-            parser.dateFormat = fmt
-            if let date = parser.date(from: dateStr) {
-                return dayFmt.string(from: date)
+        guard let dateString = card.ideas?.date?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !dateString.isEmpty else { return nil }
+
+        let dateFormats = ["yyyy-MM-dd", "MM/dd/yyyy", "MMMM d, yyyy", "MMM d, yyyy"]
+        let timeFormats = ["h:mm a", "h a", "HH:mm"]
+        let locale = Locale(identifier: "en_US_POSIX")
+        var parsedDate: Date?
+        var hasTime = false
+
+        if let timeString = card.ideas?.time?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !timeString.isEmpty {
+            for dateFormat in dateFormats {
+                for timeFormat in timeFormats {
+                    let parser = DateFormatter()
+                    parser.locale = locale
+                    parser.calendar = Calendar.current
+                    parser.dateFormat = "\(dateFormat) \(timeFormat)"
+                    if let date = parser.date(from: "\(dateString) \(timeString)") {
+                        parsedDate = date
+                        hasTime = true
+                        break
+                    }
+                }
+                if parsedDate != nil { break }
             }
         }
-        return dateStr
+
+        if parsedDate == nil {
+            for dateFormat in dateFormats {
+                let parser = DateFormatter()
+                parser.locale = locale
+                parser.calendar = Calendar.current
+                parser.dateFormat = dateFormat
+                if let date = parser.date(from: dateString) {
+                    parsedDate = date
+                    break
+                }
+            }
+        }
+
+        guard let parsedDate else { return dateString }
+
+        let calendar = Calendar.current
+        let now = Date()
+        let today = calendar.startOfDay(for: now)
+        let eventDay = calendar.startOfDay(for: parsedDate)
+        let isPast = eventDay < today || (eventDay == today && hasTime && parsedDate < now)
+
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.dateFormat = isPast ? "M/dd" : "EEEE"
+        return formatter.string(from: parsedDate)
     }
 
     var body: some View {
@@ -160,11 +218,13 @@ struct Card: View {
             etaString = nil
             applyCachedDirections()
         }
-        .onTapGesture {
-            if let tapAction {
-                tapAction()
-            } else if allowsDetailPresentation {
-                sheetPresented = true
+        .if(handlesTap) {
+            $0.onTapGesture {
+                if let tapAction {
+                    tapAction()
+                } else if allowsDetailPresentation {
+                    sheetPresented = true
+                }
             }
         }
         .sheet(isPresented: $sheetPresented) {
@@ -193,31 +253,22 @@ struct Card: View {
                 .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: 20))
 
-            // Warm cream gradient from bottom
-            LinearGradient(
-                gradient: Gradient(stops: [
-                    .init(color: Color(red: 248/255, green: 246/255, blue: 240/255).opacity(0), location: 0),
-                    .init(color: Color(red: 248/255, green: 246/255, blue: 240/255), location: 1),
-                ]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 20))
+            eventCardGradient
+                .clipShape(RoundedRectangle(cornerRadius: 20))
 
             VStack(alignment: .leading, spacing: 10) {
                 if let day = eventDayString {
                     Text(day)
                         .font(.system(size: 14, weight: .medium))
                         .tracking(-0.35)
-                        .foregroundStyle(.black)
+                        .foregroundStyle(eventCardPrimaryColor)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-                        .environment(\.colorScheme, .light)
-                        .overlay(
+                        .background(eventCardDateBackground, in: RoundedRectangle(cornerRadius: 12))
+                        .overlay {
                             RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.white.opacity(0.25), lineWidth: 1)
-                        )
+                                .stroke(eventCardDateStroke, lineWidth: 1)
+                        }
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
 
@@ -227,13 +278,13 @@ struct Card: View {
                     Text(venueTitle)
                         .font(.system(size: 24, weight: .medium))
                         .tracking(-0.6)
-                        .foregroundStyle(.black)
+                        .foregroundStyle(eventCardPrimaryColor)
 
-                    locationEtaRow(fontSize: 14, color: .black)
+                    locationEtaRow(fontSize: 14, color: eventCardPrimaryColor)
 
                     googlePlaceStatusOrFallbackRow(
                         fontSize: 14,
-                        color: .black.opacity(0.5)
+                        color: eventCardSecondaryColor
                     )
                 }
             }
@@ -242,6 +293,21 @@ struct Card: View {
         .frame(maxWidth: .infinity)
         .frame(height: 250)
         .clipShape(RoundedRectangle(cornerRadius: 20))
+    }
+
+    private var eventCardGradient: some View {
+        LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: .clear, location: 0.02),
+                .init(color: Color.black.opacity(0.08), location: 0.24),
+                .init(color: Color.black.opacity(0.42), location: 0.50),
+                .init(color: Color.black.opacity(0.80), location: 0.74),
+                .init(color: Color.black.opacity(0.96), location: 0.92),
+                .init(color: .black, location: 1),
+            ]),
+            startPoint: .top,
+            endPoint: .bottom
+        )
     }
 
     // MARK: - Location Card
@@ -409,7 +475,12 @@ struct Card: View {
     private func googlePlaceStatusRow(fontSize: CGFloat, color: some ShapeStyle) -> some View {
         if let status = googlePlaceHours?.status {
             if !status.isOpen && status.detail.hasPrefix("Opens") {
-                Text(status.detail)
+                HStack(spacing: 8) {
+                    Text(status.detail)
+                    if let priceLevel = placeDetails?.priceLevelLabel {
+                        Text(priceLevel)
+                    }
+                }
                     .font(.system(size: fontSize))
                     .tracking(-0.35)
                     .foregroundStyle(color)
@@ -418,6 +489,9 @@ struct Card: View {
                 HStack(spacing: 8) {
                     Text(status.isOpen ? "Open" : "Closed").fontWeight(.medium)
                     Text(status.detail)
+                    if let priceLevel = placeDetails?.priceLevelLabel {
+                        Text(priceLevel)
+                    }
                 }
                 .font(.system(size: fontSize))
                 .tracking(-0.35)
@@ -438,6 +512,9 @@ struct Card: View {
                     Text(locationType).fontWeight(.medium)
                 }
                 Text(activityDetails)
+                if let priceLevel = placeDetails?.priceLevelLabel {
+                    Text(priceLevel)
+                }
             }
             .font(.system(size: fontSize))
             .tracking(-0.35)
@@ -453,6 +530,9 @@ struct Card: View {
                     Text(activityDetails)
                 } else if let duration = card.ideas?.duration {
                     Text(duration)
+                }
+                if let priceLevel = placeDetails?.priceLevelLabel {
+                    Text(priceLevel)
                 }
             }
             .font(.system(size: fontSize))

@@ -23,6 +23,17 @@ const mediaUrl = googlePhotoUrl ?? idea?.media_url;
 const placeStatus = idea?.place
   ? resolvePlaceStatus(idea.place.weekdayDescriptions, idea.place.openNow)
   : null;
+const priceLevel = idea?.place?.priceLevel === 'PRICE_LEVEL_FREE'
+  ? 'Free'
+  : idea?.place?.priceLevel === 'PRICE_LEVEL_INEXPENSIVE'
+    ? '$'
+    : idea?.place?.priceLevel === 'PRICE_LEVEL_MODERATE'
+      ? '$$'
+      : idea?.place?.priceLevel === 'PRICE_LEVEL_EXPENSIVE'
+        ? '$$$'
+        : idea?.place?.priceLevel === 'PRICE_LEVEL_VERY_EXPENSIVE'
+          ? '$$$$'
+          : null;
 const activityDetails = idea
   ? [
       idea.distance_miles != null
@@ -103,7 +114,7 @@ const mapEmbedUrl = hasCoordinates
           <h1 class='text-[32px] font-medium tracking-[-0.8px] text-black'>
             {venue}
           </h1>
-          {(activityDetails || placeStatus || idea.location_type || idea.location_emoji || idea.duration) && (
+          {(activityDetails || placeStatus || priceLevel || idea.location_type || idea.location_emoji || idea.duration) && (
             <div class='flex items-center gap-2 text-[16px] tracking-[-0.4px] text-muted'>
               {activityDetails ? (
                 <span>{activityDetails}</span>
@@ -124,6 +135,7 @@ const mapEmbedUrl = hasCoordinates
                 </span>
               ) : null}
               {!placeStatus && !activityDetails && idea.duration && <span>{idea.duration}</span>}
+              {priceLevel && <span>{priceLevel}</span>}
             </div>
           )}
         </div>

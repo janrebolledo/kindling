@@ -14,6 +14,12 @@ private struct IsAuthenticatedKey: EnvironmentKey {
 
 }
 
+private enum AuthStatus: Equatable {
+    case loading
+    case signedIn
+    case signedOut
+}
+
 extension EnvironmentValues {
     var isAuthenticated: Bool {
         get { self[IsAuthenticatedKey.self] }
@@ -23,8 +29,7 @@ extension EnvironmentValues {
 
 @main
 struct AppEntry: App {
-    @State private var onboardingCompleted = false
-    @State private var authenticated = false
+    @State private var authStatus: AuthStatus = .loading
     @State private var userSettings = UserSettings()
     @State private var directionsCache = DirectionsCache()
     @State private var screenshotIndexing = ScreenshotIndexingController.shared
@@ -33,30 +38,58 @@ struct AppEntry: App {
 
         WindowGroup {
             Group {
-                if !authenticated {
+                switch authStatus {
+                case .loading:
+                    Color.clear
+                        .ignoresSafeArea()
+                case .signedOut:
                     OnboardingView()
-                } else {
+                case .signedIn:
                     ContentView()
                 }
             }
             .environment(userSettings)
             .environment(directionsCache)
             .environment(screenshotIndexing)
-            .environment(\.isAuthenticated, authenticated)
+            .environment(\.isAuthenticated, authStatus == .signedIn)
             .task {
                 for await state in supabase.auth.authStateChanges {
                     if state.event == .userUpdated {
                         userSettings.refreshDisplayName()
-                    } else if [.initialSession, .signedIn, .signedOut].contains(
-                        state.event
-                    ) {
-                        if let session = state.session {
-                            authenticated = !session.isExpired
+                        continue
+                    }
+
+                    switch state.event {
+                    case .initialSession, .signedIn, .tokenRefreshed:
+                        guard state.session != nil else {
+                            authStatus = .signedOut
+                            userSettings.reset()
+                            continue
+                        }
+
+                        do {
+                            // Be defensive if the SDK surfaces an expired
+                            // cached session while it refreshes it. Ask for
+                            // the session before deciding which root view to
+                            // show.
+                            let session = try await supabase.auth.session
+                            guard !session.isExpired else {
+                                authStatus = .signedOut
+                                userSettings.reset()
+                                continue
+                            }
+
+                            authStatus = .signedIn
                             Task { await userSettings.load() }
-                        } else {
-                            authenticated = false
+                        } catch {
+                            authStatus = .signedOut
                             userSettings.reset()
                         }
+                    case .signedOut:
+                        authStatus = .signedOut
+                        userSettings.reset()
+                    default:
+                        break
                     }
                 }
             }

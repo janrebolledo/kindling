@@ -85,6 +85,40 @@ private nonisolated let screenshotUploadLogger = Logger(
     category: "ScreenshotUpload"
 )
 
+/// Keep device OCR bounded while multiple five-screenshot upload requests run
+/// concurrently. Vision becomes unstable when every screenshot in a turn
+/// starts recognition at the same time.
+private actor ScreenshotOCRLimiter {
+    static let shared = ScreenshotOCRLimiter(capacity: 5)
+
+    private var availableSlots: Int
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    init(capacity: Int) {
+        availableSlots = capacity
+    }
+
+    func acquire() async {
+        if availableSlots > 0 {
+            availableSlots -= 1
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func release() {
+        if let waiter = waiters.first {
+            waiters.removeFirst()
+            waiter.resume()
+        } else {
+            availableSlots += 1
+        }
+    }
+}
+
 /// Streams ideas from POST /ideas (SSE) and yields each `ItemWrapper` as it arrives. Finishes when the server sends the "done" event.
 func uploadImagesStreaming(
     images: [(String, UIImage?)]
@@ -104,12 +138,14 @@ func uploadImagesStreaming(
                                 return (image.0, "")
                             }
 
+                            await ScreenshotOCRLimiter.shared.acquire()
                             let text = await recognizeText(
                                 in: uiImage,
                                 recognitionLevel: .fast,
                                 languages: ["en"],
                                 usesLanguageCorrection: true
                             )
+                            await ScreenshotOCRLimiter.shared.release()
                             return (image.0, text)
                         }
                     }

@@ -60,6 +60,8 @@ class ParsedScreenshotsService {
         UserDefaults.standard.removeObject(forKey: onboardingDefaultsKey)
         UserDefaults.standard.removeObject(forKey: legacyDefaultsKey)
         OnboardingDraftCache.clear()
+        OnboardingHomeCache.clear(for: userID)
+        OnboardingHomeCache.clearPending()
     }
 
     nonisolated func markAsParsed(_ newIDs: [String]) {

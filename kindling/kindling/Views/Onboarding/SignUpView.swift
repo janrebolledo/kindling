@@ -94,6 +94,7 @@ struct SignUpView: View {
     func continueButtonTapped() {
         Task {
             isLoading = true
+            OnboardingHomeCache.savePending(cards)
             withAnimation(errorTransitionAnimation) {
                 errorMessage = nil
             }
@@ -105,8 +106,10 @@ struct SignUpView: View {
                 if let authError = error as? ASAuthorizationError,
                    authError.code == .canceled
                 {
+                    OnboardingHomeCache.clearPending()
                     return
                 }
+                OnboardingHomeCache.clearPending()
                 withAnimation(errorTransitionAnimation) {
                     errorMessage = error.localizedDescription.lowercased()
                 }

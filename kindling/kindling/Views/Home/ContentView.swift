@@ -53,6 +53,10 @@ struct SavedIdea: Identifiable, CardData {
             result.append(item.id)
         }
     }
+
+    var isOnboardingCached: Bool {
+        representative.id < 0
+    }
 }
 
 func deduplicatedSavedIdeas(_ items: [CollectionItemWrapper]) -> [SavedIdea] {

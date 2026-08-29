@@ -29,6 +29,7 @@ struct GoogleMapMarkerData: Identifiable {
 
 struct GoogleMapView: UIViewRepresentable {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let markers: [GoogleMapMarkerData]
     let center: CLLocationCoordinate2D?
@@ -55,6 +56,7 @@ struct GoogleMapView: UIViewRepresentable {
         mapView.delegate = context.coordinator
         context.coordinator.lastCenterRequestID = centerRequestID
         context.coordinator.appliedIsDark = colorScheme == .dark
+        context.coordinator.reduceMotion = reduceMotion
         mapView.mapStyle = try? GMSMapStyle(jsonString: KindlingMapStyle.json(for: colorScheme))
         mapView.isUserInteractionEnabled = isInteractive
         mapView.settings.scrollGestures = isInteractive
@@ -66,6 +68,11 @@ struct GoogleMapView: UIViewRepresentable {
         mapView.settings.compassButton = false
         mapView.settings.myLocationButton = false
         mapView.isMyLocationEnabled = isInteractive
+        // This screen only needs the base map and saved-place overlays. Keep
+        // optional 3D/traffic layers out of the renderer's work.
+        mapView.isBuildingsEnabled = false
+        mapView.isIndoorEnabled = false
+        mapView.isTrafficEnabled = false
         mapView.mapType = .normal
         context.coordinator.lastIsInteractive = isInteractive
         return mapView
@@ -80,6 +87,7 @@ struct GoogleMapView: UIViewRepresentable {
         let coordinator = context.coordinator
         coordinator.onSelect = onSelect
         coordinator.onDeselect = onDeselect
+        coordinator.reduceMotion = reduceMotion
 
         let rawMarkerInputSignatures = markers.map {
             MarkerInputSignature(
@@ -167,8 +175,11 @@ struct GoogleMapView: UIViewRepresentable {
         fileprivate var lastIsInteractive: Bool?
         fileprivate var rawMarkerData: [GoogleMapMarkerData] = []
         fileprivate var rawSelectedID: Int?
+        fileprivate var reduceMotion = false
         private var markersByID: [Int: GMSMarker] = [:]
         private var markerSignatures: [Int: MarkerInputSignature] = [:]
+        private var lastViewportCameraTarget: CLLocationCoordinate2D?
+        private var lastViewportZoom: Float?
 
         init(onSelect: @escaping (Int) -> Void, onDeselect: @escaping () -> Void) {
             self.onSelect = onSelect
@@ -180,7 +191,7 @@ struct GoogleMapView: UIViewRepresentable {
         }
 
         func updateMarkerDisplay(on mapView: GMSMapView, zoom: Float) {
-            let displayMarkers = clusteredMarkers(rawMarkerData, zoom: zoom)
+            let displayMarkers = clusteredMarkers(rawMarkerData, zoom: zoom, on: mapView)
             let hitTargetSignatures = displayMarkers.map {
                 MarkerHitTargetSignature(
                     id: $0.id,
@@ -196,23 +207,32 @@ struct GoogleMapView: UIViewRepresentable {
             }
 
             updateMarkers(displayMarkers, selectedID: rawSelectedID, on: mapView)
+            lastViewportCameraTarget = mapView.camera.target
+            lastViewportZoom = zoom
             lastDisplayedZoomBucket = Self.zoomBucket(for: zoom)
         }
 
         private func clusteredMarkers(
             _ markers: [GoogleMapMarkerData],
-            zoom: Float
+            zoom: Float,
+            on mapView: GMSMapView
         ) -> [GoogleMapMarkerData] {
-            guard markers.count > MapClusteringMetrics.minimumMarkersToCluster,
+            // GMSMarker overlays remain active even when Google Maps has
+            // panned them off-screen. Cull against the projected viewport
+            // before clustering so both the overlay count and the clustering
+            // work stay proportional to what the user can see.
+            let viewportMarkers = markersInViewport(markers, on: mapView)
+
+            guard viewportMarkers.count > MapClusteringMetrics.minimumMarkersToCluster,
                   zoom < MapClusteringMetrics.stopClusteringAtZoom else {
-                return markers
+                return viewportMarkers
             }
 
             let cellSize = MapClusteringMetrics.cellPoints
                 / (256 * pow(2, CGFloat(zoom)))
             var buckets: [ClusterGridKey: [GoogleMapMarkerData]] = [:]
 
-            for marker in markers {
+            for marker in viewportMarkers {
                 let worldPoint = Self.worldPoint(for: marker.coordinate)
                 let key = ClusterGridKey(
                     x: Int(floor(worldPoint.x / cellSize)),
@@ -239,6 +259,28 @@ struct GoogleMapView: UIViewRepresentable {
                     emoji: "\(members.count)",
                     clusterMemberIDs: memberIDs
                 )]
+            }
+        }
+
+        private func markersInViewport(
+            _ markers: [GoogleMapMarkerData],
+            on mapView: GMSMapView
+        ) -> [GoogleMapMarkerData] {
+            let viewport = mapView.bounds.insetBy(
+                dx: -MapViewportMetrics.prefetchPoints,
+                dy: -MapViewportMetrics.prefetchPoints
+            )
+
+            // The first update can happen before the map has its final
+            // layout. Keep the initial render reliable; the next SwiftUI
+            // update and every camera idle will apply the culling pass.
+            guard viewport.width > 0, viewport.height > 0 else { return markers }
+
+            return markers.filter { marker in
+                // Keep the selected marker alive during a camera animation.
+                // It will be culled normally as soon as selection ends.
+                guard marker.id != rawSelectedID else { return true }
+                return viewport.contains(mapView.projection.point(for: marker.coordinate))
             }
         }
 
@@ -277,6 +319,7 @@ struct GoogleMapView: UIViewRepresentable {
             lastMarkerInputSignatures = markerInputSignatures
 
             let incomingIDs = Set(markerData.map(\.id))
+            var newMarkers: [(marker: GMSMarker, data: GoogleMapMarkerData)] = []
 
             let staleIDs = markersByID.keys.filter { !incomingIDs.contains($0) }
             for id in staleIDs {
@@ -306,9 +349,14 @@ struct GoogleMapView: UIViewRepresentable {
                     if oldSignature?.emoji != signature.emoji
                         || oldSignature?.clusterMemberIDs != signature.clusterMemberIDs
                         || oldSignature?.isSelected != signature.isSelected {
-                        marker.iconView = data.isCluster
-                            ? MarkerClusterView(count: data.clusterMemberIDs?.count ?? 0)
-                            : MarkerEmojiView(emoji: data.emoji, isSelected: signature.isSelected)
+                        marker.iconView = nil
+                        marker.tracksViewChanges = false
+                        marker.icon = data.isCluster
+                            ? MarkerIconRenderer.cluster
+                            : MarkerIconRenderer.emoji(
+                                data.emoji,
+                                isSelected: signature.isSelected
+                            )
                     }
                     if oldSignature?.isSelected != signature.isSelected {
                         marker.zIndex = signature.isSelected ? 1 : 0
@@ -330,9 +378,24 @@ struct GoogleMapView: UIViewRepresentable {
                         id: data.id,
                         clusterMemberIDs: data.clusterMemberIDs
                     )
-                    marker.iconView = data.isCluster
-                        ? MarkerClusterView(count: data.clusterMemberIDs?.count ?? 0)
-                        : MarkerEmojiView(emoji: data.emoji, isSelected: signature.isSelected)
+                    let icon = data.isCluster
+                        ? MarkerIconRenderer.cluster
+                        : MarkerIconRenderer.emoji(
+                            data.emoji,
+                            isSelected: signature.isSelected
+                        )
+                    let iconView = UIImageView(image: icon)
+                    iconView.frame = CGRect(origin: .zero, size: icon.size)
+                    iconView.isUserInteractionEnabled = false
+                    iconView.alpha = MarkerAppearanceMetrics.startingOpacity
+                    iconView.transform = reduceMotion
+                        ? .identity
+                        : CGAffineTransform(
+                            scaleX: MarkerAppearanceMetrics.startingScale,
+                            y: MarkerAppearanceMetrics.startingScale
+                        )
+                    marker.iconView = iconView
+                    marker.tracksViewChanges = true
                     marker.groundAnchor = CGPoint(
                         x: 0.5,
                         y: data.isCluster ? 0.5 : MarkerInteractionMetrics.groundAnchorY
@@ -340,18 +403,89 @@ struct GoogleMapView: UIViewRepresentable {
                     marker.zIndex = signature.isSelected ? 1 : 0
                     marker.map = mapView
                     markersByID[data.id] = marker
+                    newMarkers.append((marker: marker, data: data))
                 }
 
                 markerSignatures[data.id] = signature
             }
+
+            animateNewMarkers(newMarkers)
+        }
+
+        private func animateNewMarkers(
+            _ entries: [(marker: GMSMarker, data: GoogleMapMarkerData)]
+        ) {
+            let sortedEntries = entries.sorted { $0.data.id < $1.data.id }
+
+            for (index, entry) in sortedEntries.enumerated() {
+                guard let iconView = entry.marker.iconView else { continue }
+
+                let delay = reduceMotion
+                    ? 0
+                    : min(
+                        TimeInterval(index) * MarkerAppearanceMetrics.stagger,
+                        MarkerAppearanceMetrics.maximumStagger
+                    )
+                let timing = UICubicTimingParameters(
+                    controlPoint1: CGPoint(x: 0.23, y: 1),
+                    controlPoint2: CGPoint(x: 0.32, y: 1)
+                )
+                let animator = UIViewPropertyAnimator(
+                    duration: reduceMotion
+                        ? MarkerAppearanceMetrics.reducedMotionDuration
+                        : MarkerAppearanceMetrics.duration,
+                    timingParameters: timing
+                )
+                animator.addAnimations {
+                    iconView.alpha = 1
+                    iconView.transform = .identity
+                }
+                animator.addCompletion { _ in
+                    entry.marker.tracksViewChanges = false
+                }
+                animator.startAnimation(afterDelay: delay)
+            }
         }
 
         func mapView(_ mapView: GMSMapView, idleAt position: GMSCameraPosition) {
+            guard !rawMarkerData.isEmpty else { return }
+            // The visible set changes when panning even if the zoom bucket
+            // stays the same. Re-run the cheap viewport filter on every idle;
+            // updateMarkers still returns immediately when the display set
+            // did not change.
+            updateMarkerDisplay(on: mapView, zoom: position.zoom)
+        }
+
+        func mapView(_ mapView: GMSMapView, didChange position: GMSCameraPosition) {
             guard !rawMarkerData.isEmpty,
-                  lastDisplayedZoomBucket != Self.zoomBucket(for: position.zoom) else {
+                  shouldRefreshViewport(for: position, on: mapView) else {
                 return
             }
+            // Refresh in coarse steps during a gesture. This removes stale
+            // off-screen overlays without doing marker churn on every camera
+            // frame; idleAt performs the final exact pass.
             updateMarkerDisplay(on: mapView, zoom: position.zoom)
+        }
+
+        private func shouldRefreshViewport(
+            for position: GMSCameraPosition,
+            on mapView: GMSMapView
+        ) -> Bool {
+            guard let lastViewportCameraTarget,
+                  let lastViewportZoom else {
+                return true
+            }
+
+            guard abs(position.zoom - lastViewportZoom)
+                    < MapViewportMetrics.zoomRefreshDelta else {
+                return true
+            }
+
+            let previousPoint = mapView.projection.point(for: lastViewportCameraTarget)
+            let currentPoint = mapView.projection.point(for: position.target)
+            let dx = currentPoint.x - previousPoint.x
+            let dy = currentPoint.y - previousPoint.y
+            return hypot(dx, dy) >= MapViewportMetrics.cameraRefreshPoints
         }
 
         func mapView(_ mapView: GMSMapView, didTap marker: GMSMarker) -> Bool {
@@ -369,7 +503,7 @@ struct GoogleMapView: UIViewRepresentable {
             return true
         }
 
-        // Custom iconViews can have a smaller effective hit area than their
+        // Custom marker icons can have a smaller effective hit area than their
         // rendered bounds. Treat a nearby map tap as a pin tap as well so the
         // emoji does not need pixel-perfect targeting.
         func mapView(_ mapView: GMSMapView, didTapAt coordinate: CLLocationCoordinate2D) {
@@ -497,10 +631,29 @@ private enum MarkerInteractionMetrics {
     static let groundAnchorY: CGFloat = 0.875
 }
 
+private enum MarkerAppearanceMetrics {
+    // Emil's guidance favors a restrained entrance over a pop from a tiny
+    // scale. Keep the requested opacity change while starting at 90% size.
+    static let startingScale: CGFloat = 0.9
+    static let startingOpacity: CGFloat = 0.3
+    static let duration: TimeInterval = 0.24
+    static let reducedMotionDuration: TimeInterval = 0.18
+    static let stagger: TimeInterval = 0.04
+    static let maximumStagger: TimeInterval = 0.4
+}
+
 private enum MapClusteringMetrics {
     static let minimumMarkersToCluster = 24
     static let stopClusteringAtZoom: Float = 13
     static let cellPoints: CGFloat = 72
+}
+
+private enum MapViewportMetrics {
+    // A small buffer keeps pins from popping in at the edge while still
+    // dropping the vast majority of off-screen overlays.
+    static let prefetchPoints: CGFloat = 96
+    static let cameraRefreshPoints: CGFloat = 128
+    static let zoomRefreshDelta: Float = 0.35
 }
 
 private struct ClusterGridKey: Hashable, Comparable {
@@ -637,80 +790,70 @@ extension GoogleMapView {
     }
 }
 
-private final class MarkerEmojiView: UIView {
-    init(emoji: String, isSelected: Bool) {
-        // Keep the visible pin compact while giving Google Maps a forgiving
-        // touch target around it.
-        let hitSize = MarkerInteractionMetrics.hitSize
-        let visibleSize: CGFloat = isSelected ? 50 : 42
-        super.init(frame: CGRect(x: 0, y: 0, width: hitSize, height: hitSize))
-        backgroundColor = .clear
+private enum MarkerIconRenderer {
+    private static let emojiCache = NSCache<NSString, UIImage>()
 
-        let inset = (hitSize - visibleSize) / 2
-        let bubble = UIView(frame: CGRect(x: inset, y: inset, width: visibleSize, height: visibleSize))
-        bubble.backgroundColor = isSelected ? .white : UIColor.white.withAlphaComponent(0.88)
-        bubble.layer.cornerRadius = visibleSize / 2
-        bubble.layer.borderColor = UIColor.white.cgColor
-        bubble.layer.borderWidth = isSelected ? 3 : 1
-        bubble.layer.shadowColor = UIColor.black.cgColor
-        bubble.layer.shadowOpacity = 0.16
-        bubble.layer.shadowRadius = 5
-        bubble.layer.shadowOffset = CGSize(width: 0, height: 2)
-        addSubview(bubble)
-
-        let label = UILabel(frame: bubble.bounds)
-        label.text = emoji
-        label.font = .systemFont(ofSize: isSelected ? 24 : 19)
-        label.textAlignment = .center
-        bubble.addSubview(label)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-}
-
-private final class MarkerClusterView: UIView {
-    init(count: Int) {
-        let size: CGFloat = MarkerInteractionMetrics.clusterHitSize
-        super.init(frame: CGRect(x: 0, y: 0, width: size, height: size))
-        backgroundColor = .clear
-
-        let visibleSize = size - 8
-        let bubble = UIView(frame: CGRect(
-            x: (size - visibleSize) / 2,
-            y: (size - visibleSize) / 2,
-            width: visibleSize,
-            height: visibleSize
-        ))
-        bubble.backgroundColor = Self.color(for: count)
-        bubble.layer.cornerRadius = visibleSize / 2
-        bubble.layer.borderColor = UIColor.white.withAlphaComponent(0.95).cgColor
-        bubble.layer.borderWidth = 2
-        bubble.layer.shadowColor = UIColor.black.cgColor
-        bubble.layer.shadowOpacity = 0.18
-        bubble.layer.shadowRadius = 4
-        bubble.layer.shadowOffset = CGSize(width: 0, height: 2)
-        addSubview(bubble)
-
-        let label = UILabel(frame: bubble.bounds)
-        label.text = "\(count)"
-        label.font = .systemFont(ofSize: count >= 100 ? 15 : 18, weight: .semibold)
-        label.textAlignment = .center
-        label.textColor = .white
-        bubble.addSubview(label)
-    }
-
-    private static func color(for count: Int) -> UIColor {
-        switch count {
-        case 20...:
-            return UIColor(red: 0.89, green: 0.30, blue: 0.17, alpha: 0.97)
-        case 8...:
-            return UIColor(red: 0.95, green: 0.46, blue: 0.20, alpha: 0.97)
-        default:
-            return UIColor(red: 0.98, green: 0.62, blue: 0.28, alpha: 0.97)
+    static let cluster: UIImage = {
+        let size = MarkerInteractionMetrics.clusterHitSize
+        let dotSize: CGFloat = 12
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
+        return renderer.image { context in
+            let dotRect = CGRect(
+                x: (size - dotSize) / 2,
+                y: (size - dotSize) / 2,
+                width: dotSize,
+                height: dotSize
+            )
+            context.cgContext.setShadow(
+                offset: CGSize(width: 0, height: 2),
+                blur: 4,
+                color: UIColor.black.withAlphaComponent(0.22).cgColor
+            )
+            UIColor.white.setFill()
+            UIBezierPath(ovalIn: dotRect).fill()
         }
-    }
+    }()
 
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    static func emoji(_ emoji: String, isSelected: Bool) -> UIImage {
+        let cacheKey = "\(emoji)-\(isSelected)"
+        if let cached = emojiCache.object(forKey: cacheKey as NSString) {
+            return cached
+        }
+
+        let size = MarkerInteractionMetrics.hitSize
+        let visibleSize: CGFloat = isSelected ? 50 : 42
+        let inset = (size - visibleSize) / 2
+        let bubbleRect = CGRect(x: inset, y: inset, width: visibleSize, height: visibleSize)
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
+        let image = renderer.image { context in
+            context.cgContext.setShadow(
+                offset: CGSize(width: 0, height: 2),
+                blur: 5,
+                color: UIColor.black.withAlphaComponent(0.16).cgColor
+            )
+            (isSelected ? UIColor.white : UIColor.white.withAlphaComponent(0.88)).setFill()
+            UIBezierPath(ovalIn: bubbleRect).fill()
+
+            UIColor.white.setStroke()
+            let borderPath = UIBezierPath(ovalIn: bubbleRect.insetBy(dx: 0.5, dy: 0.5))
+            borderPath.lineWidth = isSelected ? 3 : 1
+            borderPath.stroke()
+
+            let font = UIFont.systemFont(ofSize: isSelected ? 24 : 19)
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: UIColor.label,
+            ]
+            let textSize = (emoji as NSString).size(withAttributes: attributes)
+            let textRect = CGRect(
+                x: bubbleRect.midX - textSize.width / 2,
+                y: bubbleRect.midY - textSize.height / 2,
+                width: textSize.width,
+                height: textSize.height
+            )
+            (emoji as NSString).draw(in: textRect, withAttributes: attributes)
+        }
+        emojiCache.setObject(image, forKey: cacheKey as NSString)
+        return image
+    }
 }

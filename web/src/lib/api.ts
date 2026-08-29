@@ -19,6 +19,7 @@ export type SharedIdea = {
 export type SharedPlace = {
   id: string;
   name: string | null;
+  priceLevel: string | null;
   latitude: number | null;
   longitude: number | null;
   formattedAddress: string | null;

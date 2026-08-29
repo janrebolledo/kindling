@@ -5,6 +5,7 @@ import Supabase
 nonisolated struct GooglePlaceDetails: Codable, Sendable {
     let id: String
     let name: String?
+    let priceLevel: String?
     let latitude: Double?
     let longitude: Double?
     let formattedAddress: String?
@@ -14,11 +15,79 @@ nonisolated struct GooglePlaceDetails: Codable, Sendable {
     let photoAttributions: [String]
     let googleMapsUri: String?
 
+    /// Returns the city and abbreviated state from a U.S. formatted address.
+    /// Google commonly returns values such as "CA 90015", so the city is the
+    /// address component immediately before the state component.
+    var cityStateLabel: String? {
+        guard let formattedAddress else { return nil }
+
+        let components = formattedAddress
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+        guard components.count >= 2 else { return nil }
+
+        for index in stride(from: components.count - 1, through: 1, by: -1) {
+            let stateCandidate = components[index]
+                .replacingOccurrences(
+                    of: "\\s+\\d{5}(?:-\\d{4})?$",
+                    with: "",
+                    options: .regularExpression
+                )
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            guard let stateAbbreviation = Self.usStateAbbreviations[stateCandidate.uppercased()]
+            else { continue }
+
+            let city = components[index - 1]
+            guard !city.isEmpty else { return nil }
+            return "\(city), \(stateAbbreviation)"
+        }
+
+        return nil
+    }
+
+    var priceLevelLabel: String? {
+        switch priceLevel {
+        case "PRICE_LEVEL_FREE": return "Free"
+        case "PRICE_LEVEL_INEXPENSIVE": return "$"
+        case "PRICE_LEVEL_MODERATE": return "$$"
+        case "PRICE_LEVEL_EXPENSIVE": return "$$$"
+        case "PRICE_LEVEL_VERY_EXPENSIVE": return "$$$$"
+        default: return nil
+        }
+    }
+
     var coordinate: CLLocationCoordinate2D? {
         guard let latitude, let longitude else { return nil }
         let coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
         return CLLocationCoordinate2DIsValid(coordinate) ? coordinate : nil
     }
+
+    private static let usStateAbbreviations: [String: String] = [
+        "ALABAMA": "AL", "ALASKA": "AK", "ARIZONA": "AZ", "ARKANSAS": "AR",
+        "CALIFORNIA": "CA", "COLORADO": "CO", "CONNECTICUT": "CT", "DELAWARE": "DE",
+        "FLORIDA": "FL", "GEORGIA": "GA", "HAWAII": "HI", "IDAHO": "ID",
+        "ILLINOIS": "IL", "INDIANA": "IN", "IOWA": "IA", "KANSAS": "KS",
+        "KENTUCKY": "KY", "LOUISIANA": "LA", "MAINE": "ME", "MARYLAND": "MD",
+        "MASSACHUSETTS": "MA", "MICHIGAN": "MI", "MINNESOTA": "MN", "MISSISSIPPI": "MS",
+        "MISSOURI": "MO", "MONTANA": "MT", "NEBRASKA": "NE", "NEVADA": "NV",
+        "NEW HAMPSHIRE": "NH", "NEW JERSEY": "NJ", "NEW MEXICO": "NM", "NEW YORK": "NY",
+        "NORTH CAROLINA": "NC", "NORTH DAKOTA": "ND", "OHIO": "OH", "OKLAHOMA": "OK",
+        "OREGON": "OR", "PENNSYLVANIA": "PA", "RHODE ISLAND": "RI", "SOUTH CAROLINA": "SC",
+        "SOUTH DAKOTA": "SD", "TENNESSEE": "TN", "TEXAS": "TX", "UTAH": "UT",
+        "VERMONT": "VT", "VIRGINIA": "VA", "WASHINGTON": "WA", "WEST VIRGINIA": "WV",
+        "WISCONSIN": "WI", "WYOMING": "WY", "DISTRICT OF COLUMBIA": "DC",
+        "AL": "AL", "AK": "AK", "AZ": "AZ", "AR": "AR", "CA": "CA", "CO": "CO",
+        "CT": "CT", "DE": "DE", "FL": "FL", "GA": "GA", "HI": "HI", "ID": "ID",
+        "IL": "IL", "IN": "IN", "IA": "IA", "KS": "KS", "KY": "KY", "LA": "LA",
+        "ME": "ME", "MD": "MD", "MA": "MA", "MI": "MI", "MN": "MN", "MS": "MS",
+        "MO": "MO", "MT": "MT", "NE": "NE", "NV": "NV", "NH": "NH", "NJ": "NJ",
+        "NM": "NM", "NY": "NY", "NC": "NC", "ND": "ND", "OH": "OH", "OK": "OK",
+        "OR": "OR", "PA": "PA", "RI": "RI", "SC": "SC", "SD": "SD", "TN": "TN",
+        "TX": "TX", "UT": "UT", "VT": "VT", "VA": "VA", "WA": "WA", "WV": "WV",
+        "WI": "WI", "WY": "WY", "DC": "DC",
+    ]
 
     var hours: GooglePlaceHours? {
         guard !weekdayDescriptions.isEmpty else { return nil }

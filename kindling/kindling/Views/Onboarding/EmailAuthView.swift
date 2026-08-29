@@ -292,6 +292,7 @@ struct EmailAuthView: View {
         infoMessage = nil
 
         let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        OnboardingHomeCache.savePending(cards)
 
         do {
             if mode == .signUp {
@@ -313,6 +314,7 @@ struct EmailAuthView: View {
             await ensureUsernameExists()
             await InitializeCollection(items: cards)
         } catch {
+            OnboardingHomeCache.clearPending()
             errorMessage = error.localizedDescription.lowercased()
         }
     }
