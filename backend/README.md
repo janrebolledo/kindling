@@ -35,7 +35,8 @@ should be scoped to the account and have the Edit Cloudflare Workers permission.
 
 The repository-root `wrangler.jsonc` remains a fallback for local or dashboard deployments.
 
-On the `api.getkindl.ing` custom domain, route API paths to this worker:
+The API Worker owns the `api.getkindl.ing` custom domain via `backend/wrangler.jsonc`.
+Cloudflare provisions the DNS record and certificate during deployment. Its API paths are:
 
 - `api.getkindl.ing/ideas*`, `/account*`, `/share*`, `/health*` → `kindling-api`
 
