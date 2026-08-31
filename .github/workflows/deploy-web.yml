@@ -1,15 +1,18 @@
-name: Deploy production
+name: Deploy web production
 
 on:
   push:
     branches:
       - main
+    paths:
+      - web/**
+      - .github/workflows/deploy-web.yml
 
 permissions:
   contents: read
 
 concurrency:
-  group: production-deploy
+  group: production-web-deploy
   cancel-in-progress: false
 
 jobs:
@@ -31,21 +34,4 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: web
-          command: deploy
-
-  api:
-    name: Deploy API
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
-      - name: Install API dependencies
-        working-directory: backend
-        run: bun install --frozen-lockfile
-      - name: Deploy API Worker
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: backend
           command: deploy

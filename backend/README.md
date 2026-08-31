@@ -29,7 +29,7 @@ The iOS target also needs a client-restricted Maps SDK key. Set the
 `GOOGLE_MAPS_API_KEY` build setting for the app target; it is injected into
 `Info.plist` and is not committed to the repository.
 
-GitHub Actions deploys this Worker from `.github/workflows/deploy.yml` on every push to `main`.
+GitHub Actions deploys this Worker from `.github/workflows/deploy-api.yml` when `backend/**` changes on `main`.
 Add `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as GitHub repository secrets. The token
 should be scoped to the account and have the Edit Cloudflare Workers permission.
 
