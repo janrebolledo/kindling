@@ -12,7 +12,7 @@ import Logo from '../components/Logo.astro';
       <Logo />
     </a>
     <h1 class="text-[32px] font-medium tracking-[-0.8px]">privacy</h1>
-    <p class="mt-2 text-[16px] tracking-[-0.4px] text-muted">last updated Aug 20, 2026</p>
+    <p class="mt-2 text-[16px] tracking-[-0.4px] text-muted">last updated Aug 31, 2026</p>
     <div class="mt-8 space-y-4 text-[16px] leading-relaxed tracking-[-0.4px] text-black/80">
       <p>
         kindling is made by jan rebolledo. this page is the whole policy: what the app uses,
@@ -26,15 +26,22 @@ import Logo from '../components/Logo.astro';
         your phone. we never upload them.
       </p>
       <p>
-        by default, that text is sent to google’s gemini so it can find places and events, and
-        pull out details like tips. you can instead choose “on this iphone” in settings to use
-        apple’s foundation model without sending the screenshot text to kindling or google. in
-        that mode, kindling receives only the extracted place or event details needed to look it
-        up and save it. we don’t keep the full screenshot text. google may use text processed in
-        cloud mode to improve gemini and their other products, per their
+        by default, that text is sent to OpenAI’s API so it can find places and events, and pull
+        out details like tips. you can instead choose “on this iphone” in settings to use apple’s
+        foundation model without sending the screenshot text to kindling or OpenAI. in that mode,
+        kindling receives only the extracted place or event details needed to look it up and save
+        it. we don’t keep the full screenshot text.
+      </p>
+      <p>
+        we have not opted in to OpenAI’s optional input and output sharing. kindling does not train
+        models on your data, and OpenAI does not use API inputs or outputs to train or improve its
+        models unless an organization explicitly opts in. cloud mode still sends screenshot text
+        and extracted place or event details to OpenAI so it can provide the feature. OpenAI
+        describes its API data controls in its
         <a
           class="underline decoration-solid underline-offset-2"
-          href="https://ai.google.dev/gemini-api/terms">gemini terms</a
+          href="https://developers.openai.com/api/docs/guides/your-data"
+          >API data documentation</a
         >.
       </p>
 
@@ -78,9 +85,9 @@ import Logo from '../components/Logo.astro';
       <h2 class="pt-4 text-[20px] font-medium tracking-[-0.5px] text-black">who else sees data</h2>
       <p>
         apple (sign in and on-device foundation models), supabase (account and saved places),
-        google (Places and Routes, plus Gemini for screenshot text in cloud mode), and cloudflare
-        (hosts the app). supabase, google, gemini, and cloudflare are required under their terms
-        to protect this data. we keep logs for up to 7 days to debug the app.
+        OpenAI (cloud-mode inputs and AI responses), google (Places and Routes), and
+        cloudflare (hosts the app). supabase, OpenAI, google, and cloudflare are required under
+        their terms to protect this data. we keep logs for up to 7 days to debug the app.
         they don’t contain screenshot images or the full screenshot text — just technical info
         like error messages, and sometimes venue names. we don’t use analytics or ad trackers.
       </p>
