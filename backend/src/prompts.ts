@@ -122,7 +122,7 @@ Special Cases:
 
 OUTPUT FORMAT
 Respond ONLY with valid JSON. Do NOT include \`\`\`json or any other markdown formatting. Use title case for name, venue, location, address.
-This is a batch request, return an array of JSON objects.
+This is a batch request, return an object with a "results" array of JSON objects.
 
 Structure:
 {

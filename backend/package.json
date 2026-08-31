@@ -7,7 +7,6 @@
     "types": "wrangler types --env-interface CloudflareBindings --include-runtime false"
   },
   "dependencies": {
-    "@google/genai": "^1.38.0",
     "@supabase/supabase-js": "^2.93.1",
     "hono": "^4.11.3"
   },

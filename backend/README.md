@@ -19,7 +19,7 @@ Dev server listens on `http://0.0.0.0:3000` so the iOS simulator/device can keep
 
 ```sh
 bun run types
-npx wrangler secret put GEMINI_API_KEY
+npx wrangler secret put OPENAI_API_KEY
 npx wrangler secret put GOOGLE_MAPS_API_KEY
 npx wrangler secret put SUPABASE_API_KEY
 bun run deploy

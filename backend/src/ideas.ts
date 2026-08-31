@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { GoogleGenAI } from '@google/genai';
+import type { AIClient } from './clients';
 import { isDistanceBasedActivity, lookupActivityDetails, type ActivityDetails } from './activity';
 import { lookupPlace, getPlaceDetails, type GoogleMapsCredentials } from './places';
 import { logError } from './log';
@@ -73,7 +73,7 @@ async function getOrCreateIdeaForPlace(
   place: MapsPlace,
   image: string | null,
   item: ExtractedItem,
-  ai: GoogleGenAI,
+  ai: AIClient,
 ): Promise<{ idea: Idea; via: LinkedVia } | null> {
   const placeId = place.id!;
   const existing = await findIdeaByPlaceId(supabase, placeId);
@@ -165,7 +165,7 @@ async function getOrCreateIdeaForPlace(
 export async function processEntry(
   supabase: SupabaseClient,
   googleMaps: GoogleMapsCredentials,
-  ai: GoogleGenAI,
+  ai: AIClient,
   entry: ExtractionResult,
 ): Promise<ProcessResult> {
   const { id, data } = entry;

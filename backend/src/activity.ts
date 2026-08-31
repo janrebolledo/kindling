@@ -1,8 +1,8 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import { getAIOutputText, type AIClient } from './clients';
 import type { ExtractedItem } from './utils/parseScreenshot';
 import { log, logError } from './log';
 
-const MODEL = 'gemini-3.5-flash-lite';
+const MODEL = 'gpt-5.6-luna';
 
 export type ActivityDetails = {
   distance_miles: number | null;
@@ -39,16 +39,15 @@ function normalizeCompletionTime(value: unknown): string | null {
 }
 
 const activityDetailsSchema = {
-  type: Type.OBJECT,
+  type: 'object',
+  additionalProperties: false,
   properties: {
     distance_miles: {
-      type: Type.NUMBER,
-      nullable: true,
+      type: ['number', 'null'],
       description: 'The listed route distance in miles. Use null when it is not reliably available.',
     },
     completion_time: {
-      type: Type.STRING,
-      nullable: true,
+      type: ['string', 'null'],
       description: 'The typical time to complete the route, preserving a range when sources provide one. Use null when it is not reliably available.',
     },
   },
@@ -114,12 +113,12 @@ function parseJSON(text: string): unknown {
 }
 
 /**
- * Uses Gemini's Google Search grounding to find trail facts. This is
+ * Uses OpenAI web search to find trail facts. This is
  * deliberately best-effort: the idea itself should still save if a trail has
  * ambiguous naming, no public listing, or the search service is unavailable.
  */
 export async function lookupActivityDetails(
-  ai: GoogleGenAI,
+  ai: AIClient,
   item: ExtractedItem,
 ): Promise<ActivityDetails | null> {
   const extractedDetails = activityDetailsFromExtraction(item);
@@ -133,25 +132,30 @@ export async function lookupActivityDetails(
     .join(', ');
 
   try {
-    log('gemini_activity.search_request', {
+    log('openai_activity.search_request', {
       venue: item.venue,
       query_length: query.length,
     });
 
-    const response = await ai.models.generateContent({
+    const response = await ai.responses.create({
       model: MODEL,
-      contents: `Search the web for the official or most authoritative listing for this hiking or outdoor route: ${query}
+      input: `Search the web for the official or most authoritative listing for this hiking or outdoor route: ${query}
 
 Return the route distance in miles and the typical time to complete the route. Prefer the named trail or route over a similarly named business. Do not infer or combine values from unrelated trails. If sources disagree or the route cannot be identified confidently, return null for that field. Return only JSON matching the requested schema.`,
-      config: {
-        tools: [{ googleSearch: {} }],
-        responseMimeType: 'application/json',
-        responseSchema: activityDetailsSchema,
+      reasoning: { effort: 'low' },
+      tools: [{ type: 'web_search_preview' }],
+      text: {
+        format: {
+          type: 'json_schema',
+          name: 'activity_details',
+          strict: true,
+          schema: activityDetailsSchema,
+        },
       },
     });
 
-    const details = normalizeDetails(parseJSON(response.text ?? ''));
-    log('gemini_activity.search_response', {
+    const details = normalizeDetails(parseJSON(getAIOutputText(response)));
+    log('openai_activity.search_response', {
       venue: item.venue,
       found_distance: details?.distance_miles != null,
       found_completion_time: details?.completion_time != null,
@@ -161,7 +165,7 @@ Return the route distance in miles and the typical time to complete the route. P
       completion_time: extractedDetails?.completion_time ?? details?.completion_time ?? null,
     };
   } catch (err) {
-    logError('gemini_activity.search_failed', err, { venue: item.venue });
+    logError('openai_activity.search_failed', err, { venue: item.venue });
     return extractedDetails;
   }
 }

@@ -1,18 +1,74 @@
-import type { GoogleGenAI } from '@google/genai';
+import { getAIOutputText, type AIClient, type AIRequest } from '../clients';
 import { parseScreenshotPrompt } from '../prompts';
 import type { Screenshot } from '../types';
 
-const MODEL = 'gemini-3.5-flash-lite';
+const MODEL = 'gpt-5.6-luna';
+
+const screenshotExtractionSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    results: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          id: { type: 'string' },
+          data: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              status: { type: 'string', enum: ['success', 'skipped', 'sensitive'] },
+              reason: { type: ['string', 'null'] },
+              item: {
+                type: ['object', 'null'],
+                additionalProperties: false,
+                properties: {
+                  name: { type: ['string', 'null'] },
+                  venue: { type: ['string', 'null'] },
+                  location: { type: ['string', 'null'] },
+                  address: { type: ['string', 'null'] },
+                  date: { type: ['string', 'null'] },
+                  time: { type: ['string', 'null'] },
+                  distance_miles: { type: ['number', 'null'] },
+                  completion_time: { type: ['string', 'null'] },
+                  tag: { type: 'string', enum: ['activity', 'event', 'food'] },
+                  activity_type: { type: ['string', 'null'] },
+                  activity_emoji: { type: ['string', 'null'] },
+                  description: { type: ['string', 'null'] },
+                  highlights: { type: ['string', 'null'] },
+                  highlights_sources: {
+                    type: ['array', 'null'],
+                    items: { type: 'string' },
+                  },
+                },
+                required: [
+                  'name', 'venue', 'location', 'address', 'date', 'time',
+                  'distance_miles', 'completion_time', 'tag', 'activity_type',
+                  'activity_emoji', 'description', 'highlights', 'highlights_sources',
+                ],
+              },
+            },
+            required: ['status', 'reason', 'item'],
+          },
+        },
+        required: ['id', 'data'],
+      },
+    },
+  },
+  required: ['results'],
+} satisfies Record<string, unknown>;
 
 async function generateWithRetry(
-  ai: GoogleGenAI,
-  params: Parameters<GoogleGenAI['models']['generateContent']>[0],
+  ai: AIClient,
+  params: AIRequest,
   maxRetries = 5,
 ) {
   let delay = 1000;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      return await ai.models.generateContent(params);
+      return await ai.responses.create(params);
     } catch (err: unknown) {
       const status =
         err && typeof err === 'object'
@@ -20,7 +76,7 @@ async function generateWithRetry(
             (err as { httpError?: { status?: number } }).httpError?.status ??
             (err as { response?: { status?: number } }).response?.status)
           : undefined;
-      if (status === 503 && attempt < maxRetries) {
+      if ((status === 429 || (status != null && status >= 500)) && attempt < maxRetries) {
         await new Promise((res) => setTimeout(res, delay));
         delay *= 2;
         continue;
@@ -33,14 +89,27 @@ async function generateWithRetry(
 
 export async function parseScreenshot(
   screenshots: Screenshot[],
-  ai: GoogleGenAI,
+  ai: AIClient,
 ) {
   const response = await generateWithRetry(ai, {
     model: MODEL,
-    contents: parseScreenshotPrompt + JSON.stringify(screenshots),
+    instructions: parseScreenshotPrompt,
+    input: JSON.stringify(screenshots),
+    reasoning: { effort: 'none' },
+    text: {
+      format: {
+        type: 'json_schema',
+        name: 'screenshot_extractions',
+        strict: true,
+        schema: screenshotExtractionSchema,
+      },
+    },
   });
 
-  return JSON.parse(response.text || '[]') as ExtractionResult[];
+  const parsed = JSON.parse(getAIOutputText(response) || '{"results":[]}') as {
+    results?: ExtractionResult[];
+  };
+  return parsed.results ?? [];
 }
 
 type ExtractionStatus = 'success' | 'skipped' | 'sensitive';
