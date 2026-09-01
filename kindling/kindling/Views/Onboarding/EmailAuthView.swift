@@ -23,6 +23,7 @@ struct EmailAuthView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var infoMessage: String?
+    @State private var isPasswordStep = false
     @FocusState private var focusedField: Field?
 
     private enum Field {
@@ -32,6 +33,9 @@ struct EmailAuthView: View {
 
     private var canSubmit: Bool {
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        if mode == .signIn && !isPasswordStep {
+            return trimmed.contains("@") && !isLoading
+        }
         return trimmed.contains("@") && password.count >= 6 && !isLoading
     }
 
@@ -42,10 +46,10 @@ struct EmailAuthView: View {
                     titleBlock
 
                     credentials
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, 12)
                         .padding(.top, 35)
 
-                    if mode == .signIn {
+                    if mode == .signIn && isPasswordStep {
                         Button(action: sendReset) {
                             Text("forgot password?")
                                 .font(.system(size: 16, weight: .medium))
@@ -97,6 +101,7 @@ struct EmailAuthView: View {
         .onChange(of: mode) { _, _ in
             password = ""
             showPassword = false
+            isPasswordStep = false
             errorMessage = nil
             infoMessage = nil
             focusedField = .email
@@ -122,8 +127,9 @@ struct EmailAuthView: View {
         .padding(.horizontal, 24)
     }
 
+    @ViewBuilder
     private var credentials: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 10) {
             labeledField(
                 label: "email",
                 text: $email,
@@ -138,26 +144,19 @@ struct EmailAuthView: View {
             .submitLabel(.next)
             .onSubmit { focusedField = .password }
 
-            Rectangle()
-                .fill(Color.primary.opacity(0.08))
-                .frame(height: 1)
-                .padding(.horizontal, 20)
-
-            labeledField(
-                label: "password",
-                text: $password,
-                isSecure: true,
-                prompt: "••••••••"
-            )
-            .focused($focusedField, equals: .password)
-            .textContentType(mode == .signUp ? .newPassword : .password)
-            .submitLabel(.go)
-            .onSubmit { submit() }
+            if mode == .signUp || isPasswordStep {
+                labeledField(
+                    label: "password",
+                    text: $password,
+                    isSecure: true,
+                    prompt: "••••••••"
+                )
+                .focused($focusedField, equals: .password)
+                .textContentType(mode == .signUp ? .newPassword : .password)
+                .submitLabel(.go)
+                .onSubmit { submit() }
+            }
         }
-        .background(
-            Color("raisedSurface").opacity(0.82),
-            in: RoundedRectangle(cornerRadius: 24, style: .continuous)
-        )
     }
 
     private func labeledField(
@@ -167,14 +166,14 @@ struct EmailAuthView: View {
         prompt: String
     ) -> some View {
         let promptText = Text(prompt)
-            .font(.system(size: 20, weight: .medium))
+            .font(.system(size: 16, weight: .medium))
             .foregroundColor(kindlingMuted.opacity(0.55))
 
         return HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(label)
-                    .font(.system(size: 13))
-                    .tracking(-0.16)
+                    .font(.system(size: 10))
+                    .tracking(-0.125)
                     .foregroundStyle(kindlingMuted)
 
                 Group {
@@ -184,12 +183,14 @@ struct EmailAuthView: View {
                         TextField("", text: text, prompt: promptText)
                     }
                 }
-                .font(.system(size: 20, weight: .medium))
-                .tracking(-0.5)
+                .font(.system(size: 16, weight: .medium))
+                .tracking(-0.4)
                 .foregroundStyle(.primary)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
             }
+
+            Spacer(minLength: 8)
 
             if isSecure {
                 Button {
@@ -205,15 +206,19 @@ struct EmailAuthView: View {
                 .accessibilityLabel(showPassword ? "hide password" : "show password")
             }
         }
-        .padding(.leading, 20)
-        .padding(.trailing, isSecure ? 4 : 20)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Color("raisedSurface"),
+            in: RoundedRectangle(cornerRadius: 24)
+        )
     }
 
     private var footer: some View {
         VStack(spacing: 16) {
             OnboardingPrimaryButton(
-                title: mode == .signUp ? "continue →" : "sign in →",
+                title: mode == .signIn && isPasswordStep ? "sign in →" : "continue →",
                 isEnabled: canSubmit
             ) {
                 submit()
@@ -227,8 +232,8 @@ struct EmailAuthView: View {
                 }
             } label: {
                 switcherLabel
-                    .font(.system(size: 20, weight: .medium))
-                    .tracking(-0.5)
+                    .font(.system(size: 16, weight: .medium))
+                    .tracking(-0.32)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .contentShape(Rectangle())
@@ -255,6 +260,15 @@ struct EmailAuthView: View {
 
     private func submit() {
         guard canSubmit else { return }
+
+        if mode == .signIn && !isPasswordStep {
+            withAnimation(OnboardingMotion.step(reduceMotion)) {
+                isPasswordStep = true
+                focusedField = .password
+            }
+            return
+        }
+
         focusedField = nil
         Task { await authenticate() }
     }
@@ -312,7 +326,9 @@ struct EmailAuthView: View {
             }
 
             await ensureUsernameExists()
-            await InitializeCollection(items: cards)
+            if mode == .signUp {
+                await InitializeCollection(items: cards)
+            }
         } catch {
             OnboardingHomeCache.clearPending()
             errorMessage = error.localizedDescription.lowercased()

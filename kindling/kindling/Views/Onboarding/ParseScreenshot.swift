@@ -18,6 +18,11 @@ func recognizeText(
     return await Task.detached(priority: .userInitiated) {
         let requestHandler = VNImageRequestHandler(cgImage: cgImage)
         let request = VNRecognizeTextRequest()
+        request.recognitionLevel = recognitionLevel
+        if let languages, !languages.isEmpty {
+            request.recognitionLanguages = languages
+        }
+        request.usesLanguageCorrection = usesLanguageCorrection
         do {
             try requestHandler.perform([request])
             guard let observations = request.results else { return "" }

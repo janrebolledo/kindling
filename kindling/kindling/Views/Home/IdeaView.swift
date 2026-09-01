@@ -43,12 +43,14 @@ struct IdeaView: View {
     @State private var screenshotDragOffset: CGFloat = 0
     @State private var screenshotVerticalDragOffset: CGFloat = 0
     @State private var isCyclingScreenshot = false
+    @State private var selectedHeroPhotoIndex = 0
     @State private var imageRequestToken = UUID()
     @State private var screenshotDate: Date?
     @State private var showQuickLook = false
     @State private var isDeletingFromCollection = false
     @State private var isDeletingFromDevice = false
     @State private var showShareSheet = false
+    @State private var showIssueReport = false
     @State private var resolvedPlaceDetails: GooglePlaceDetails?
     @State private var resolvedGooglePlaceHours: GooglePlaceHours?
     @State private var resolvedETA: String?
@@ -82,9 +84,16 @@ struct IdeaView: View {
         "\(card.id)-\(card.screenshotLocalIDs.joined(separator: ","))-\(card.ideas?.media_url ?? "remote")"
     }
 
-    private var googleMapsMediaURL: URL? {
-        let value = resolvedPlace?.photoUrl ?? card.ideas?.media_url
-        return value.flatMap(URL.init(string:))
+    private var googleMapsMediaURLs: [URL] {
+        let values = resolvedPlace?.photoUrls?.isEmpty == false
+            ? (resolvedPlace?.photoUrls ?? [])
+            : [resolvedPlace?.photoUrl, card.ideas?.media_url].compactMap { $0 }
+
+        return values.compactMap(URL.init(string:))
+            .reduce(into: [URL]()) { result, url in
+                guard !result.contains(url) else { return }
+                result.append(url)
+            }
     }
 
     private var screenshotTargetSize: CGSize {
@@ -283,7 +292,7 @@ struct IdeaView: View {
             // Bottom action buttons
             VStack(spacing: 14) {
                 Button {
-                    // TODO: report issue
+                    showIssueReport = true
                 } label: {
                     Label("Report an issue", systemImage: "exclamationmark.bubble.fill")
                         .font(.system(size: 16, weight: .medium))
@@ -335,6 +344,10 @@ struct IdeaView: View {
             withTransaction(transaction) {
                 scrollPosition.scrollTo(edge: .top)
             }
+            selectedHeroPhotoIndex = 0
+        }
+        .onChange(of: googleMapsMediaURLs) { _, urls in
+            selectedHeroPhotoIndex = min(selectedHeroPhotoIndex, max(urls.count - 1, 0))
         }
         .task(id: imageLoadID) {
             let requestToken = UUID()
@@ -400,6 +413,9 @@ struct IdeaView: View {
         .sheet(isPresented: $showShareSheet) {
             IdeaShareSheet(items: [shareURL])
         }
+        .sheet(isPresented: $showIssueReport) {
+            ReportIssueView(card: card)
+        }
     }
 
     // MARK: - Subviews
@@ -408,49 +424,16 @@ struct IdeaView: View {
     private var heroSection: some View {
         GeometryReader { geometry in
             Group {
-                if let url = googleMapsMediaURL {
-                    let transaction = Transaction(
-                        animation: reduceMotion ? .easeOut(duration: 0.12) : .easeOut(duration: 0.2)
-                    )
-
-                    AsyncImage(url: url, transaction: transaction) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .transition(.opacity)
-                        case .empty:
-                            // Keep the Google photo first-class while it
-                            // loads. The screenshot is only a fallback after
-                            // the request fails.
-                            placeholderImage(geometry: geometry)
-                        case .failure:
-                            if let localImage {
-                                Image(uiImage: localImage)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                            } else {
-                                placeholderImage(geometry: geometry)
-                            }
-                        @unknown default:
-                            if let localImage {
-                                Image(uiImage: localImage)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                            } else {
-                                placeholderImage(geometry: geometry)
-                            }
+                if !isPreview, googleMapsMediaURLs.count > 1 {
+                    TabView(selection: $selectedHeroPhotoIndex) {
+                        ForEach(Array(googleMapsMediaURLs.enumerated()), id: \.offset) { index, url in
+                            heroImage(url: url, geometry: geometry)
+                                .tag(index)
                         }
                     }
-                    .frame(width: geometry.size.width, height: displayedHeroHeight)
-                    .clipped()
-                } else if let localImage {
-                    Image(uiImage: localImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: geometry.size.width, height: displayedHeroHeight)
-                        .clipped()
+                    .tabViewStyle(.page(indexDisplayMode: .always))
+                } else if let url = googleMapsMediaURLs.first {
+                    heroImage(url: url, geometry: geometry)
                 } else {
                     placeholderImage(geometry: geometry)
                 }
@@ -461,6 +444,45 @@ struct IdeaView: View {
         .padding(.horizontal, isPreview ? 0 : 16)
         .padding(.top, isPreview ? 0 : 16)
         .padding(.bottom, isPreview ? 8 : 16)
+    }
+
+    @ViewBuilder
+    private func heroImage(url: URL, geometry: GeometryProxy) -> some View {
+        let transaction = Transaction(
+            animation: reduceMotion ? .easeOut(duration: 0.12) : .easeOut(duration: 0.2)
+        )
+
+        AsyncImage(url: url, transaction: transaction) { phase in
+            switch phase {
+            case .success(let image):
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .transition(.opacity)
+            case .empty:
+                // Keep the Google photo first-class while it loads. The
+                // screenshot is only a fallback after the request fails.
+                placeholderImage(geometry: geometry)
+            case .failure:
+                if let localImage {
+                    Image(uiImage: localImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    placeholderImage(geometry: geometry)
+                }
+            @unknown default:
+                if let localImage {
+                    Image(uiImage: localImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    placeholderImage(geometry: geometry)
+                }
+            }
+        }
+        .frame(width: geometry.size.width, height: displayedHeroHeight)
+        .clipped()
     }
 
     @ViewBuilder

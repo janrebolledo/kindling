@@ -26,6 +26,10 @@ private struct CollectionItemInsert: Encodable {
     let highlights_sources: [String]?
 }
 
+private struct CollectionItemRow: Decodable {
+    let local_id: String
+}
+
 private struct CollectionRow: Decodable {
     let id: Int
     let name: String?
@@ -107,7 +111,17 @@ func finalizeItems(_ items: [ItemWrapper]) async throws {
 
     let collectionID = try await defaultCollectionID(for: userID)
 
-    let rows: [CollectionItemInsert] = items.map { item in
+    let existing: [CollectionItemRow] = try await supabase
+        .from("collection_items")
+        .select("local_id")
+        .eq("user_id", value: userID)
+        .execute()
+        .value
+    let existingLocalIDs = Set(existing.map(\.local_id))
+
+    let rows: [CollectionItemInsert] = items.filter { item in
+        !existingLocalIDs.contains(item.local_id)
+    }.map { item in
         CollectionItemInsert(
             local_id: item.local_id,
             idea_id: item.idea_id,
@@ -117,6 +131,7 @@ func finalizeItems(_ items: [ItemWrapper]) async throws {
             highlights_sources: item.highlights_sources
         )
     }
+    guard !rows.isEmpty else { return }
     try await supabase.from("collection_items").insert(rows).execute()
 }
 
@@ -134,9 +149,13 @@ func InitializeCollection(items: [ItemWrapper]) async {
         try await finalizeItems(items)
         OnboardingDraftCache.clear()
 
-        ParsedScreenshotsService.claimOnboardingIDs(for: userID)
         let service = ParsedScreenshotsService(userID: userID)
-        try? await service.syncToSupabase(userID: userID)
+        ParsedScreenshotsService.claimOnboardingIDs(for: userID)
+
+        // Merge first so a returning user never loses parsed screenshot IDs
+        // that exist on the server but not on this device.
+        try await service.fetchAndMergeFromSupabase(userID: userID)
+        try await service.syncToSupabase(userID: userID)
     } catch {
         print(error)
     }

@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "@lisse/core": "^0.7.1",
-    "astro": "^5.13.0"
+    "astro": "^5.13.0",
+    "posthog-js": "^1.0.0"
   },
   "devDependencies": {
     "@astrojs/cloudflare": "^12.6.0",

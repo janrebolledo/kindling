@@ -12,11 +12,12 @@ enum OnboardingRoute: Equatable {
     case summary
     case capture
     case signUp
+    case signIn
     case email(EmailAuthMode)
 
     var progressStep: Int? {
         switch self {
-        case .start, .email(.signIn):
+        case .start, .signIn, .email(.signIn):
             return nil
         case .permissions:
             return 1
@@ -41,6 +42,7 @@ enum OnboardingRoute: Equatable {
         case .summary: "summary"
         case .capture: "capture"
         case .signUp: "signUp"
+        case .signIn: "signIn"
         case .email: "email"
         }
     }
@@ -89,7 +91,7 @@ struct OnboardingView: View {
         case .start:
             OnboardingStartView(
                 onContinue: { route = .permissions },
-                onSignIn: { route = .email(.signIn) }
+                onSignIn: { route = .signIn }
             )
         case .permissions:
             OnboardingPermissionsView(
@@ -119,6 +121,11 @@ struct OnboardingView: View {
             SignUpView(
                 cards: $cards,
                 onEmail: { route = .email(.signUp) }
+            )
+        case .signIn:
+            SignInView(
+                onEmail: { route = .email(.signIn) },
+                onSignUp: { route = .start }
             )
         case .email:
             EmailAuthView(

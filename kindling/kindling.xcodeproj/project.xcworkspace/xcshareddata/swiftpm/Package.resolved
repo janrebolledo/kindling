@@ -1,5 +1,5 @@
 {
-  "originHash" : "cd35aa51824c24f63eac0dfcbbbe8d8e78113a14a2e8cca430ee15d081f5db5f",
+  "originHash" : "1d49b2037ed926e4fd866e705af7648545de17b0044e64629e2363c7996ddfd8",
   "pins" : [
     {
       "identity" : "ios-maps-sdk",
@@ -8,6 +8,15 @@
       "state" : {
         "revision" : "c37c4946d60f0ab069476d5781053b837771546e",
         "version" : "11.0.0"
+      }
+    },
+    {
+      "identity" : "posthog-ios",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/PostHog/posthog-ios.git",
+      "state" : {
+        "revision" : "d933f3050645b5df9fe86862110c1726e0c5b135",
+        "version" : "3.71.0"
       }
     },
     {

@@ -12,6 +12,7 @@ nonisolated struct GooglePlaceDetails: Codable, Sendable {
     let weekdayDescriptions: [String]
     let openNow: Bool?
     let photoUrl: String?
+    let photoUrls: [String]?
     let photoAttributions: [String]
     let googleMapsUri: String?
 

@@ -6,6 +6,7 @@ import { createAI, createSupabase } from './clients';
 import { userFromBearerToken, wipeAccount } from './deleteAccount';
 import { processEntry } from './ideas';
 import { log, logError } from './log';
+import { getPostHog } from './posthog';
 import { fetchPlacePhoto, getPlaceDetails } from './places';
 import { getSharedIdea, recordShareOpen } from './share';
 import type { Screenshot } from './types';
@@ -28,7 +29,31 @@ type RouteRequest = {
   travelMode?: 'DRIVE' | 'WALK' | 'BICYCLE' | 'TRANSIT';
 };
 
-const app = new Hono<{ Bindings: CloudflareBindings }>();
+type AppEnv = {
+  Bindings: CloudflareBindings;
+  Variables: { posthogDistinctId?: string };
+};
+
+const app = new Hono<AppEnv>();
+
+app.use('*', async (c, next) => {
+  const posthog = getPostHog(c.env);
+  if (!posthog) return next();
+
+  const authorization = c.req.header('Authorization');
+  const authenticatedUser = authorization
+    ? await userFromBearerToken(createSupabase(c.env), authorization)
+    : null;
+  // iOS sends its stable account ID on ingestion requests that do not use a
+  // bearer token. A verified bearer-token user always takes precedence.
+  const mobileUserId = c.req.header('x-user-id')?.trim();
+  const distinctId = authenticatedUser?.id ?? mobileUserId;
+
+  if (!distinctId) return next();
+
+  c.set('posthogDistinctId', distinctId);
+  return next();
+});
 
 app.use(
   '*',
@@ -40,6 +65,20 @@ app.use(
     ],
   }),
 );
+
+app.onError(async (err, c) => {
+  const posthog = getPostHog(c.env);
+  if (posthog) {
+    posthog.captureException(err, c.get('posthogDistinctId'), {
+      $request_method: c.req.method,
+      $request_path: new URL(c.req.url).pathname,
+      status_code: 500,
+    });
+    await posthog.flush();
+  }
+
+  return c.json({ error: 'Internal server error' }, 500);
+});
 
 app.get('/health', (c) => c.json({ ok: true }));
 
@@ -58,10 +97,11 @@ app.get('/places/:id', async (c) => {
 });
 
 app.get('/places/:id/photo', async (c) => {
+  const requestedIndex = Number.parseInt(c.req.query('index') ?? '0', 10);
   const photo = await fetchPlacePhoto(c.req.param('id'), {
     GOOGLE_MAPS_API_KEY: c.env.GOOGLE_MAPS_API_KEY,
     PUBLIC_API_URL: c.env.PUBLIC_API_URL,
-  });
+  }, Number.isFinite(requestedIndex) ? requestedIndex : 0);
   return photo ?? c.json({ error: 'Photo not found' }, 404);
 });
 
@@ -118,7 +158,19 @@ app.post('/routes', async (c) => {
   );
 
   if (upstreamFailed) return c.json({ error: 'Route unavailable' }, 502);
-  return route ? c.json(route) : c.json({ error: 'Route unavailable' }, 404);
+  if (!route) return c.json({ error: 'Route unavailable' }, 404);
+
+  const posthog = getPostHog(c.env);
+  if (posthog) {
+    posthog.capture({
+      distinctId: c.get('posthogDistinctId'),
+      event: 'route_calculated',
+      properties: { travel_mode: travelMode },
+    });
+    await posthog.flush();
+  }
+
+  return c.json(route);
 });
 
 app.get('/share/:id', async (c) => {
@@ -161,6 +213,16 @@ app.get('/share/:id', async (c) => {
     logError('share.open_record_failed', err, { idea_id: id });
   }
 
+  const posthog = getPostHog(c.env);
+  if (posthog) {
+    posthog.capture({
+      distinctId: c.get('posthogDistinctId'),
+      event: 'share_link_opened',
+      properties: { has_place: place != null },
+    });
+    await posthog.flush();
+  }
+
   // The payload is public, but the request has an analytics side effect. Do
   // not let a browser or shared CDN cache suppress recordShareOpen calls.
   c.header('Cache-Control', 'private, no-store');
@@ -183,6 +245,15 @@ app.delete('/account', async (c) => {
     return c.json({ error: 'Failed to delete account' }, 500);
   }
 
+  const posthog = getPostHog(c.env);
+  if (posthog) {
+    posthog.capture({
+      distinctId: c.get('posthogDistinctId'),
+      event: 'account_deleted',
+    });
+    await posthog.flush();
+  }
+
   return c.json({ ok: true });
 });
 
@@ -202,6 +273,8 @@ async function streamExtractedIdeas(
     items: ItemLog[];
   },
   started: number,
+  ingestionSource: 'screenshots' | 'extracted',
+  distinctId: string | undefined,
 ) {
   const supabase = createSupabase(c.env);
   const googleMaps = {
@@ -270,6 +343,26 @@ async function streamExtractedIdeas(
     );
 
     log('ideas.done', { ...summary, ms: Date.now() - started });
+
+    const posthog = getPostHog(c.env);
+    if (posthog) {
+      posthog.capture({
+        distinctId,
+        event: 'ideas_ingestion_completed',
+        properties: {
+          ingestion_source: ingestionSource,
+          screenshot_count: summary.screenshots,
+          ideas_created: summary.inserted,
+          ideas_reused: summary.reused,
+          items_skipped: summary.skipped,
+          items_sensitive: summary.sensitive,
+          items_dropped: summary.dropped,
+          items_failed: summary.failed,
+        },
+      });
+      await posthog.flush();
+    }
+
     await stream.writeSSE({ event: 'done', data: '' });
     await stream.close();
   });
@@ -307,7 +400,14 @@ app.post('/ideas', async (c) => {
     throw err;
   }
 
-  return streamExtractedIdeas(c, extracted, summary, started);
+  return streamExtractedIdeas(
+    c,
+    extracted,
+    summary,
+    started,
+    'screenshots',
+    c.get('posthogDistinctId'),
+  );
 });
 
 // Local inference keeps screenshot OCR on the device. The server receives only
@@ -332,7 +432,14 @@ app.post('/ideas/extracted', async (c) => {
   if (!Array.isArray(extracted) || extracted.length === 0) {
     return c.json([], 200);
   }
-  return streamExtractedIdeas(c, extracted, summary, started);
+  return streamExtractedIdeas(
+    c,
+    extracted,
+    summary,
+    started,
+    'extracted',
+    c.get('posthogDistinctId'),
+  );
 });
 
 export default app;

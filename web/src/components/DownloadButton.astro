@@ -3,13 +3,26 @@ interface Props {
   label?: string;
 }
 
-const appStoreUrl = (import.meta.env.PUBLIC_APP_STORE_URL as string | undefined) || 'https://getkindl.ing';
+const appStoreUrl =
+  (import.meta.env.PUBLIC_APP_STORE_URL as string | undefined) ||
+  'https://apps.apple.com/us/app/kindling-screenshot-gallery/id6801969071';
 const { label = 'download on \uF8FF iPhone' } = Astro.props;
 ---
 
 <a
   href={appStoreUrl}
+  data-app-store-download
   class="inline-flex items-center justify-center rounded-xl bg-black px-4 py-2.5 text-[20px] font-medium tracking-[-0.5px] text-white"
 >
   {label}
 </a>
+
+<script>
+  import { posthog } from '../lib/posthog';
+
+  document.querySelectorAll<HTMLAnchorElement>('[data-app-store-download]').forEach((link) => {
+    link.addEventListener('click', () => {
+      posthog?.capture('app_store_download_clicked');
+    });
+  });
+</script>

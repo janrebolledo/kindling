@@ -190,6 +190,7 @@ const mapEmbedUrl = hasCoordinates
                   href={googleMapsUrl}
                   target='_blank'
                   rel='noreferrer'
+                  data-shared-idea-map-link='overlay'
                   class='absolute right-4 top-4 rounded-full bg-black/25 px-3 py-2 text-[16px] font-medium text-white backdrop-blur-sm'
                 >
                   open in Maps ↗
@@ -200,6 +201,7 @@ const mapEmbedUrl = hasCoordinates
                 href={googleMapsUrl}
                 target='_blank'
                 rel='noreferrer'
+                data-shared-idea-map-link='map-card'
                 class='flex h-[203px] items-end bg-[linear-gradient(135deg,#e8f0e8,#c8d9c8)] p-4 text-[16px] font-medium text-black'
               >
                 view this place on Google Maps ↗
@@ -210,6 +212,7 @@ const mapEmbedUrl = hasCoordinates
                 href={googleMapsUrl}
                 target='_blank'
                 rel='noreferrer'
+                data-shared-idea-map-link='address'
                 class='block bg-surface px-3 py-2 text-[14px] font-medium tracking-[-0.35px] text-muted'
               >
                 {googlePlace.formattedAddress}
@@ -232,3 +235,15 @@ const mapEmbedUrl = hasCoordinates
     )
   }
 </Layout>
+
+<script>
+  import { posthog } from '../../lib/posthog';
+
+  document.querySelectorAll<HTMLAnchorElement>('[data-shared-idea-map-link]').forEach((link) => {
+    link.addEventListener('click', () => {
+      posthog?.capture('shared_idea_map_opened', {
+        map_link_context: link.dataset.sharedIdeaMapLink,
+      });
+    });
+  });
+</script>

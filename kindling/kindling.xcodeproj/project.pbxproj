@@ -14,6 +14,7 @@
 		ACC4E0792F189B350067658A /* Storage in Frameworks */ = {isa = PBXBuildFile; productRef = ACC4E0782F189B350067658A /* Storage */; };
 		ACC4E07B2F189B350067658A /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = ACC4E07A2F189B350067658A /* Supabase */; };
 		GMS4E07D2F189B350067658A /* GoogleMaps in Frameworks */ = {isa = PBXBuildFile; productRef = GMS4E07C2F189B350067658A /* GoogleMaps */; };
+		PHG4E07F2F189B350067658A /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = PHG4E07E2F189B350067658A /* PostHog */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -46,6 +47,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				PHG4E07F2F189B350067658A /* PostHog in Frameworks */,
 				ACC4E0752F189B350067658A /* PostgREST in Frameworks */,
 				ACC4E0732F189B350067658A /* Functions in Frameworks */,
 				ACC4E07B2F189B350067658A /* Supabase in Frameworks */,
@@ -102,6 +104,7 @@
 				ACC4E0782F189B350067658A /* Storage */,
 				ACC4E07A2F189B350067658A /* Supabase */,
 				GMS4E07C2F189B350067658A /* GoogleMaps */,
+				PHG4E07E2F189B350067658A /* PostHog */,
 			);
 			productName = kindling;
 			productReference = ACC4DFB52F1887F20067658A /* kindling - screenshot gallery.app */;
@@ -134,6 +137,7 @@
 			packageReferences = (
 				ACC4E06F2F189B350067658A /* XCRemoteSwiftPackageReference "supabase-swift" */,
 				GMS4E07B2F189B350067658A /* XCRemoteSwiftPackageReference "ios-maps-sdk" */,
+				PHG4E07D2F189B350067658A /* XCRemoteSwiftPackageReference "posthog-ios" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = ACC4DFB62F1887F20067658A /* Products */;
@@ -405,6 +409,14 @@
 				minimumVersion = 11.0.0;
 			};
 		};
+		PHG4E07D2F189B350067658A /* XCRemoteSwiftPackageReference "posthog-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/PostHog/posthog-ios.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 3.58.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -442,6 +454,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = GMS4E07B2F189B350067658A /* XCRemoteSwiftPackageReference "ios-maps-sdk" */;
 			productName = GoogleMaps;
+		};
+		PHG4E07E2F189B350067658A /* PostHog */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = PHG4E07D2F189B350067658A /* XCRemoteSwiftPackageReference "posthog-ios" */;
+			productName = PostHog;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

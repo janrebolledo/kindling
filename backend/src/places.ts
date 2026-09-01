@@ -23,6 +23,7 @@ export type PlaceDetails = {
   weekdayDescriptions: string[];
   openNow: boolean | null;
   photoUrl: string | null;
+  photoUrls: string[];
   photoAttributions: string[];
   photoAttributionUrls: Array<string | null>;
   googleMapsUri: string | null;
@@ -69,8 +70,10 @@ function googlePlaceId(placeId: string): string {
 export function photoURL(
   placeId: string,
   credentials: GoogleMapsCredentials,
+  photoIndex = 0,
 ): string {
-  return `${publicAPIBaseURL(credentials)}/places/${encodeURIComponent(googlePlaceId(placeId))}/photo`;
+  const base = `${publicAPIBaseURL(credentials)}/places/${encodeURIComponent(googlePlaceId(placeId))}/photo`;
+  return photoIndex > 0 ? `${base}?index=${photoIndex}` : base;
 }
 
 function responseContentType(response: Response): string | null {
@@ -174,7 +177,12 @@ export async function getPlaceDetails(
     .maybeSingle();
   // Rows written before price support need one refresh so their details can
   // include priceLevel. Once refreshed, keep using the durable place cache.
-  if (saved && saved.price_level_fetched) {
+  const savedPhotoNames = Array.isArray(saved?.photo_names) ? saved.photo_names : [];
+  const savedPlaceHasAllPhotos = !saved?.photo_name || savedPhotoNames.length > 0;
+  if (saved && saved.price_level_fetched && savedPlaceHasAllPhotos) {
+    const photoNames = savedPhotoNames.length > 0
+      ? savedPhotoNames
+      : saved.photo_name ? [saved.photo_name] : [];
     return {
       id: saved.place_id,
       name: saved.name,
@@ -185,6 +193,8 @@ export async function getPlaceDetails(
       weekdayDescriptions: saved.weekday_descriptions ?? [],
       openNow: null,
       photoUrl: saved.photo_name ? photoURL(saved.place_id, credentials) : null,
+      photoUrls: photoNames.map((_, index: number) =>
+        photoURL(saved.place_id, credentials, index)),
       photoAttributions: saved.photo_attributions ?? [],
       photoAttributionUrls: saved.photo_attribution_uris ?? [],
       googleMapsUri: saved.google_maps_uri,
@@ -205,6 +215,17 @@ export async function getPlaceDetails(
   const place = (await response.json()) as GooglePlaceResponse;
   if (!place.id) return null;
 
+  const photoNames = (place.photos ?? [])
+    .map((photo) => photo.name)
+    .filter((name): name is string => Boolean(name));
+  const photoAttributions = (place.photos ?? [])
+    .flatMap((photo) => photo.authorAttributions ?? [])
+    .map((attribution) => attribution.displayName ?? attribution.uri ?? '')
+    .filter(Boolean);
+  const photoAttributionUrls = (place.photos ?? [])
+    .flatMap((photo) => photo.authorAttributions ?? [])
+    .map((attribution) => attribution.uri ?? null);
+
   const details: PlaceDetails = {
     id: place.id,
     name: place.displayName?.text ?? null,
@@ -217,12 +238,10 @@ export async function getPlaceDetails(
       ?? place.currentOpeningHours?.weekdayDescriptions
       ?? [],
     openNow: place.currentOpeningHours?.openNow ?? null,
-    photoUrl: place.photos?.[0]?.name ? photoURL(place.id, credentials) : null,
-    photoAttributions: (place.photos?.[0]?.authorAttributions ?? [])
-      .map((attribution) => attribution.displayName ?? attribution.uri ?? '')
-      .filter(Boolean),
-    photoAttributionUrls: (place.photos?.[0]?.authorAttributions ?? [])
-      .map((attribution) => attribution.uri ?? null),
+    photoUrl: photoNames[0] ? photoURL(place.id, credentials) : null,
+    photoUrls: photoNames.map((_, index) => photoURL(place.id, credentials, index)),
+    photoAttributions,
+    photoAttributionUrls,
     googleMapsUri: place.googleMapsUri ?? null,
   };
 
@@ -236,12 +255,13 @@ export async function getPlaceDetails(
       longitude: details.longitude,
       formatted_address: details.formattedAddress,
       weekday_descriptions: details.weekdayDescriptions,
-      photo_name: place.photos?.[0]?.name ?? null,
+      photo_name: photoNames[0] ?? null,
+      photo_names: photoNames,
       photo_attributions: details.photoAttributions,
       photo_attribution_uris: details.photoAttributionUrls,
       google_maps_uri: details.googleMapsUri,
     },
-    { onConflict: 'place_id', ignoreDuplicates: true },
+    { onConflict: 'place_id' },
   );
   if (error) logError('google_places.save_failed', error, { place_id: details.id });
 
@@ -251,29 +271,36 @@ export async function getPlaceDetails(
 export async function fetchPlacePhoto(
   placeId: string,
   credentials: GoogleMapsCredentials,
+  photoIndex = 0,
 ): Promise<Response | null> {
   const normalizedPlaceId = googlePlaceId(placeId);
-  return cachedResponse('google-place-photos', normalizedPlaceId, 86400, async () => {
-    const response = await fetch(
-      `https://places.googleapis.com/v1/places/${encodeURIComponent(normalizedPlaceId)}`,
-      { headers: googleHeaders(credentials, 'photos') },
-    );
-    if (!response.ok) return null;
+  const safePhotoIndex = Math.max(0, Math.floor(photoIndex));
+  return cachedResponse(
+    'google-place-photos',
+    `${normalizedPlaceId}:${safePhotoIndex}`,
+    86400,
+    async () => {
+      const response = await fetch(
+        `https://places.googleapis.com/v1/places/${encodeURIComponent(normalizedPlaceId)}`,
+        { headers: googleHeaders(credentials, 'photos') },
+      );
+      if (!response.ok) return null;
 
-    const place = (await response.json()) as GooglePlaceResponse;
-    const photoName = place.photos?.[0]?.name;
-    if (!photoName) return null;
+      const place = (await response.json()) as GooglePlaceResponse;
+      const photoName = place.photos?.[safePhotoIndex]?.name;
+      if (!photoName) return null;
 
-    const photoResponse = await fetch(
-      `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=1200`,
-      { headers: { 'X-Goog-Api-Key': credentials.GOOGLE_MAPS_API_KEY } },
-    );
-    if (!photoResponse.ok || !photoResponse.body) return null;
+      const photoResponse = await fetch(
+        `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=1200`,
+        { headers: { 'X-Goog-Api-Key': credentials.GOOGLE_MAPS_API_KEY } },
+      );
+      if (!photoResponse.ok || !photoResponse.body) return null;
 
-    const headers = new Headers();
-    const contentType = photoResponse.headers.get('content-type');
-    if (contentType) headers.set('Content-Type', contentType);
-    headers.set('Cache-Control', 'public, max-age=86400, s-maxage=86400');
-    return new Response(photoResponse.body, { status: 200, headers });
-  });
+      const headers = new Headers();
+      const contentType = photoResponse.headers.get('content-type');
+      if (contentType) headers.set('Content-Type', contentType);
+      headers.set('Cache-Control', 'public, max-age=86400, s-maxage=86400');
+      return new Response(photoResponse.body, { status: 200, headers });
+    },
+  );
 }

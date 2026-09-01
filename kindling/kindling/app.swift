@@ -6,6 +6,7 @@
 //
 
 import GoogleMaps
+import PostHog
 import Supabase
 import SwiftUI
 
@@ -97,6 +98,22 @@ struct AppEntry: App {
     }
 
     init() {
+        let postHogConfig = PostHogConfig(
+            projectToken: "phc_CzRsJhyuTLxs9hDyknURWzxo8obRca4ytqeCjSssmWZk",
+            host: "https://us.i.posthog.com"
+        )
+        PostHogSDK.shared.setup(postHogConfig)
+        PostHogSDK.shared.captureLog(
+            "iOS app started",
+            level: .info,
+            attributes: [
+                "app.bundle_id": Bundle.main.bundleIdentifier ?? "unknown",
+                "app.version": Bundle.main.object(
+                    forInfoDictionaryKey: "CFBundleShortVersionString"
+                ) as? String ?? "unknown",
+            ]
+        )
+
         let configuredKey = [
             Bundle.main.object(forInfoDictionaryKey: "GOOGLE_MAPS_API_KEY") as? String,
             ProcessInfo.processInfo.environment["GOOGLE_MAPS_API_KEY"],

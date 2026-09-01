@@ -32,6 +32,9 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url);
     <title>{title}</title>
   </head>
   <body>
+    <script>
+      import '../lib/posthog';
+    </script>
     <slot />
   </body>
 </html>

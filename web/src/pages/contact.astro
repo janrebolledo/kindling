@@ -146,6 +146,7 @@ const contactEmail = 'contact@janrebolledo.com';
 <script>
   import { generateClipPath, observeResize } from '@lisse/core';
   import { submitContactSubmission } from '../lib/contact';
+  import { posthog } from '../lib/posthog';
 
   const form = document.querySelector<HTMLFormElement>('#contact-form');
   const status = document.querySelector<HTMLElement>('#contact-status');
@@ -239,6 +240,7 @@ const contactEmail = 'contact@janrebolledo.com';
           message,
         });
 
+        posthog?.capture('contact_submission_completed', { submission_source: 'web' });
         showStatus('success', `thanks — your message is on its way. we’ll get back to you soon.`);
         form.reset();
       } catch {
